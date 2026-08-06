@@ -284,6 +284,9 @@ export class PRDetailPanel {
         body,
         comments,
       );
+      this.panel.webview.postMessage({
+        command: "reviewSubmitted",
+      });
       const label =
         event === "APPROVED"
           ? "Approved"
@@ -886,8 +889,22 @@ function submitReview(event) {
 function esc(s) {
   return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
-window.addEventListener('message', ev => {
-  if (ev.data && ev.data.command === 'loading') { document.body.style.opacity = '0.7'; }
+window.addEventListener("message", (event) => {
+  const message = event.data;
+  if (!message || !message.command) return;
+  if (message.command === "loading") {
+    document.body.style.opacity = "0.7";
+  } else if (message.command === "reviewSubmitted") {
+    pendingComments.length = 0;
+    document.querySelectorAll(".pc-row").forEach((row) => {
+      row.remove();
+    });
+    const reviewBody = document.getElementById("rv-body");
+    if (reviewBody) {
+      reviewBody.value = "";
+    }
+    updatePCCount();
+  }
 });
 </script>
 </body>

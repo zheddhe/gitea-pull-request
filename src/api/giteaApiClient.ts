@@ -27,11 +27,13 @@ export class GiteaApiClient {
     options: RequestInit = {},
   ): Promise<T> {
     const session = await this.auth.getSession(serverUrl);
+
     if (!session) {
       throw new Error(
         `Not authenticated to ${serverUrl}. Use "Gitea: Sign In" to authenticate.`,
       );
     }
+
     const url = `${serverUrl}/api/v1${path}`;
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
@@ -39,29 +41,47 @@ export class GiteaApiClient {
       ...((options.headers as Record<string, string>) ?? {}),
     };
 
-    const response = await fetch(url, { ...options, headers });
-    if (response.status === 204) {
-      return undefined as unknown as T;
-    }
+    const response = await fetch(url, {
+      ...options,
+      headers,
+    });
+
     if (!response.ok) {
-      let msg = `Gitea API error: ${response.status} ${response.statusText}`;
+      const text = await response.text();
+
+      let details = "";
+
       try {
-        const err = (await response.json()) as { message?: string };
-        if (err.message) {
-          msg += ` — ${err.message}`;
-        }
+        const body = text ? JSON.parse(text) : undefined;
+        details = body?.message ? ` — ${body.message}` : "";
       } catch {
-        /* ignore */
+        details = text ? ` — ${text}` : "";
       }
-      throw new Error(msg);
+
+      throw new Error(
+        `Gitea API error: ${response.status} ${response.statusText}${details}`,
+      );
     }
-    return response.json() as Promise<T>;
+
+    if (response.status === 204) {
+      return undefined as T;
+    }
+
+    const body = await response.text();
+
+    if (!body.trim()) {
+      return undefined as T;
+    }
+
+    return JSON.parse(body) as T;
   }
 
   private async requestText(serverUrl: string, path: string): Promise<string> {
     const session = await this.auth.getSession(serverUrl);
     if (!session) {
-      throw new Error(`Not authenticated to ${serverUrl}.`);
+      throw new Error(
+        `Not authenticated to ${serverUrl}. Use "Gitea: Sign In" to authenticate.`,
+      );
     }
     const url = `${serverUrl}/api/v1${path}`;
     const response = await fetch(url, {
@@ -288,7 +308,9 @@ export class GiteaApiClient {
     // Gitea serves the unified diff at /pulls/{index}.diff — note: no /api/v1 prefix
     const session = await this.auth.getSession(serverUrl);
     if (!session) {
-      throw new Error(`Not authenticated to ${serverUrl}.`);
+      throw new Error(
+        `Not authenticated to ${serverUrl}. Use "Gitea: Sign In" to authenticate.`,
+      );
     }
     const url = `${serverUrl}/${owner}/${repo}/pulls/${number}.diff`;
     const resp = await fetch(url, {
