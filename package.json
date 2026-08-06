@@ -1,9 +1,9 @@
 {
-  "name": "gitea-vscode-pullrequest",
-  "displayName": "Gitea for VS Code",
+  "name": "gitea-hotfix",
+  "displayName": "Gitea for VS Code — Re-Commit",
   "description": "Pull requests, CI/Actions, and repository management for self-hosted Gitea",
-  "version": "0.6.0",
-  "publisher": "dj0024javia",
+  "version": "0.6.1-fork1.0.0",
+  "publisher": "remy-canal",
   "repository": { "type": "git", "url": "https://github.com/dj0024javia/gitea-vscode-extension" },
   "bugs": { "url": "https://github.com/dj0024javia/gitea-vscode-extension/issues" },
   "homepage": "https://github.com/dj0024javia/gitea-vscode-extension#readme",
