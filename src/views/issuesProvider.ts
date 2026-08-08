@@ -331,7 +331,7 @@ function buildIssueChildren(
   detailItem.command = {
     command: "gitea.viewIssueDetail",
     title: "View Issue Details",
-    arguments: [issue, repoInfo],
+    arguments: [repoInfo.key, issue.number],
   };
   children.push(detailItem);
 

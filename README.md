@@ -35,7 +35,7 @@ A VS Code extension that brings your [Gitea](https://gitea.io) repositories dire
 | **Pull Requests**      | Browse, filter, merge, close, re-open PRs across all repos and submodules                                                  |
 | **Inline Code Review** | GitHub-style diff viewer — click any line to comment, mark files as viewed, submit approve/request-changes/comment reviews |
 | **Issues**             | Browse open/closed issues, create, close, re-open, add comments                                                            |
-| **CI / Actions**       | See workflow runs and job statuses with live updates, re-run or cancel jobs, stream logs in real-time with auto-scroll    |
+| **CI / Actions**       | See workflow runs and job statuses with live updates, re-run or cancel jobs, stream logs in real-time                      |
 | **Multi-repo**         | Automatically detects all git remotes and submodules in your VS Code workspace                                             |
 | **Status Bar**         | Shows active repo + auth state at a glance                                                                                 |
 
@@ -96,7 +96,7 @@ code --install-extension gitea-vscode-*.vsix
 
 > `Write` on Repository is needed for merge, approve, close/re-open, and inline review actions. If you only want read-only access, set all to `Read`.
 
-4. Copy the generated token — it is shown **only once**.
+5. Copy the generated token — it is shown **only once**.
 
 ---
 
@@ -104,7 +104,7 @@ code --install-extension gitea-vscode-*.vsix
 
 After installation, sign in via the Command Palette:
 
-```
+```text
 Gitea: Sign In
 ```
 
@@ -184,7 +184,7 @@ The **CI / Actions** panel shows workflow runs per repository with **manual refr
 
 ## Architecture
 
-```
+```text
 src/
 ├── api/
 │   ├── giteaApiClient.ts   # All Gitea REST API calls

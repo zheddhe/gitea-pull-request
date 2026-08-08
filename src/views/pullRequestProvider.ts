@@ -345,7 +345,7 @@ function buildPRChildren(
   detailItem.command = {
     command: "gitea.viewPRDetail",
     title: "View PR Details",
-    arguments: [pr, repoInfo],
+    arguments: [repoInfo.key, pr.number],
   };
   children.push(detailItem);
 

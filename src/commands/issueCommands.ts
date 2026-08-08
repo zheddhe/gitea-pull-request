@@ -35,8 +35,20 @@ export function registerIssueCommands(
 
     vscode.commands.registerCommand(
       "gitea.viewIssueDetail",
-      async (issue: GiteaIssue, repoInfo: RepoInfo) => {
-        await IssueDetailPanel.show(context.extensionUri, api, repoInfo, issue);
+      async (repoKey: string, issueNumber: number) => {
+        const repoInfo = repoManager.getRepos().find((r) => r.key === repoKey);
+        if (!repoInfo) {
+          vscode.window.showErrorMessage("Repository not found.");
+          return;
+        }
+        try {
+          const issue = await api.getIssue(repoInfo, issueNumber);
+          await IssueDetailPanel.show(context.extensionUri, api, repoInfo, issue);
+        } catch (err) {
+          vscode.window.showErrorMessage(
+            `Failed to load issue: ${(err as Error).message}`,
+          );
+        }
       },
     ),
 

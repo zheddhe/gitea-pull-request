@@ -35,8 +35,20 @@ export function registerPRCommands(
 
     vscode.commands.registerCommand(
       "gitea.viewPRDetail",
-      async (pr: GiteaPullRequest, repoInfo: RepoInfo) => {
-        await PRDetailPanel.show(context.extensionUri, api, repoInfo, pr);
+      async (repoKey: string, prNumber: number) => {
+        const repoInfo = repoManager.getRepos().find((r) => r.key === repoKey);
+        if (!repoInfo) {
+          vscode.window.showErrorMessage("Repository not found.");
+          return;
+        }
+        try {
+          const pr = await api.getPullRequest(repoInfo, prNumber);
+          await PRDetailPanel.show(context.extensionUri, api, repoInfo, pr);
+        } catch (err) {
+          vscode.window.showErrorMessage(
+            `Failed to load PR: ${(err as Error).message}`,
+          );
+        }
       },
     ),
 
@@ -244,34 +256,35 @@ async function createPR(
     (await vscode.window.showInputBox({ prompt: "Description (optional)" })) ??
     "";
 
-  await vscode.window.withProgress(
-    {
-      location: vscode.ProgressLocation.Notification,
-      title: "Creating pull request...",
-    },
-    async () => {
-      try {
-        const pr = await api.createPullRequest(repoInfo, {
+  let pr: { number: number; html_url: string } | undefined;
+  try {
+    pr = await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: "Creating pull request...",
+      },
+      async () => {
+        return api.createPullRequest(repoInfo, {
           title,
           body,
           head,
           base,
         });
-        const action = await vscode.window.showInformationMessage(
-          `PR #${pr.number} created.`,
-          "Open in Browser",
-        );
-        if (action === "Open in Browser") {
-          await vscode.env.openExternal(vscode.Uri.parse(pr.html_url));
-        }
-        prProvider.refresh();
-      } catch (err) {
-        vscode.window.showErrorMessage(
-          `Failed to create PR: ${(err as Error).message}`,
-        );
-      }
-    },
-  );
+      },
+    );
+    const action = await vscode.window.showInformationMessage(
+      `PR #${pr.number} created.`,
+      "Open in Browser",
+    );
+    if (action === "Open in Browser") {
+      await vscode.env.openExternal(vscode.Uri.parse(pr.html_url));
+    }
+    prProvider.refresh();
+  } catch (err) {
+    vscode.window.showErrorMessage(
+      `Failed to create PR: ${(err as Error).message}`,
+    );
+  }
 }
 
 async function mergePR(
@@ -299,27 +312,27 @@ async function mergePR(
   if (confirm !== "Merge") {
     return;
   }
-  await vscode.window.withProgress(
-    {
-      location: vscode.ProgressLocation.Notification,
-      title: `Merging PR #${pr.number}...`,
-    },
-    async () => {
-      try {
+  try {
+    await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: `Merging PR #${pr.number}...`,
+      },
+      async () => {
         await api.mergePullRequest(
           repoInfo,
           pr.number,
           method.value as "merge" | "rebase" | "squash",
         );
-        vscode.window.showInformationMessage(`PR #${pr.number} merged.`);
-        prProvider.refresh();
-      } catch (err) {
-        vscode.window.showErrorMessage(
-          `Merge failed: ${(err as Error).message}`,
-        );
-      }
-    },
-  );
+      },
+    );
+    vscode.window.showInformationMessage(`PR #${pr.number} merged.`);
+    prProvider.refresh();
+  } catch (err) {
+    vscode.window.showErrorMessage(
+      `Merge failed: ${(err as Error).message}`,
+    );
+  }
 }
 
 async function reviewPR(
@@ -333,23 +346,23 @@ async function reviewPR(
     (await vscode.window.showInputBox({
       prompt: "Review comment (optional)",
     })) ?? "";
-  await vscode.window.withProgress(
-    {
-      location: vscode.ProgressLocation.Notification,
-      title: `Submitting review...`,
-    },
-    async () => {
-      try {
+  try {
+    await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: `Submitting review...`,
+      },
+      async () => {
         await api.createReview(repoInfo, pr.number, event, body);
-        vscode.window.showInformationMessage(`Review submitted: ${event}`);
-        prProvider.refresh();
-      } catch (err) {
-        vscode.window.showErrorMessage(
-          `Review failed: ${(err as Error).message}`,
-        );
-      }
-    },
-  );
+      },
+    );
+    vscode.window.showInformationMessage(`Review submitted: ${event}`);
+    prProvider.refresh();
+  } catch (err) {
+    vscode.window.showErrorMessage(
+      `Review failed: ${(err as Error).message}`,
+    );
+  }
 }
 
 async function addComment(
@@ -365,21 +378,21 @@ async function addComment(
   if (!body) {
     return;
   }
-  await vscode.window.withProgress(
-    {
-      location: vscode.ProgressLocation.Notification,
-      title: "Posting comment...",
-    },
-    async () => {
-      try {
+  try {
+    await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: "Posting comment...",
+      },
+      async () => {
         await api.addPRComment(repoInfo, prNumber, body);
-        vscode.window.showInformationMessage("Comment posted.");
-        prProvider.refresh();
-      } catch (err) {
-        vscode.window.showErrorMessage(
-          `Failed to post comment: ${(err as Error).message}`,
-        );
-      }
-    },
-  );
+      },
+    );
+    vscode.window.showInformationMessage("Comment posted.");
+    prProvider.refresh();
+  } catch (err) {
+    vscode.window.showErrorMessage(
+      `Failed to post comment: ${(err as Error).message}`,
+    );
+  }
 }
