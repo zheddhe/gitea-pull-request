@@ -536,6 +536,22 @@ export class GiteaApiClient {
     );
   }
 
+  async updateIssue(
+    repoInfo: RepoInfo,
+    number: number,
+    params: { title?: string; body?: string },
+  ): Promise<GiteaIssue> {
+    const { serverUrl, owner, repo } = repoInfo;
+    return this.request<GiteaIssue>(
+      serverUrl,
+      `/repos/${owner}/${repo}/issues/${number}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(params),
+      },
+    );
+  }
+
   async addIssueComment(
     repoInfo: RepoInfo,
     number: number,
