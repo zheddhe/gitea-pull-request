@@ -450,6 +450,22 @@ export class GiteaApiClient {
     return (branches ?? []).map((b) => b.name);
   }
 
+  async getFileContents(repoInfo: RepoInfo, branch: string, path: string): Promise<string> {
+    const { serverUrl, owner, repo } = repoInfo;
+    const encodedPath = encodeURIComponent(path);
+    const data = await this.request<{ content: string; encoding: string }>(
+      serverUrl,
+      `/repos/${owner}/${repo}/contents/${encodedPath}?ref=${branch}`,
+    );
+    if (!data) {
+      throw new Error(`File not found: ${path} on branch ${branch}`);
+    }
+    if (data.encoding === "base64") {
+      return Buffer.from(data.content, "base64").toString("utf-8");
+    }
+    return data.content;
+  }
+
   // ── Issues ───────────────────────────────────────────────────────────────
 
   async listIssues(

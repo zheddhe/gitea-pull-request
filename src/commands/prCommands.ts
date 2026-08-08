@@ -1,4 +1,7 @@
 import * as vscode from "vscode";
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
 import { GiteaApiClient } from "../api/giteaApiClient";
 import { RepoManager, RepoInfo } from "../context/repoManager";
 import { AuthManager } from "../auth/authManager";
@@ -7,6 +10,7 @@ import {
   PullRequestItem,
 } from "../views/pullRequestProvider";
 import { PRDetailPanel } from "../views/prDetailPanel";
+import { PRDiffProvider } from "../views/prDiffProvider";
 import type { GiteaPullRequest } from "../api/types";
 
 export function registerPRCommands(
@@ -42,6 +46,20 @@ export function registerPRCommands(
           item.repoInfo,
           item.pr,
         );
+      },
+    ),
+
+    vscode.commands.registerCommand(
+      "gitea.openPRDiff",
+      async (item: PullRequestItem) => {
+        await PRDiffProvider.show(api, item.repoInfo, item.pr);
+      },
+    ),
+
+    vscode.commands.registerCommand(
+      "gitea.openFileDiff",
+      async (repoInfo: RepoInfo, pr: GiteaPullRequest, filename: string) => {
+        await openFileDiff(api, repoInfo, pr, filename);
       },
     ),
 
@@ -390,5 +408,57 @@ async function addComment(
     vscode.window.showErrorMessage(
       `Failed to post comment: ${(err as Error).message}`,
     );
+  }
+}
+
+async function openFileDiff(
+  api: GiteaApiClient,
+  repoInfo: RepoInfo,
+  pr: GiteaPullRequest,
+  filename: string,
+): Promise<void> {
+  const tmpDir = path.join(os.tmpdir(), `gitea-diff-${repoInfo.key.replace(/[^a-zA-Z0-9]/g, "_")}-${pr.number}-${Date.now()}`);
+
+  try {
+    const [baseContent, headContent] = await Promise.allSettled([
+      api.getFileContents(repoInfo, pr.base.ref, filename),
+      api.getFileContents(repoInfo, pr.head.ref, filename),
+    ]);
+
+    // Handle cases where the file doesn't exist on one branch (added/deleted)
+    const baseText = baseContent.status === "fulfilled" ? baseContent.value : "";
+    const headText = headContent.status === "fulfilled" ? headContent.value : "";
+
+    // Check if either side looks binary (contains null bytes)
+    const hasNullByte = (s: string) => s.includes("\0");
+    if (hasNullByte(baseText) || hasNullByte(headText)) {
+      vscode.window.showInformationMessage(`File '${filename}' appears to be binary — skipping diff.`);
+      return;
+    }
+
+    const baseFile = path.join(tmpDir, ".base", filename);
+    const headFile = path.join(tmpDir, ".head", filename);
+
+    fs.mkdirSync(path.dirname(baseFile), { recursive: true });
+    fs.mkdirSync(path.dirname(headFile), { recursive: true });
+    fs.writeFileSync(baseFile, baseText);
+    fs.writeFileSync(headFile, headText);
+
+    const baseUri = vscode.Uri.file(baseFile);
+    const headUri = vscode.Uri.file(headFile);
+
+    const title = filename === path.basename(filename)
+      ? `${filename} (${pr.head.ref} → ${pr.base.ref})`
+      : `PR #${pr.number} — ${filename}`;
+
+    await vscode.commands.executeCommand(
+      "vscode.diff",
+      baseUri,
+      headUri,
+      title,
+      { preview: true, preserveFocus: false },
+    );
+  } catch (err) {
+    vscode.window.showErrorMessage(`Failed to open diff for '${filename}': ${(err as Error).message}`);
   }
 }
