@@ -35,20 +35,13 @@ export function registerPRCommands(
 
     vscode.commands.registerCommand(
       "gitea.viewPRDetail",
-      async (repoKey: string, prNumber: number) => {
-        const repoInfo = repoManager.getRepos().find((r) => r.key === repoKey);
-        if (!repoInfo) {
-          vscode.window.showErrorMessage("Repository not found.");
-          return;
-        }
-        try {
-          const pr = await api.getPullRequest(repoInfo, prNumber);
-          await PRDetailPanel.show(context.extensionUri, api, repoInfo, pr);
-        } catch (err) {
-          vscode.window.showErrorMessage(
-            `Failed to load PR: ${(err as Error).message}`,
-          );
-        }
+      async (item: PullRequestItem) => {
+        await PRDetailPanel.show(
+          context.extensionUri,
+          api,
+          item.repoInfo,
+          item.pr,
+        );
       },
     ),
 

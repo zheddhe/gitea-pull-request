@@ -187,7 +187,7 @@ export class PullRequestProvider implements vscode.TreeDataProvider<vscode.TreeI
 
     // ── PR detail children ────────────────────────────────────────────────
     if (element instanceof PullRequestItem) {
-      return buildPRChildren(element.pr, element.repoInfo);
+      return buildPRChildren(element);
     }
 
     return [];
@@ -277,10 +277,8 @@ function relativeTime(iso: string): string {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
-function buildPRChildren(
-  pr: GiteaPullRequest,
-  repoInfo: RepoInfo,
-): vscode.TreeItem[] {
+function buildPRChildren(item: PullRequestItem): vscode.TreeItem[] {
+  const { pr, repoInfo } = item;
   const children: vscode.TreeItem[] = [];
 
   children.push(
@@ -333,7 +331,7 @@ function buildPRChildren(
   openItem.command = {
     command: "gitea.openPR",
     title: "Open PR in Browser",
-    arguments: [pr],
+    arguments: [item],
   };
   children.push(openItem);
 
@@ -345,7 +343,7 @@ function buildPRChildren(
   detailItem.command = {
     command: "gitea.viewPRDetail",
     title: "View PR Details",
-    arguments: [repoInfo.key, pr.number],
+    arguments: [item],
   };
   children.push(detailItem);
 
