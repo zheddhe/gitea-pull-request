@@ -47,8 +47,11 @@ export function registerPRCommands(
 
     vscode.commands.registerCommand(
       "gitea.checkoutPR",
-      async (pr: GiteaPullRequest, repoInfo?: RepoInfo) => {
-        await checkoutPR(pr, repoInfo);
+      async (arg: PullRequestItem | GiteaPullRequest, repoInfo?: RepoInfo) => {
+        const pr = arg instanceof PullRequestItem ? arg.pr : arg;
+        const ri =
+          arg instanceof PullRequestItem ? arg.repoInfo : repoInfo;
+        await checkoutPR(pr, ri);
       },
     ),
 
