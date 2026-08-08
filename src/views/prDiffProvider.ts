@@ -34,73 +34,6 @@ function buildDirTree(files: GiteaFileDiff[]): DirNode {
   return root;
 }
 
-function getFileThemeIcon(filename: string): vscode.ThemeIcon {
-  const ext = filename.split(".").pop()?.toLowerCase() ?? "";
-  const iconMap: Record<string, string> = {
-    // Languages
-    ts: "typescript",
-    tsx: "typescript",
-    js: "javascript",
-    jsx: "javascript",
-    py: "python",
-    java: "java",
-    c: "c",
-    cpp: "cpp",
-    cs: "csharp",
-    go: "go",
-    rs: "rust",
-    rb: "ruby",
-    php: "php",
-    swift: "swift",
-    kt: "kotlin",
-    scala: "scala",
-    r: "r",
-    // Config / data
-    json: "json",
-    yaml: "settings",
-    yml: "settings",
-    toml: "settings",
-    xml: "xml",
-    ini: "settings",
-    cfg: "settings",
-    conf: "settings",
-    env: "settings",
-    // Web
-    html: "html",
-    htm: "html",
-    css: "css",
-    scss: "css",
-    less: "css",
-    svg: "symbol-file",
-    // Docs
-    md: "markdown",
-    mdx: "markdown",
-    txt: "file-code",
-    rst: "file",
-    // Shell / scripts
-    sh: "terminal",
-    bash: "terminal",
-    zsh: "terminal",
-    ps1: "terminal",
-    bat: "terminal",
-    cmd: "terminal",
-    // Data / binary-ish
-    sql: "database",
-    graphql: "list-selection",
-    proto: "file-code",
-    // Misc
-    git: "git",
-    lock: "lock",
-    sum: "file-code",
-    mod: "file-code",
-    gradle: "beaker",
-    makefile: "beaker",
-    dockerfile: "docker",
-  };
-  const name = iconMap[ext] ?? "file-code";
-  return new vscode.ThemeIcon(name);
-}
-
 function findDirNode(root: DirNode | null, path: string): DirNode | null {
   if (!root) return null;
   const parts = path.split("/");
@@ -168,7 +101,7 @@ export class PRDiffDirItem extends vscode.TreeItem {
     public readonly name: string,
     checkboxState: vscode.TreeItemCheckboxState,
   ) {
-    super(name, vscode.TreeItemCollapsibleState.Collapsed);
+    super(name, vscode.TreeItemCollapsibleState.Expanded);
     this.id = `dir:${dirPath}`;
     this.contextValue = "prDiffDir";
     this.iconPath = new vscode.ThemeIcon("folder");
@@ -195,8 +128,8 @@ export class PRDiffFileItem extends vscode.TreeItem {
     this.id = `file:${filename}`;
     this.contextValue = viewed ? "prDiffFileViewed" : "prDiffFile";
     this.description = `+${additions} / -${deletions}`;
-    // Use VS Code native file-type icon
-    this.iconPath = getFileThemeIcon(filename);
+    // Use resourceUri so VS Code picks the icon (and color) from the active icon theme
+    this.resourceUri = vscode.Uri.file(filename);
     this.tooltip = new vscode.MarkdownString(
       `**${filename}**\nStatus: ${fileStatus}\n+${additions} / -${deletions}`,
     );
