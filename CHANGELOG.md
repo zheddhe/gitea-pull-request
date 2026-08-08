@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Rebranded** extension as `gitea-hotfix` fork for iterative improvements before upstream contributions
+- **Rebranded** extension as `gitea-vscode-pullrequest-enhanced` (displayName: "Gitea for VS Code — Enhanced") for iterative improvements before upstream contributions
 - Switched to extension naming convention for easier iteration on issues
 
 ### Fixed
@@ -28,6 +28,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `mocha` 10 → 11
   - Removed unused `node-fetch` (native `fetch` on Node 20+)
   - Added overrides for `diff`, `serialize-javascript`, and `glob`
+
+## [7.0.0] - 2026-08-08
+
+### Added
+
+- **Navigable PR diff tree view** — dedicated `PR Diff` panel in the Gitea sidebar, mirroring the GitHub PR extension layout
+  - `CHANGES IN PULL REQUEST #N` header with branch info and file stats
+  - Collapsible file directory tree with status icons (A/D/M) and +/- counts
+  - Checkbox tracking per file, directory, and section — mark files as reviewed with propagation to parent nodes
+  - Click any file to open VS Code's native `vscode.diff` editor (base branch vs head branch)
+  - Commits and Reviews sections with proper icons and state colors
+  - Automatic refresh when switching between PRs
+- **`getFileContents()` API method** — fetches file content from a specific branch via Gitea contents API
+
+### Changed
+
+- **PR list diff stats** now clickable — opens the PR Diff panel instead of showing `+? / -?`
+- Version bumped to `7.0.0` to reflect the major addition of the PR diff tree view
+- Fork version tracking: `7.0.0-fork1.0.0` (subsequent releases will use `7.0.0-fork1.X.X`)
+
+### Fixed
+
+- Diff stats in the PR list now show real values (`+0 / -0 0 file(s) changed`) instead of `+? / -?`
 
 ## [0.6.0] - 2026-03-12
 
