@@ -213,8 +213,7 @@ export class PRDiffProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
     }
 
     if (provider) {
-      // Same PR — just refresh data
-      provider.resetForPR(api, repoInfo, pr);
+      // Same PR already loaded — just focus, preserve checkbox state
       await vscode.commands.executeCommand("gitea.prDiff.focus");
       return;
     }
@@ -250,27 +249,14 @@ export class PRDiffProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
     return undefined;
   }
 
-  resetForPR(_api: GiteaApiClient, repoInfo: RepoInfo, pr: GiteaPullRequest): void {
-    this.repoInfo = repoInfo;
-    this.pr = pr;
-    this.files = [];
-    this.commits = [];
-    this.reviews = [];
-    this.dirTree = null;
-    this.loading = false;
-    this.error = null;
-    this.viewedFiles.clear();
-    this._onDidChangeTreeData.fire();
-  }
-
   markViewed(filename: string): void {
     this.viewedFiles.add(filename);
-    this._onDidChangeTreeData.fire();
+    this._onDidChangeTreeData.fire(null);
   }
 
   markUnviewed(filename: string): void {
     this.viewedFiles.delete(filename);
-    this._onDidChangeTreeData.fire();
+    this._onDidChangeTreeData.fire(null);
   }
 
   toggleDirViewed(dirPath: string, check: boolean): void {
@@ -281,7 +267,7 @@ export class PRDiffProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
       if (check) this.viewedFiles.add(f);
       else this.viewedFiles.delete(f);
     }
-    this._onDidChangeTreeData.fire();
+    this._onDidChangeTreeData.fire(null);
   }
 
   toggleAllViewed(check: boolean): void {
@@ -290,7 +276,7 @@ export class PRDiffProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
     } else {
       this.viewedFiles.clear();
     }
-    this._onDidChangeTreeData.fire();
+    this._onDidChangeTreeData.fire(null);
   }
 
   private collectFilenames(node: DirNode): string[] {
@@ -343,7 +329,7 @@ export class PRDiffProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
       if (this.files.length === 0) {
         // First load — fetch data
         this.loading = true;
-        this._onDidChangeTreeData.fire();
+        this._onDidChangeTreeData.fire(null);
         try {
           const [files, commits, reviews] = await Promise.all([
             this._api.listPRFiles(this.repoInfo, this.pr.number),
@@ -358,7 +344,7 @@ export class PRDiffProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
           this.error = `Failed to load PR diff: ${(err as Error).message}`;
         } finally {
           this.loading = false;
-          this._onDidChangeTreeData.fire();
+          this._onDidChangeTreeData.fire(null);
         }
         return [];
       }
