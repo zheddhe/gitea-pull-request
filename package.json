@@ -3,7 +3,7 @@
   "displayName": "Gitea for VS Code — Enhanced",
   "description": "Pull requests, CI/Actions, and repository management for self-hosted Gitea",
   "version": "7.0.0-fork1.0.0",
-  "publisher": "remy-canal",
+  "publisher": "zheddhe",
   "repository": { "type": "git", "url": "https://github.com/dj0024javia/gitea-vscode-extension" },
   "bugs": { "url": "https://github.com/dj0024javia/gitea-vscode-extension/issues" },
   "homepage": "https://github.com/dj0024javia/gitea-vscode-extension#readme",

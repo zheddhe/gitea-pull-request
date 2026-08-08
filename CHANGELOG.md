@@ -33,9 +33,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Navigable PR diff tree view** — dedicated `PR Diff` panel in the Gitea sidebar, mirroring the GitHub PR extension layout
-  - `CHANGES IN PULL REQUEST #N` header with branch info and file stats
-  - Collapsible file directory tree with status icons (A/D/M) and +/- counts
+- **Navigable PR diff tree view** — dedicated `CHANGES IN PULL REQUEST` panel in the Gitea sidebar, mirroring the GitHub PR extension layout
+  - `#N title` header with branch info and file stats
+  - Full file directory tree (fully expanded by default) with VS Code native file-type icons (colored, from active icon theme)
   - Checkbox tracking per file, directory, and section — mark files as reviewed with propagation to parent nodes
   - Click any file to open VS Code's native `vscode.diff` editor (base branch vs head branch)
   - Commits and Reviews sections with proper icons and state colors
@@ -45,12 +45,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **PR list diff stats** now clickable — opens the PR Diff panel instead of showing `+? / -?`
+- **PR icons**: yellow for open PRs (pending review), green once approved or merged
+- **Publisher**: changed to `zheddhe` (GitHub account)
 - Version bumped to `7.0.0` to reflect the major addition of the PR diff tree view
 - Fork version tracking: `7.0.0-fork1.0.0` (subsequent releases will use `7.0.0-fork1.X.X`)
 
 ### Fixed
 
 - Diff stats in the PR list now show real values (`+0 / -0 0 file(s) changed`) instead of `+? / -?`
+- Checkbox state persists across re-opens of the same PR
+- Provider refreshes correctly when switching between PRs
+- PR detail panel (`gitea.openPRDiff`) accepts `PullRequestItem` objects from context menus
+- Progress notifications dismiss immediately after API response
 
 ## [0.6.0] - 2026-03-12
 
