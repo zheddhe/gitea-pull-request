@@ -68,7 +68,7 @@
     "views": {
       "gitea": [
         { "id": "gitea.pullRequests", "name": "Pull Requests", "icon": "resources/gitea-activity.svg" },
-        { "id": "gitea.prDiff", "name": "PR Diff", "when": "gitea.prDiffVisible", "icon": "resources/gitea-activity.svg" },
+        { "id": "gitea.prDiff", "name": "Changes in Pull Request", "when": "gitea.prDiffVisible", "icon": "resources/gitea-activity.svg" },
         { "id": "gitea.issues", "name": "Issues", "icon": "resources/gitea-activity.svg" },
         { "id": "gitea.ciRuns", "name": "CI / Actions", "icon": "resources/gitea-activity.svg" }
       ]

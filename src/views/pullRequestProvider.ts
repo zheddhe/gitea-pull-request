@@ -58,7 +58,7 @@ export class PullRequestItem extends vscode.TreeItem {
     if (pr.merged) {
       return new vscode.ThemeIcon(
         "git-merge",
-        new vscode.ThemeColor("gitDecoration.addedResourceForeground"),
+        new vscode.ThemeColor("charts.green"),
       );
     }
     if (pr.state === "closed") {
@@ -67,9 +67,10 @@ export class PullRequestItem extends vscode.TreeItem {
         new vscode.ThemeColor("gitDecoration.deletedResourceForeground"),
       );
     }
+    // Yellow for open PRs (pending review) — turns green once approved in the detail view
     return new vscode.ThemeIcon(
       "git-pull-request",
-      new vscode.ThemeColor("charts.green"),
+      new vscode.ThemeColor("charts.yellow"),
     );
   }
 }

@@ -34,6 +34,73 @@ function buildDirTree(files: GiteaFileDiff[]): DirNode {
   return root;
 }
 
+function getFileThemeIcon(filename: string): vscode.ThemeIcon {
+  const ext = filename.split(".").pop()?.toLowerCase() ?? "";
+  const iconMap: Record<string, string> = {
+    // Languages
+    ts: "typescript",
+    tsx: "typescript",
+    js: "javascript",
+    jsx: "javascript",
+    py: "python",
+    java: "java",
+    c: "c",
+    cpp: "cpp",
+    cs: "csharp",
+    go: "go",
+    rs: "rust",
+    rb: "ruby",
+    php: "php",
+    swift: "swift",
+    kt: "kotlin",
+    scala: "scala",
+    r: "r",
+    // Config / data
+    json: "json",
+    yaml: "settings",
+    yml: "settings",
+    toml: "settings",
+    xml: "xml",
+    ini: "settings",
+    cfg: "settings",
+    conf: "settings",
+    env: "settings",
+    // Web
+    html: "html",
+    htm: "html",
+    css: "css",
+    scss: "css",
+    less: "css",
+    svg: "symbol-file",
+    // Docs
+    md: "markdown",
+    mdx: "markdown",
+    txt: "file-code",
+    rst: "file",
+    // Shell / scripts
+    sh: "terminal",
+    bash: "terminal",
+    zsh: "terminal",
+    ps1: "terminal",
+    bat: "terminal",
+    cmd: "terminal",
+    // Data / binary-ish
+    sql: "database",
+    graphql: "list-selection",
+    proto: "file-code",
+    // Misc
+    git: "git",
+    lock: "lock",
+    sum: "file-code",
+    mod: "file-code",
+    gradle: "beaker",
+    makefile: "beaker",
+    dockerfile: "docker",
+  };
+  const name = iconMap[ext] ?? "file-code";
+  return new vscode.ThemeIcon(name);
+}
+
 function findDirNode(root: DirNode | null, path: string): DirNode | null {
   if (!root) return null;
   const parts = path.split("/");
@@ -49,11 +116,15 @@ function findDirNode(root: DirNode | null, path: string): DirNode | null {
 // ── Tree Item Types ───────────────────────────────────────────────────────────
 
 class PRDiffRootItem extends vscode.TreeItem {
-  constructor(pr: GiteaPullRequest) {
-    super(`CHANGES IN PULL REQUEST #${pr.number}`, vscode.TreeItemCollapsibleState.Expanded);
+  constructor(pr: GiteaPullRequest, hasApproved: boolean) {
+    super(`#${pr.number} ${pr.title}`, vscode.TreeItemCollapsibleState.Expanded);
     this.id = "prDiffRoot";
     this.contextValue = "prDiffRoot";
-    this.iconPath = new vscode.ThemeIcon("git-pull-request");
+    // Yellow icon until approved, green once approved
+    const color = hasApproved
+      ? new vscode.ThemeColor("charts.green")
+      : new vscode.ThemeColor("charts.yellow");
+    this.iconPath = new vscode.ThemeIcon("git-pull-request", color);
   }
 }
 
@@ -124,9 +195,8 @@ export class PRDiffFileItem extends vscode.TreeItem {
     this.id = `file:${filename}`;
     this.contextValue = viewed ? "prDiffFileViewed" : "prDiffFile";
     this.description = `+${additions} / -${deletions}`;
-    const statusIcon = fileStatus === "added" ? "add" : fileStatus === "deleted" ? "remove" : "edit";
-    const statusColor = fileStatus === "added" ? "green" : fileStatus === "deleted" ? "red" : "orange";
-    this.iconPath = new vscode.ThemeIcon(statusIcon, new vscode.ThemeColor(`charts.${statusColor}`));
+    // Use VS Code native file-type icon
+    this.iconPath = getFileThemeIcon(filename);
     this.tooltip = new vscode.MarkdownString(
       `**${filename}**\nStatus: ${fileStatus}\n+${additions} / -${deletions}`,
     );
@@ -352,7 +422,8 @@ export class PRDiffProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
       const additions = this.files.reduce((sum, f) => sum + f.additions, 0);
       const deletions = this.files.reduce((sum, f) => sum + f.deletions, 0);
 
-      const filesSection = new PRDiffSectionItem("Files", "files", this.files.length, new vscode.ThemeIcon("file-directory"));
+      const hasApproved = this.reviews.some((r) => r.state === "APPROVED" && !r.stale);
+      const filesSection = new PRDiffSectionItem("Files", "files", this.files.length, new vscode.ThemeIcon("file-directory"), false);
       const sectionState = this.getSectionCheckboxState();
       filesSection.checkboxState = sectionState;
       filesSection.command = {
@@ -362,7 +433,7 @@ export class PRDiffProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
       };
 
       return [
-        new PRDiffRootItem(this.pr),
+        new PRDiffRootItem(this.pr, hasApproved),
         new PRDiffBranchItem(this.pr),
         new PRDiffStatsItem(additions, deletions, this.files.length),
         filesSection,
