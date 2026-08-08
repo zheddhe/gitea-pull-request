@@ -10,7 +10,12 @@ import {
   PullRequestItem,
 } from "../views/pullRequestProvider";
 import { PRDetailPanel } from "../views/prDetailPanel";
-import { PRDiffProvider } from "../views/prDiffProvider";
+import {
+  PRDiffProvider,
+  PRDiffFileItem,
+  PRDiffDirItem,
+  PRDiffSectionItem,
+} from "../views/prDiffProvider";
 import type { GiteaPullRequest } from "../api/types";
 
 export function registerPRCommands(
@@ -60,6 +65,66 @@ export function registerPRCommands(
       "gitea.openFileDiff",
       async (repoInfo: RepoInfo, pr: GiteaPullRequest, filename: string) => {
         await openFileDiff(api, repoInfo, pr, filename);
+      },
+    ),
+
+    vscode.commands.registerCommand(
+      "gitea.prDiffFileAction",
+      async (...args: unknown[]) => {
+        const provider = PRDiffProvider.getActive();
+        if (!provider) return;
+
+        // args[0] is either TreeItemCheckboxState (number) or the PRDiffFileItem
+        // args[1] is the PRDiffFileItem when checkbox is clicked
+        const fileItem = (args.length > 1 ? args[1] : args[0]) as PRDiffFileItem;
+
+        if (args.length > 1 && typeof args[0] === "number") {
+          // Checkbox toggle
+          const state = args[0] as vscode.TreeItemCheckboxState;
+          if (state === vscode.TreeItemCheckboxState.Checked) {
+            provider.markViewed(fileItem.filename);
+          } else {
+            provider.markUnviewed(fileItem.filename);
+          }
+        } else {
+          // Label click — open diff
+          await openFileDiff(provider.api, fileItem.repoInfo, fileItem.pr, fileItem.filename);
+        }
+      },
+    ),
+
+    vscode.commands.registerCommand(
+      "gitea.prDiffDirAction",
+      async (...args: unknown[]) => {
+        const provider = PRDiffProvider.getActive();
+        if (!provider) return;
+
+        const dirItem = (args.length > 1 ? args[1] : args[0]) as PRDiffDirItem;
+
+        if (args.length > 1 && typeof args[0] === "number") {
+          // Checkbox toggle
+          const state = args[0] as vscode.TreeItemCheckboxState;
+          const check = state === vscode.TreeItemCheckboxState.Checked;
+          provider.toggleDirViewed(dirItem.dirPath, check);
+        }
+        // Label click does nothing (just expands/collapses via VSCode)
+      },
+    ),
+
+    vscode.commands.registerCommand(
+      "gitea.prDiffSectionAction",
+      async (...args: unknown[]) => {
+        const provider = PRDiffProvider.getActive();
+        if (!provider) return;
+
+        const sectionItem = (args.length > 1 ? args[1] : args[0]) as PRDiffSectionItem;
+
+        if (args.length > 1 && typeof args[0] === "number") {
+          const state = args[0] as vscode.TreeItemCheckboxState;
+          if (sectionItem.id === "files") {
+            provider.toggleAllViewed(state === vscode.TreeItemCheckboxState.Checked);
+          }
+        }
       },
     ),
 
