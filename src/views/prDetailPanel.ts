@@ -745,7 +745,7 @@ td.lc pre{margin:0;padding:0;font-family:inherit;font-size:inherit;white-space:p
 <body>
 
 <div class="title-row" style="display:flex;align-items:baseline;gap:10px;margin-bottom:4px">
-  <span class="pr-icon" style="font-size:1.18em;color:${pr.merged ? '#2da44e' : pr.state === 'closed' ? '#cf222e' : '#d97706'}">⎔</span>
+  <span class="pr-icon" style="font-size:1.18em;color:${reviewStatus === 'approved' ? '#2da44e' : reviewStatus === 'changes-requested' ? '#cf222e' : '#d97706'}">⎔</span>
   <h1 id="pr-title" style="margin-left:0">#${pr.number}: ${escHtml(pr.title)}</h1>
   <button class="btn sm" onclick="startEdit()">✏️ Edit</button>
 </div>

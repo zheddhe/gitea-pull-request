@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import { GiteaApiClient } from "../api/giteaApiClient";
 import { AuthManager } from "../auth/authManager";
 import { RepoManager, RepoInfo } from "../context/repoManager";
-import type { GiteaPullRequest } from "../api/types";
+import type { GiteaPullRequest, GiteaReview } from "../api/types";
 
 export type PRFilter = "open" | "closed";
 type PRCategory = "all" | "waiting" | "created";
@@ -68,6 +68,7 @@ export class PullRequestItem extends vscode.TreeItem {
   constructor(
     public readonly pr: GiteaPullRequest,
     public readonly repoInfo: RepoInfo,
+    reviewState?: string,
   ) {
     super(
       `#${pr.number} ${pr.title}`,
@@ -80,11 +81,11 @@ export class PullRequestItem extends vscode.TreeItem {
         `By **${pr.user.login}** · ${pr.state} · ${pr.comments} comment(s)\n\n` +
         `\`${pr.head.ref}\` → \`${pr.base.ref}\``,
     );
-    this.iconPath = this.getIcon(pr);
+    this.iconPath = this.getIcon(pr, reviewState);
     this.description = `${pr.user.login} · ${relativeTime(pr.updated_at)}`;
   }
 
-  private getIcon(pr: GiteaPullRequest): vscode.ThemeIcon {
+  private getIcon(pr: GiteaPullRequest, reviewState?: string): vscode.ThemeIcon {
     if (pr.merged) {
       return new vscode.ThemeIcon(
         "git-merge",
@@ -97,11 +98,12 @@ export class PullRequestItem extends vscode.TreeItem {
         new vscode.ThemeColor("gitDecoration.deletedResourceForeground"),
       );
     }
-    // Yellow for open PRs (pending review) — turns green once approved in the detail view
-    return new vscode.ThemeIcon(
-      "git-pull-request",
-      new vscode.ThemeColor("charts.yellow"),
-    );
+    // Color by latest review status: green = approved, red = changes requested, orange = pending
+    const color =
+      reviewState === "APPROVED" ? "charts.green"
+      : reviewState === "REQUEST_CHANGES" ? "charts.red"
+      : "charts.yellow";
+    return new vscode.ThemeIcon("git-pull-request", new vscode.ThemeColor(color));
   }
 }
 
@@ -143,6 +145,7 @@ export class PullRequestProvider implements vscode.TreeDataProvider<vscode.TreeI
 
   private filter: PRFilter = "open";
   private stateMap = new Map<string, RepoPRState>();
+  private reviewStateCache = new Map<string, string | undefined>();
 
   constructor(
     private readonly api: GiteaApiClient,
@@ -160,6 +163,7 @@ export class PullRequestProvider implements vscode.TreeDataProvider<vscode.TreeI
 
   refresh(): void {
     this.stateMap.clear();
+    this.reviewStateCache.clear();
     this._onDidChangeTreeData.fire();
   }
 
@@ -218,9 +222,12 @@ export class PullRequestProvider implements vscode.TreeDataProvider<vscode.TreeI
 
     // ── Category: filtered PRs ─────────────────────────────────────────────
     if (element instanceof CategoryItem) {
-      return element.prs.map(
-        (pr) => new PullRequestItem(pr, element.repoInfo),
-      );
+      return element.prs.map((pr) => {
+        const reviewState = this.reviewStateCache.get(
+          `${element.repoInfo.key}:${pr.number}`,
+        );
+        return new PullRequestItem(pr, element.repoInfo, reviewState);
+      });
     }
 
     // ── PR detail children ────────────────────────────────────────────────
@@ -348,6 +355,8 @@ export class PullRequestProvider implements vscode.TreeDataProvider<vscode.TreeI
       state.prs =
         state.page === 1 ? result.items : [...state.prs, ...result.items];
       state.hasMore = result.hasMore;
+      // Cache review states for icon coloring
+      await this.cacheReviewStates(repoInfo, state.prs);
     } catch (err) {
       vscode.window.showErrorMessage(
         `[${repoInfo.label}] Failed to load PRs: ${(err as Error).message}`,
@@ -358,6 +367,33 @@ export class PullRequestProvider implements vscode.TreeDataProvider<vscode.TreeI
       state.loading = false;
       this._onDidChangeTreeData.fire();
     }
+  }
+
+  /**
+   * Pre-fetch review states for a batch of PRs so the sidebar icons
+   * reflect the latest review status (green = approved, red = changes
+   * requested, orange = pending).
+   */
+  private async cacheReviewStates(
+    repoInfo: RepoInfo,
+    prs: GiteaPullRequest[],
+  ): Promise<void> {
+    const promises = prs.map(async (pr) => {
+      const reviews = await this.api
+        .listReviews(repoInfo, pr.number)
+        .catch(() => [] as GiteaReview[]);
+      const nonStale = reviews
+        .filter((r) => !r.stale)
+        .sort(
+          (a, b) =>
+            new Date(a.submitted_at).getTime() -
+            new Date(b.submitted_at).getTime(),
+        );
+      const latest =
+        nonStale.length > 0 ? nonStale[nonStale.length - 1].state : undefined;
+      this.reviewStateCache.set(`${repoInfo.key}:${pr.number}`, latest);
+    });
+    await Promise.all(promises);
   }
 }
 
