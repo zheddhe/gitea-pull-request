@@ -437,12 +437,10 @@ function renderComments() {
 }
 
 function startEdit() {
-  document.getElementById('view-mode').style.display = 'none';
   document.getElementById('edit-form').style.display = 'block';
 }
 
 function cancelEdit() {
-  document.getElementById('view-mode').style.display = 'block';
   document.getElementById('edit-form').style.display = 'none';
 }
 
