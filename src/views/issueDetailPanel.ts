@@ -377,11 +377,21 @@ input[type="text"]:focus{outline:1px solid var(--focus)}
 </div>
 
 <script>
+window.onerror = function(msg, url, line, col, err) {
+  try {
+    var e = err ? (err.stack || err.message) : msg + ' line ' + line;
+    if (typeof vscode !== 'undefined') {
+      vscode.postMessage({ command: 'debug', body: 'ERROR: ' + e });
+    }
+  } catch(x) {}
+  return false;
+};
 const vscode = acquireVsCodeApi();
 function debugLog(msg) { vscode.postMessage({ command: 'debug', body: msg }); }
-debugLog('Issue webview loaded');
+debugLog('Issue webview loaded - step1');
 const bodyText = ${bodyJson};
 const commentsData = ${commentsJson};
+debugLog('Issue webview loaded - step2');
 let mdMode = { body: 'rendered' };
 
 function esc(s) {
