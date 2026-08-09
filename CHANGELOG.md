@@ -5,6 +5,33 @@ All notable changes to the Gitea VS Code extension will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.0.0-fork1.1.0] - 2026-08-10
+
+### Added
+
+- **Unified PR/Issue panels** — full-width tabbed layout with markdown rendering toggle (rendered/raw) for body + comments
+- **Inline edit form** — edit title, body, and base branch (PR) / title + body (Issue) as a global overlay above tabs
+- **Merge status icon** — colored icon (green/yellow/red) below PR title showing latest review status (Approved/Pending/Changes Requested)
+- **PR category folders** — sidebar sub-folders: All Open, Waiting for my review, Created by me with color-coded icons
+- **`updateIssue()` API method** — PATCH `/repos/{owner}/{repo}/issues/{number}`
+
+### Changed
+
+- **PR tabs restructured**: Details (body + comments), Reviews (with inline file diffs), Commits
+- **Issue tabs restructured**: Details (body + comments), History
+- **Edit form moved above tabs** — visible from any tab, auto-hides after Save
+- **PR diff tree** — native file icons via `resourceUri`, full expand support, approval coloring
+- **Consistent button colors**: blue (edit/open/refresh), green (approve/merge/reopen), red (close/request-changes)
+- **marked library** — replaced hand-rolled markdown parser with `marked` (^18.0.9) for in-webview rendering
+
+### Fixed
+
+- Webview rendering issues: inlined markdown renderer, escaped backticks in marked UMD, switched to string concatenation
+- Shipped `marked` package in VSIX bundle to avoid missing dependency at runtime
+- Nested markdown renderer helpers inside `renderMd` to fix webview crashes
+- Reordered `vscode` acquisition before `window.onerror` in PR webview
+- Added output channel and debug logging for webview troubleshooting
+
 ## [7.0.0-fork1.0.0] - 2026-08-08
 
 ### Added
@@ -114,6 +141,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Repository context detection
 - Authentication via Gitea API tokens
 
+[7.0.0-fork1.1.0]: https://github.com/dj0024javia/gitea-vscode-extension/compare/v7.0.0-fork1.0.0...v7.0.0-fork1.1.0
 [7.0.0-fork1.0.0]: https://github.com/dj0024javia/gitea-vscode-extension/compare/v0.6.0...v7.0.0-fork1.0.0
 [0.6.0]: https://github.com/dj0024javia/gitea-vscode-extension/compare/v0.5.1...v0.6.0
 [0.5.0]: https://github.com/dj0024javia/gitea-vscode-extension/compare/v0.4.0...v0.5.0
