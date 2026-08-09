@@ -68,7 +68,8 @@ A VS Code extension that brings your [Gitea](https://gitea.io) repositories dire
 | --- | --- | --- |
 | **Repository** | Read & Write | Browse PRs, merge, inline review |
 | **Issue** | Read & Write | Browse and manage issues |
-| **Actions** | Read | View CI runs and job logs |
+| **Misc** | Read | Utilitary transversal functions |
+| **User** | Read | Identity basic profile inquiry |
 
 > `Write` on Repository is needed for merge, approve, close/re-open, and inline review. Use `Read` for read-only access.
 
