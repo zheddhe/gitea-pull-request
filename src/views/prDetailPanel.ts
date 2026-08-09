@@ -84,7 +84,6 @@ export class PRDetailPanel {
   private static panels = new Map<number, PRDetailPanel>();
   private readonly panel: vscode.WebviewPanel;
   private disposables: vscode.Disposable[] = [];
-  private markedScriptUri: string = "";
 
   static async show(
     extensionUri: vscode.Uri,
@@ -116,16 +115,6 @@ export class PRDetailPanel {
     private pr: GiteaPullRequest,
   ) {
     this.panel = panel;
-    // Compute marked script URI
-    try {
-      const markedPath = vscode.Uri.joinPath(
-        extensionUri,
-        "node_modules/marked/lib/marked.umd.js",
-      );
-      this.markedScriptUri = panel.webview.asWebviewUri(markedPath).toString();
-    } catch {
-      this.markedScriptUri = "";
-    }
 
     panel.onDidDispose(() => this.dispose(), null, this.disposables);
     panel.webview.onDidReceiveMessage(
@@ -556,15 +545,11 @@ export class PRDetailPanel {
     const reviewCommentsJson = JSON.stringify(reviewComments).replace(/</g, "\\u003c").replace(/>/g, "\\u003e");
     const isOpenJson = JSON.stringify(isOpen);
 
-    const markedScriptTag = this.markedScriptUri
-      ? `<script src="${this.markedScriptUri}"></script>`
-      : "";
-
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: data: vscode-resource:; style-src 'unsafe-inline'; script-src 'unsafe-inline' vscode-resource:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: data: vscode-resource:; style-src 'unsafe-inline'; script-src 'unsafe-inline';">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>PR #${pr.number}</title>
 <style>
@@ -847,7 +832,6 @@ td.lc pre{margin:0;padding:0;font-family:inherit;font-size:inherit;white-space:p
 
 <div id="tab-commits" class="tab-content">${commitsHtml}</div>
 
-${markedScriptTag}
 <script>
 const vscode = acquireVsCodeApi();
 const bodyText = ${bodyJson};
@@ -861,8 +845,34 @@ function esc(s) {
 }
 
 function renderMd(text) {
-  if (typeof marked !== 'undefined') return marked.parse(text);
-  return esc(text);
+  if (!text) return '';
+  var h = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  var bt = String.fromCharCode(96);
+  h = h.replace(new RegExp(bt+bt+bt+'([\\s\\S]*?)'+bt+bt+bt, 'g'), function(_, code) {
+    return '<pre><code>' + code + '</code></pre>';
+  });
+  h = h.replace(new RegExp(bt+'([^'+bt+']+)'+bt, 'g'), '<code>$1</code>');
+  h = h.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1">');
+  h = h.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  h = h.replace(/^(\*{3,}|-{3,}|_{3,})$/gm, '<hr>');
+  h = h.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+  h = h.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+  h = h.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+  h = h.replace(/^&gt; (.+)$/gm, '<blockquote>$1</blockquote>');
+  h = h.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  h = h.replace(/__(.+?)__/g, '<strong>$1</strong>');
+  h = h.replace(/\*(.+?)\*/g, '<em>$1</em>');
+  h = h.replace(/_(.+?)_/g, '<em>$1</em>');
+  h = h.replace(/~~(.+?)~~/g, '<del>$1</del>');
+  h = h.replace(/^[\-\*] (.+)$/gm, '<li>$1</li>');
+  h = h.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
+  h = h.replace(/((?:<li>.*<\/li>\n?)+)/g, '<ul>$1</ul>');
+  h = h.split(/\n\n+/).map(function(block) {
+    if (block.match(/^(<h[1-6]|<ul|<ol|<pre|<blockquote|<hr)/)) return block;
+    return '<p>' + block.replace(/\n/g, '<br>') + '</p>';
+  }).join('\n');
+  h = h.replace(/<\/blockquote>\n<blockquote>/g, '\n');
+  return h;
 }
 
 function post(cmd, extra) {
