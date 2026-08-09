@@ -337,11 +337,7 @@ input[type="text"]:focus{outline:1px solid var(--focus)}
       ? `<div id="body-content" class="desc-body"></div>`
       : `<div class="desc-body" style="color:var(--dim);font-style:italic">(no description)</div>`
   }
-  <div style="margin-top:10px">
-    ${labelsHtml ? `<div style="margin-bottom:6px">${labelsHtml}</div>` : ""}
-    ${assigneesHtml ? `<div class="mi" style="margin-bottom:6px">${assigneesHtml}</div>` : ""}
-    ${milestoneHtml ? `<div class="mi">${milestoneHtml}</div>` : ""}
-  </div>
+
   <div style="margin-top:14px">
     <h2>Comments (${comments.length})</h2>
     <div id="comments-list"></div>
