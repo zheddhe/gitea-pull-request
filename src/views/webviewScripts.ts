@@ -11,8 +11,9 @@ const MARKED_SRC = fs.readFileSync(
 
 /** Return an inline <script> containing the full marked library source */
 export function getMarkedInlineScript(): string {
-  // IMPORTANT: use string concatenation, NOT a template literal.
-  // The marked UMD source contains backticks and ${...} which would be
-  // interpreted as template expressions and crash/corrupt the output.
-  return '<script>' + MARKED_SRC + '</script>';
+  // The marked UMD source contains backticks which would terminate the
+  // outer template literal in renderHtml(). Escape them with \\` so the
+  // template literal passes them through as literal backticks.
+  const safe = MARKED_SRC.replace(/`/g, '\\`');
+  return '<script>' + safe + '</script>';
 }
