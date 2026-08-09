@@ -311,47 +311,44 @@ input[type="text"]:focus{outline:1px solid var(--focus)}
   }
 </div>
 
+<div id="edit-form" class="edit-form" style="display:none">
+  <div class="field">
+    <label>Title</label>
+    <input type="text" id="edit-title" value="${escHtml(issue.title)}">
+  </div>
+  <div class="field">
+    <label>Body</label>
+    <textarea id="edit-body" style="height:120px">${escHtml(issue.body || "")}</textarea>
+  </div>
+  <div class="edit-actions">
+    <button class="btn" onclick="saveEdit()">Save</button>
+    <button class="btn sec" onclick="cancelEdit()">Cancel</button>
+  </div>
+</div>
+
 <div class="tabs">
   <button class="tab active" onclick="showTab('details',this)">Details</button>
-  <button class="tab" onclick="showTab('comments',this)">💬 Comments (${comments.length})</button>
   <button class="tab" onclick="showTab('history',this)">📜 History</button>
 </div>
 
 <div id="tab-details" class="tab-content active">
-  <div id="view-mode">
-    ${
-      issue.body?.trim()
-        ? `<div id="body-content" class="desc-body"></div>`
-        : `<div class="desc-body" style="color:var(--dim);font-style:italic">(no description)</div>`
-    }
-    <div style="margin-top:10px">
-      ${labelsHtml ? `<div style="margin-bottom:6px">${labelsHtml}</div>` : ""}
-      ${assigneesHtml ? `<div class="mi" style="margin-bottom:6px">${assigneesHtml}</div>` : ""}
-      ${milestoneHtml ? `<div class="mi">${milestoneHtml}</div>` : ""}
-    </div>
+  ${
+    issue.body?.trim()
+      ? `<div id="body-content" class="desc-body"></div>`
+      : `<div class="desc-body" style="color:var(--dim);font-style:italic">(no description)</div>`
+  }
+  <div style="margin-top:10px">
+    ${labelsHtml ? `<div style="margin-bottom:6px">${labelsHtml}</div>` : ""}
+    ${assigneesHtml ? `<div class="mi" style="margin-bottom:6px">${assigneesHtml}</div>` : ""}
+    ${milestoneHtml ? `<div class="mi">${milestoneHtml}</div>` : ""}
   </div>
-  <div id="edit-form" class="edit-form" style="display:none">
-    <div class="field">
-      <label>Title</label>
-      <input type="text" id="edit-title" value="${escHtml(issue.title)}">
+  <div style="margin-top:14px">
+    <h2>Comments (${comments.length})</h2>
+    <div id="comments-list"></div>
+    <div class="form-section">
+      <textarea id="commentBody" style="height:60px" placeholder="Write a comment..."></textarea>
+      <div style="margin-top:8px"><button class="btn" onclick="submitComment()">Post Comment</button></div>
     </div>
-    <div class="field">
-      <label>Body</label>
-      <textarea id="edit-body" style="height:120px">${escHtml(issue.body || "")}</textarea>
-    </div>
-    <div class="edit-actions">
-      <button class="btn" onclick="saveEdit()">Save</button>
-      <button class="btn sec" onclick="cancelEdit()">Cancel</button>
-    </div>
-  </div>
-</div>
-
-<div id="tab-comments" class="tab-content">
-  <div id="comments-list"></div>
-  <div class="form-section">
-    <h2>Add a comment</h2>
-    <textarea id="commentBody" style="height:80px" placeholder="Write a comment..."></textarea>
-    <div style="margin-top:8px"><button class="btn" onclick="submitComment()">Post Comment</button></div>
   </div>
 </div>
 

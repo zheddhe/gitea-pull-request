@@ -755,53 +755,59 @@ td.lc pre{margin:0;padding:0;font-family:inherit;font-size:inherit;white-space:p
   ${pr.state === "closed" && !pr.merged ? `<button class="btn success" onclick="post('reopenPR')">↺ Re-open</button>` : ""}
 </div>
 
+<div id="edit-form" class="edit-form" style="display:none">
+  <div class="field">
+    <label>Title</label>
+    <input type="text" id="edit-title" value="${escHtml(pr.title)}">
+  </div>
+  <div class="field">
+    <label>Body</label>
+    <textarea id="edit-body" style="height:120px">${escHtml(pr.body || "")}</textarea>
+  </div>
+  <div class="field">
+    <label>Base Branch</label>
+    <select id="edit-base">${branchOptions}</select>
+  </div>
+  <div class="edit-actions">
+    <button class="btn" onclick="saveEdit()">Save</button>
+    <button class="btn sec" onclick="cancelEdit()">Cancel</button>
+  </div>
+</div>
+
 <div class="tabs">
   <button class="tab active" onclick="showTab('details',this)">Details</button>
   <button class="tab" onclick="showTab('reviews',this)">🔍 Reviews (${reviews.length})</button>
-  <button class="tab" onclick="showTab('comments',this)">💬 Comments (${comments.length})</button>
   <button class="tab" onclick="showTab('commits',this)">📦 Commits (${commits.length})</button>
 </div>
 
 <div id="tab-details" class="tab-content active">
-  <div id="view-mode">
-    ${
-      pr.body?.trim()
-        ? `<div id="body-content" class="desc-body"></div>`
-        : `<div class="desc-body" style="color:var(--dim);font-style:italic">(no description)</div>`
-    }
-    <div class="branch-row" style="margin-top:10px">
-      <span class="dim">Base:</span>
-      <span class="branch-tag">${escHtml(pr.base.ref)}</span>
-      <span class="dim">←</span>
-      <span class="branch-tag">${escHtml(pr.head.ref)}</span>
-    </div>
-    ${
-      pr.commits != null || pr.additions != null
-        ? `<div class="stats-row">
+  ${
+    pr.body?.trim()
+      ? `<div id="body-content" class="desc-body"></div>`
+      : `<div class="desc-body" style="color:var(--dim);font-style:italic">(no description)</div>`
+  }
+  <div class="branch-row" style="margin-top:10px">
+    <span class="dim">Base:</span>
+    <span class="branch-tag">${escHtml(pr.base.ref)}</span>
+    <span class="dim">←</span>
+    <span class="branch-tag">${escHtml(pr.head.ref)}</span>
+  </div>
+  ${
+    pr.commits != null || pr.additions != null
+      ? `<div class="stats-row">
   ${pr.commits != null ? `<div class="stat"><span class="stat-lbl">Commits</span><span class="stat-val">${pr.commits}</span></div>` : ""}
   ${pr.additions != null ? `<div class="stat"><span class="stat-lbl">Additions</span><span class="stat-val" style="color:#2da44e">+${pr.additions}</span></div>` : ""}
   ${pr.deletions != null ? `<div class="stat"><span class="stat-lbl">Deletions</span><span class="stat-val" style="color:#cf222e">-${pr.deletions}</span></div>` : ""}
   ${pr.changed_files != null ? `<div class="stat"><span class="stat-lbl">Files</span><span class="stat-val">${pr.changed_files}</span></div>` : ""}
 </div>`
-        : ""
-    }
-  </div>
-  <div id="edit-form" class="edit-form" style="display:none">
-    <div class="field">
-      <label>Title</label>
-      <input type="text" id="edit-title" value="${escHtml(pr.title)}">
-    </div>
-    <div class="field">
-      <label>Body</label>
-      <textarea id="edit-body" style="height:120px">${escHtml(pr.body || "")}</textarea>
-    </div>
-    <div class="field">
-      <label>Base Branch</label>
-      <select id="edit-base">${branchOptions}</select>
-    </div>
-    <div class="edit-actions">
-      <button class="btn" onclick="saveEdit()">Save</button>
-      <button class="btn sec" onclick="cancelEdit()">Cancel</button>
+      : ""
+  }
+  <div style="margin-top:14px">
+    <h2>Comments (${comments.length})</h2>
+    <div id="comments-list"></div>
+    <div class="form-section">
+      <textarea id="commentBody" style="height:60px" placeholder="Write a comment..."></textarea>
+      <div style="margin-top:8px"><button class="btn" onclick="submitComment()">Post Comment</button></div>
     </div>
   </div>
 </div>
@@ -824,15 +830,6 @@ td.lc pre{margin:0;padding:0;font-family:inherit;font-size:inherit;white-space:p
   ${filesHtml}
   <h2 style="margin-top:16px">Submitted Reviews</h2>
   ${reviewsHtml}
-</div>
-
-<div id="tab-comments" class="tab-content">
-  <div id="comments-list"></div>
-  <div class="form-section">
-    <h2>Add a comment</h2>
-    <textarea id="commentBody" style="height:80px" placeholder="Write a comment..."></textarea>
-    <div style="margin-top:8px"><button class="btn" onclick="submitComment()">Post Comment</button></div>
-  </div>
 </div>
 
 <div id="tab-commits" class="tab-content">${commitsHtml}</div>
@@ -907,12 +904,12 @@ function renderComments() {
 }
 
 function startEdit() {
-  document.getElementById('view-mode').style.display = 'none';
+  debugLog('startEdit');
   document.getElementById('edit-form').style.display = 'block';
 }
 
 function cancelEdit() {
-  document.getElementById('view-mode').style.display = 'block';
+  debugLog('cancelEdit');
   document.getElementById('edit-form').style.display = 'none';
 }
 
@@ -921,6 +918,7 @@ function saveEdit() {
   var body = document.getElementById('edit-body').value;
   var base = document.getElementById('edit-base').value;
   post('editPR', { title: title, body: body, base: base });
+  document.getElementById('edit-form').style.display = 'none';
 }
 
 function submitComment() {
