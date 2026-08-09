@@ -9,6 +9,7 @@ import type {
   GiteaCommit,
   GiteaReviewComment,
 } from "../api/types";
+import { log } from "../debug/outputChannel";
 
 // ── Raw diff parser ──────────────────────────────────────────────────────────
 
@@ -176,6 +177,12 @@ export class PRDetailPanel {
           this.repoInfo,
         );
         break;
+      case "debug":
+        log("PR webview: " + (msg.body as string));
+        break;
+      default:
+        log("PR unknown message: " + msg.command);
+        break;
     }
   }
 
@@ -316,6 +323,7 @@ export class PRDetailPanel {
   }
 
   async update(pr: GiteaPullRequest): Promise<void> {
+    log("PR update: #" + pr.number);
     this.panel.webview.postMessage({ command: "loading" });
     try {
       const [comments, reviews, files, commits, reviewComments, rawDiff, branches] =
@@ -834,6 +842,8 @@ td.lc pre{margin:0;padding:0;font-family:inherit;font-size:inherit;white-space:p
 
 <script>
 const vscode = acquireVsCodeApi();
+function debugLog(msg) { vscode.postMessage({ command: 'debug', body: msg }); }
+debugLog('PR webview loaded');
 const bodyText = ${bodyJson};
 const commentsData = ${commentsJson};
 let pendingComments = [];
@@ -848,30 +858,56 @@ function renderMd(text) {
   if (!text) return '';
   var h = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   var bt = String.fromCharCode(96);
-  h = h.replace(new RegExp(bt+bt+bt+'([\\s\\S]*?)'+bt+bt+bt, 'g'), function(_, code) {
-    return '<pre><code>' + code + '</code></pre>';
-  });
-  h = h.replace(new RegExp(bt+'([^'+bt+']+)'+bt, 'g'), '<code>$1</code>');
-  h = h.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1">');
-  h = h.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
-  h = h.replace(/^(\*{3,}|-{3,}|_{3,})$/gm, '<hr>');
+  var lb = String.fromCharCode(91);
+  var rb = String.fromCharCode(93);
+  var lp = String.fromCharCode(40);
+  var rp = String.fromCharCode(41);
+  var ast = String.fromCharCode(42);
+  var dash = String.fromCharCode(45);
+  var us = String.fromCharCode(95);
+  var tilde = String.fromCharCode(126);
+  var bs = String.fromCharCode(92);
+  var nl = String.fromCharCode(10);
+  var bt3 = bt+bt+bt;
+  var parts = h.split(bt3);
+  h = parts.reduce(function(acc, part, i) {
+    if (i % 2 === 0) return acc + part;
+    var idx = part.indexOf(bt3);
+    if (idx >= 0) {
+      return acc + '<pre><code>' + part.slice(0, idx) + '</code></pre>' + part.slice(idx + 3);
+    }
+    return acc + part;
+  }, '');
+  parts = h.split(bt);
+  h = parts.reduce(function(acc, part, i) {
+    if (i % 2 === 0) return acc + part;
+    var idx = part.indexOf(bt);
+    if (idx >= 0) {
+      return acc + '<code>' + part.slice(0, idx) + '</code>' + part.slice(idx + 1);
+    }
+    return acc + part;
+  }, '');
+  h = h.replace(new RegExp('!' + bs + lb + '([^' + bs + rb + ']*)' + bs + rb + bs + lp + '([^' + bs + rp + ']+)' + bs + rp, 'g'), '<img src="$2" alt="$1">');
+  h = h.replace(new RegExp(bs + lb + '([^' + bs + rb + ']+)' + bs + rb + bs + lp + '([^' + bs + rp + ']+)' + bs + rp, 'g'), '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  h = h.replace(new RegExp('^(' + bs + ast + '{3,}|' + dash + '{3,}|' + us + '{3,})$', 'gm'), '<hr>');
   h = h.replace(/^### (.+)$/gm, '<h3>$1</h3>');
   h = h.replace(/^## (.+)$/gm, '<h2>$1</h2>');
   h = h.replace(/^# (.+)$/gm, '<h1>$1</h1>');
   h = h.replace(/^&gt; (.+)$/gm, '<blockquote>$1</blockquote>');
-  h = h.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-  h = h.replace(/__(.+?)__/g, '<strong>$1</strong>');
-  h = h.replace(/\*(.+?)\*/g, '<em>$1</em>');
-  h = h.replace(/_(.+?)_/g, '<em>$1</em>');
-  h = h.replace(/~~(.+?)~~/g, '<del>$1</del>');
-  h = h.replace(/^[\-\*] (.+)$/gm, '<li>$1</li>');
-  h = h.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
-  h = h.replace(/((?:<li>.*<\/li>\n?)+)/g, '<ul>$1</ul>');
-  h = h.split(/\n\n+/).map(function(block) {
+  h = h.replace(new RegExp(bs + ast + bs + ast + '(.+?)' + bs + ast + bs + ast, 'g'), '<strong>$1</strong>');
+  h = h.replace(new RegExp(us + us + '(.+?)' + us + us, 'g'), '<strong>$1</strong>');
+  h = h.replace(new RegExp(bs + ast + '(.+?)' + bs + ast, 'g'), '<em>$1</em>');
+  h = h.replace(new RegExp(us + '(.+?)' + us, 'g'), '<em>$1</em>');
+  h = h.replace(new RegExp(tilde + tilde + '(.+?)' + tilde + tilde, 'g'), '<del>$1</del>');
+  h = h.replace(new RegExp('^[' + bs + dash + bs + ast + '] (.+)$', 'gm'), '<li>$1</li>');
+  h = h.replace(new RegExp('^' + bs + 'd+' + bs + '. (.+)$', 'gm'), '<li>$1</li>');
+  h = h.replace(new RegExp('((?:<li>.*<' + bs + '/li>' + bs + 'n?)+)', 'g'), '<ul>$1</ul>');
+  parts = h.split(new RegExp(bs + 'n' + bs + 'n+'));
+  h = parts.map(function(block) {
     if (block.match(/^(<h[1-6]|<ul|<ol|<pre|<blockquote|<hr)/)) return block;
-    return '<p>' + block.replace(/\n/g, '<br>') + '</p>';
-  }).join('\n');
-  h = h.replace(/<\/blockquote>\n<blockquote>/g, '\n');
+    return '<p>' + block.replace(new RegExp(bs + 'n', 'g'), '<br>') + '</p>';
+  }).join(nl);
+  h = h.replace(new RegExp('<' + bs + '/blockquote>' + bs + 'n<blockquote>', 'g'), nl);
   return h;
 }
 
@@ -896,48 +932,54 @@ function toggleMd(id) {
 }
 
 function renderBody() {
-  var el = document.getElementById('body-content');
-  var btn = document.getElementById('body-toggle');
-  if (!el) return;
-  if (mdMode.body === 'rendered') {
-    el.innerHTML = renderMd(bodyText);
-    if (btn) btn.textContent = 'Raw';
-  } else {
-    el.innerHTML = '<pre style="margin:0;white-space:pre-wrap">' + esc(bodyText) + '</pre>';
-    if (btn) btn.textContent = 'Rendered';
-  }
+  try {
+    var el = document.getElementById('body-content');
+    var btn = document.getElementById('body-toggle');
+    if (!el) return;
+    if (mdMode.body === 'rendered') {
+      el.innerHTML = renderMd(bodyText);
+      if (btn) btn.textContent = 'Raw';
+    } else {
+      el.innerHTML = '<pre style="margin:0;white-space:pre-wrap">' + esc(bodyText) + '</pre>';
+      if (btn) btn.textContent = 'Rendered';
+    }
+    debugLog('renderBody done');
+  } catch(e) { debugLog('renderBody error: ' + e.message); }
 }
 
 function renderComments() {
-  var container = document.getElementById('comments-list');
-  if (!container) return;
-  if (commentsData.length === 0) {
-    container.innerHTML = '<p class="empty">No comments yet.</p>';
-    return;
-  }
-  var html = '';
-  for (var i = 0; i < commentsData.length; i++) {
-    var c = commentsData[i];
-    var cid = 'comment-' + c.id;
-    var mode = mdMode[cid] || 'rendered';
-    var bodyHtml;
-    if (mode === 'rendered') {
-      bodyHtml = renderMd(c.body);
-    } else {
-      bodyHtml = '<pre style="margin:0;white-space:pre-wrap">' + esc(c.body) + '</pre>';
+  try {
+    var container = document.getElementById('comments-list');
+    if (!container) return;
+    if (commentsData.length === 0) {
+      container.innerHTML = '<p class="empty">No comments yet.</p>';
+      return;
     }
-    var toggleText = mode === 'rendered' ? 'Raw' : 'Rendered';
-    html += '<div class="comment" id="' + cid + '">' +
-      '<div class="comment-hdr">' +
-      '<img src="' + esc(c.user.avatar_url) + '" class="avatar" alt="">' +
-      '<strong>' + esc(c.user.login) + '</strong>' +
-      '<span class="time">' + new Date(c.created_at).toLocaleString() + '</span>' +
-      '<button class="btn sec sm" onclick="toggleMd(\'' + cid + '\')">' + toggleText + '</button>' +
-      '</div>' +
-      '<div class="comment-body">' + bodyHtml + '</div>' +
-      '</div>';
-  }
-  container.innerHTML = html;
+    var html = '';
+    for (var i = 0; i < commentsData.length; i++) {
+      var c = commentsData[i];
+      var cid = 'comment-' + c.id;
+      var mode = mdMode[cid] || 'rendered';
+      var bodyHtml;
+      if (mode === 'rendered') {
+        bodyHtml = renderMd(c.body);
+      } else {
+        bodyHtml = '<pre style="margin:0;white-space:pre-wrap">' + esc(c.body) + '</pre>';
+      }
+      var toggleText = mode === 'rendered' ? 'Raw' : 'Rendered';
+      html += '<div class="comment" id="' + cid + '">' +
+        '<div class="comment-hdr">' +
+        '<img src="' + esc(c.user.avatar_url) + '" class="avatar" alt="">' +
+        '<strong>' + esc(c.user.login) + '</strong>' +
+        '<span class="time">' + new Date(c.created_at).toLocaleString() + '</span>' +
+        '<button class="btn sec sm" onclick="toggleMd(\'' + cid + '\')">' + toggleText + '</button>' +
+        '</div>' +
+        '<div class="comment-body">' + bodyHtml + '</div>' +
+        '</div>';
+    }
+    container.innerHTML = html;
+    debugLog('renderComments done');
+  } catch(e) { debugLog('renderComments error: ' + e.message); }
 }
 
 function startEdit() {
@@ -1044,10 +1086,13 @@ function submitReview(event) {
 }
 
 function renderReviews() {
-  document.querySelectorAll('.review-body').forEach(function(el) {
-    var raw = el.getAttribute('data-raw');
-    if (raw) el.innerHTML = renderMd(raw);
-  });
+  try {
+    document.querySelectorAll('.review-body').forEach(function(el) {
+      var raw = el.getAttribute('data-raw');
+      if (raw) el.innerHTML = renderMd(raw);
+    });
+    debugLog('renderReviews done');
+  } catch(e) { debugLog('renderReviews error: ' + e.message); }
 }
 
 window.addEventListener("message", function(event) {
