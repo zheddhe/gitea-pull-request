@@ -10,6 +10,7 @@ import type {
   GiteaReviewComment,
 } from "../api/types";
 import { log } from "../debug/outputChannel";
+import { getMarkedScriptTag } from "./webviewScripts";
 
 // ── Raw diff parser ──────────────────────────────────────────────────────────
 
@@ -557,9 +558,10 @@ export class PRDetailPanel {
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: data: vscode-resource:; style-src 'unsafe-inline'; script-src 'unsafe-inline';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: data: vscode-resource:; style-src 'unsafe-inline'; script-src 'unsafe-inline' vscode-resource:;">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>PR #${pr.number}</title>
+${getMarkedScriptTag(this.extensionUri, this.panel.webview)}
 <style>
 :root {
   --bg: var(--vscode-editor-background,#1e1e1e);
@@ -864,123 +866,7 @@ function esc(s) {
 
 function renderMd(text) {
   if (!text) return '';
-  var h = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  var bt = String.fromCharCode(96);
-  var bt3 = bt+bt+bt;
-  var parts = h.split(bt3);
-  h = parts.reduce(function(acc, part, i) {
-    if (i % 2 === 0) return acc + part;
-    var idx = part.indexOf(bt3);
-    if (idx >= 0) return acc + '<pre><code>' + part.slice(0, idx) + '</code></pre>' + part.slice(idx + 3);
-    return acc + part;
-  }, '');
-  parts = h.split(bt);
-  h = parts.reduce(function(acc, part, i) {
-    if (i % 2 === 0) return acc + part;
-    var idx = part.indexOf(bt);
-    if (idx >= 0) return acc + '<code>' + part.slice(0, idx) + '</code>' + part.slice(idx + 1);
-    return acc + part;
-  }, '');
-  h = _replaceImg(h);
-  h = _replaceLinks(h);
-  var lines = h.split('\n');
-  var result = [];
-  var inList = false;
-  for (var i = 0; i < lines.length; i++) {
-    var line = lines[i];
-    if (line.indexOf('### ') === 0) { _closeList(); result.push('<h3>' + _applyInline(line.slice(4)) + '</h3>'); continue; }
-    if (line.indexOf('## ') === 0) { _closeList(); result.push('<h2>' + _applyInline(line.slice(3)) + '</h2>'); continue; }
-    if (line.indexOf('# ') === 0) { _closeList(); result.push('<h1>' + _applyInline(line.slice(2)) + '</h1>'); continue; }
-    if (_isHr(line)) { _closeList(); result.push('<hr>'); continue; }
-    if (line.indexOf('&gt; ') === 0 || line.indexOf('&gt;') === 0) {
-      _closeList();
-      result.push('<blockquote>' + _applyInline(line.slice(line.indexOf(' ') + 1)) + '</blockquote>');
-      continue;
-    }
-    if ((line[0] === '-' || line[0] === '*') && line[1] === ' ') {
-      if (!inList) { result.push('<ul>'); inList = true; }
-      result.push('<li>' + _applyInline(line.slice(2)) + '</li>');
-      continue;
-    }
-    if (_isOrderedList(line)) {
-      if (!inList) { result.push('<ul>'); inList = true; }
-      var dotIdx = line.indexOf('. ');
-      result.push('<li>' + _applyInline(line.slice(dotIdx + 2)) + '</li>');
-      continue;
-    }
-    _closeList();
-    if (line.trim() === '') { result.push(''); }
-    else { result.push('<p>' + _applyInline(line) + '</p>'); }
-  }
-  _closeList();
-  function _closeList() { if (inList) { result.push('</ul>'); inList = false; } }
-  function _applyInline(s) {
-    s = _replaceDelim(s, '**', '<strong>', '</strong>');
-    s = _replaceDelim(s, '__', '<strong>', '</strong>');
-    s = _replaceDelim(s, '*', '<em>', '</em>');
-    s = _replaceDelim(s, '_', '<em>', '</em>');
-    s = _replaceDelim(s, '~~', '<del>', '</del>');
-    return s;
-  }
-  function _replaceDelim(s, delim, open, close) {
-    var dlen = delim.length;
-    var r = '';
-    var j = 0;
-    while (j < s.length) {
-      var idx = s.indexOf(delim, j);
-      if (idx === -1) { r += s.slice(j); break; }
-      r += s.slice(j, idx);
-      var endIdx = s.indexOf(delim, idx + dlen);
-      if (endIdx === -1) { r += s.slice(idx); j = s.length; continue; }
-      r += open + s.slice(idx + dlen, endIdx) + close;
-      j = endIdx + dlen;
-    }
-    return r;
-  }
-  function _isHr(line) {
-    var trimmed = line.replace(/^ +| +$/g, '');
-    if (trimmed.length < 3) return false;
-    var ch = trimmed[0];
-    if (ch !== '*' && ch !== '-' && ch !== '_') return false;
-    for (var k = 1; k < trimmed.length; k++) { if (trimmed[k] !== ch) return false; }
-    return true;
-  }
-  function _isOrderedList(line) {
-    if (line.length < 3) return false;
-    if (line[0] < '0' || line[0] > '9') return false;
-    var m = 1;
-    while (m < line.length && line[m] >= '0' && line[m] <= '9') m++;
-    return line[m] === '.' && line[m+1] === ' ';
-  }
-  function _replaceImg(s) {
-    var r = '';
-    var j = 0;
-    while (j < s.length) {
-      if (s[j] !== '!' || s[j+1] !== '[') { r += s[j]; j++; continue; }
-      var be = s.indexOf(']', j + 2);
-      if (be === -1 || s[be+1] !== '(') { r += s[j]; j++; continue; }
-      var pe = s.indexOf(')', be + 2);
-      if (pe === -1) { r += s[j]; j++; continue; }
-      r += '<img src="' + s.slice(be + 2, pe) + '" alt="' + s.slice(j + 2, be) + '">';
-      j = pe + 1;
-    }
-    return r;
-  }
-  function _replaceLinks(s) {
-    var r = '';
-    var j = 0;
-    while (j < s.length) {
-      if (s[j] !== '[') { r += s[j]; j++; continue; }
-      var be = s.indexOf(']', j + 1);
-      if (be === -1 || s[be+1] !== '(') { r += s[j]; j++; continue; }
-      var pe = s.indexOf(')', be + 2);
-      if (pe === -1) { r += s[j]; j++; continue; }
-      r += '<a href="' + s.slice(be + 2, pe) + '" target="_blank" rel="noopener">' + s.slice(j + 1, be) + '</a>';
-      j = pe + 1;
-    }
-    return r;
-  }
-  return result.join('\n');
+  return marked.parse(text);
 }
 
 function post(cmd, extra) {
