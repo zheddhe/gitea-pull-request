@@ -1,4 +1,7 @@
 import * as vscode from "vscode";
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
 import { GiteaApiClient } from "../api/giteaApiClient";
 import { RepoManager, RepoInfo } from "../context/repoManager";
 import { AuthManager } from "../auth/authManager";
@@ -7,6 +10,12 @@ import {
   PullRequestItem,
 } from "../views/pullRequestProvider";
 import { PRDetailPanel } from "../views/prDetailPanel";
+import {
+  PRDiffProvider,
+  PRDiffFileItem,
+  PRDiffDirItem,
+  PRDiffSectionItem,
+} from "../views/prDiffProvider";
 import type { GiteaPullRequest } from "../api/types";
 
 export function registerPRCommands(
@@ -35,15 +44,97 @@ export function registerPRCommands(
 
     vscode.commands.registerCommand(
       "gitea.viewPRDetail",
-      async (pr: GiteaPullRequest, repoInfo: RepoInfo) => {
-        await PRDetailPanel.show(context.extensionUri, api, repoInfo, pr);
+      async (item: PullRequestItem) => {
+        await PRDetailPanel.show(
+          context.extensionUri,
+          api,
+          item.repoInfo,
+          item.pr,
+        );
+      },
+    ),
+
+    vscode.commands.registerCommand(
+      "gitea.openPRDiff",
+      async (item: PullRequestItem) => {
+        await PRDiffProvider.show(api, item.repoInfo, item.pr);
+      },
+    ),
+
+    vscode.commands.registerCommand(
+      "gitea.openFileDiff",
+      async (repoInfo: RepoInfo, pr: GiteaPullRequest, filename: string) => {
+        await openFileDiff(api, repoInfo, pr, filename);
+      },
+    ),
+
+    vscode.commands.registerCommand(
+      "gitea.prDiffFileAction",
+      async (...args: unknown[]) => {
+        const provider = PRDiffProvider.getActive();
+        if (!provider) return;
+
+        // args[0] is either TreeItemCheckboxState (number) or the PRDiffFileItem
+        // args[1] is the PRDiffFileItem when checkbox is clicked
+        const fileItem = (args.length > 1 ? args[1] : args[0]) as PRDiffFileItem;
+
+        if (args.length > 1 && typeof args[0] === "number") {
+          // Checkbox toggle
+          const state = args[0] as vscode.TreeItemCheckboxState;
+          if (state === vscode.TreeItemCheckboxState.Checked) {
+            provider.markViewed(fileItem.filename);
+          } else {
+            provider.markUnviewed(fileItem.filename);
+          }
+        } else {
+          // Label click — open diff
+          await openFileDiff(provider.api, fileItem.repoInfo, fileItem.pr, fileItem.filename);
+        }
+      },
+    ),
+
+    vscode.commands.registerCommand(
+      "gitea.prDiffDirAction",
+      async (...args: unknown[]) => {
+        const provider = PRDiffProvider.getActive();
+        if (!provider) return;
+
+        const dirItem = (args.length > 1 ? args[1] : args[0]) as PRDiffDirItem;
+
+        if (args.length > 1 && typeof args[0] === "number") {
+          // Checkbox toggle
+          const state = args[0] as vscode.TreeItemCheckboxState;
+          const check = state === vscode.TreeItemCheckboxState.Checked;
+          provider.toggleDirViewed(dirItem.dirPath, check);
+        }
+        // Label click does nothing (just expands/collapses via VSCode)
+      },
+    ),
+
+    vscode.commands.registerCommand(
+      "gitea.prDiffSectionAction",
+      async (...args: unknown[]) => {
+        const provider = PRDiffProvider.getActive();
+        if (!provider) return;
+
+        const sectionItem = (args.length > 1 ? args[1] : args[0]) as PRDiffSectionItem;
+
+        if (args.length > 1 && typeof args[0] === "number") {
+          const state = args[0] as vscode.TreeItemCheckboxState;
+          if (sectionItem.id === "files") {
+            provider.toggleAllViewed(state === vscode.TreeItemCheckboxState.Checked);
+          }
+        }
       },
     ),
 
     vscode.commands.registerCommand(
       "gitea.checkoutPR",
-      async (pr: GiteaPullRequest, repoInfo?: RepoInfo) => {
-        await checkoutPR(pr, repoInfo);
+      async (arg: PullRequestItem | GiteaPullRequest, repoInfo?: RepoInfo) => {
+        const pr = arg instanceof PullRequestItem ? arg.pr : arg;
+        const ri =
+          arg instanceof PullRequestItem ? arg.repoInfo : repoInfo;
+        await checkoutPR(pr, ri);
       },
     ),
 
@@ -244,34 +335,35 @@ async function createPR(
     (await vscode.window.showInputBox({ prompt: "Description (optional)" })) ??
     "";
 
-  await vscode.window.withProgress(
-    {
-      location: vscode.ProgressLocation.Notification,
-      title: "Creating pull request...",
-    },
-    async () => {
-      try {
-        const pr = await api.createPullRequest(repoInfo, {
+  let pr: { number: number; html_url: string } | undefined;
+  try {
+    pr = await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: "Creating pull request...",
+      },
+      async () => {
+        return api.createPullRequest(repoInfo, {
           title,
           body,
           head,
           base,
         });
-        const action = await vscode.window.showInformationMessage(
-          `PR #${pr.number} created.`,
-          "Open in Browser",
-        );
-        if (action === "Open in Browser") {
-          await vscode.env.openExternal(vscode.Uri.parse(pr.html_url));
-        }
-        prProvider.refresh();
-      } catch (err) {
-        vscode.window.showErrorMessage(
-          `Failed to create PR: ${(err as Error).message}`,
-        );
-      }
-    },
-  );
+      },
+    );
+    const action = await vscode.window.showInformationMessage(
+      `PR #${pr.number} created.`,
+      "Open in Browser",
+    );
+    if (action === "Open in Browser") {
+      await vscode.env.openExternal(vscode.Uri.parse(pr.html_url));
+    }
+    prProvider.refresh();
+  } catch (err) {
+    vscode.window.showErrorMessage(
+      `Failed to create PR: ${(err as Error).message}`,
+    );
+  }
 }
 
 async function mergePR(
@@ -299,27 +391,27 @@ async function mergePR(
   if (confirm !== "Merge") {
     return;
   }
-  await vscode.window.withProgress(
-    {
-      location: vscode.ProgressLocation.Notification,
-      title: `Merging PR #${pr.number}...`,
-    },
-    async () => {
-      try {
+  try {
+    await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: `Merging PR #${pr.number}...`,
+      },
+      async () => {
         await api.mergePullRequest(
           repoInfo,
           pr.number,
           method.value as "merge" | "rebase" | "squash",
         );
-        vscode.window.showInformationMessage(`PR #${pr.number} merged.`);
-        prProvider.refresh();
-      } catch (err) {
-        vscode.window.showErrorMessage(
-          `Merge failed: ${(err as Error).message}`,
-        );
-      }
-    },
-  );
+      },
+    );
+    vscode.window.showInformationMessage(`PR #${pr.number} merged.`);
+    prProvider.refresh();
+  } catch (err) {
+    vscode.window.showErrorMessage(
+      `Merge failed: ${(err as Error).message}`,
+    );
+  }
 }
 
 async function reviewPR(
@@ -333,23 +425,23 @@ async function reviewPR(
     (await vscode.window.showInputBox({
       prompt: "Review comment (optional)",
     })) ?? "";
-  await vscode.window.withProgress(
-    {
-      location: vscode.ProgressLocation.Notification,
-      title: `Submitting review...`,
-    },
-    async () => {
-      try {
+  try {
+    await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: `Submitting review...`,
+      },
+      async () => {
         await api.createReview(repoInfo, pr.number, event, body);
-        vscode.window.showInformationMessage(`Review submitted: ${event}`);
-        prProvider.refresh();
-      } catch (err) {
-        vscode.window.showErrorMessage(
-          `Review failed: ${(err as Error).message}`,
-        );
-      }
-    },
-  );
+      },
+    );
+    vscode.window.showInformationMessage(`Review submitted: ${event}`);
+    prProvider.refresh();
+  } catch (err) {
+    vscode.window.showErrorMessage(
+      `Review failed: ${(err as Error).message}`,
+    );
+  }
 }
 
 async function addComment(
@@ -365,21 +457,73 @@ async function addComment(
   if (!body) {
     return;
   }
-  await vscode.window.withProgress(
-    {
-      location: vscode.ProgressLocation.Notification,
-      title: "Posting comment...",
-    },
-    async () => {
-      try {
+  try {
+    await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: "Posting comment...",
+      },
+      async () => {
         await api.addPRComment(repoInfo, prNumber, body);
-        vscode.window.showInformationMessage("Comment posted.");
-        prProvider.refresh();
-      } catch (err) {
-        vscode.window.showErrorMessage(
-          `Failed to post comment: ${(err as Error).message}`,
-        );
-      }
-    },
-  );
+      },
+    );
+    vscode.window.showInformationMessage("Comment posted.");
+    prProvider.refresh();
+  } catch (err) {
+    vscode.window.showErrorMessage(
+      `Failed to post comment: ${(err as Error).message}`,
+    );
+  }
+}
+
+async function openFileDiff(
+  api: GiteaApiClient,
+  repoInfo: RepoInfo,
+  pr: GiteaPullRequest,
+  filename: string,
+): Promise<void> {
+  const tmpDir = path.join(os.tmpdir(), `gitea-diff-${repoInfo.key.replace(/[^a-zA-Z0-9]/g, "_")}-${pr.number}-${Date.now()}`);
+
+  try {
+    const [baseContent, headContent] = await Promise.allSettled([
+      api.getFileContents(repoInfo, pr.base.ref, filename),
+      api.getFileContents(repoInfo, pr.head.ref, filename),
+    ]);
+
+    // Handle cases where the file doesn't exist on one branch (added/deleted)
+    const baseText = baseContent.status === "fulfilled" ? baseContent.value : "";
+    const headText = headContent.status === "fulfilled" ? headContent.value : "";
+
+    // Check if either side looks binary (contains null bytes)
+    const hasNullByte = (s: string) => s.includes("\0");
+    if (hasNullByte(baseText) || hasNullByte(headText)) {
+      vscode.window.showInformationMessage(`File '${filename}' appears to be binary — skipping diff.`);
+      return;
+    }
+
+    const baseFile = path.join(tmpDir, ".base", filename);
+    const headFile = path.join(tmpDir, ".head", filename);
+
+    fs.mkdirSync(path.dirname(baseFile), { recursive: true });
+    fs.mkdirSync(path.dirname(headFile), { recursive: true });
+    fs.writeFileSync(baseFile, baseText);
+    fs.writeFileSync(headFile, headText);
+
+    const baseUri = vscode.Uri.file(baseFile);
+    const headUri = vscode.Uri.file(headFile);
+
+    const title = filename === path.basename(filename)
+      ? `${filename} (${pr.head.ref} → ${pr.base.ref})`
+      : `PR #${pr.number} — ${filename}`;
+
+    await vscode.commands.executeCommand(
+      "vscode.diff",
+      baseUri,
+      headUri,
+      title,
+      { preview: true, preserveFocus: false },
+    );
+  } catch (err) {
+    vscode.window.showErrorMessage(`Failed to open diff for '${filename}': ${(err as Error).message}`);
+  }
 }

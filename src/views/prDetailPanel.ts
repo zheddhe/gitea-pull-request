@@ -9,6 +9,7 @@ import type {
   GiteaCommit,
   GiteaReviewComment,
 } from "../api/types";
+import { log } from "../debug/outputChannel";
 
 // ── Raw diff parser ──────────────────────────────────────────────────────────
 
@@ -17,14 +18,12 @@ function parseRawDiff(raw: string): Map<string, string> {
   const map = new Map<string, string>();
   const fileBlocks = raw.split(/^diff --git /m).slice(1);
   for (const block of fileBlocks) {
-    // Extract the b/ filename from the first line
     const firstLine = block.split("\n")[0];
     const mB = firstLine.match(/ b\/(.+)$/);
     if (!mB) {
       continue;
     }
     const filename = mB[1].trim();
-    // Extract everything from the first @@ header onwards
     const hunkIdx = block.indexOf("\n@@");
     const patch = hunkIdx >= 0 ? block.slice(hunkIdx + 1) : "";
     map.set(filename, patch);
@@ -117,6 +116,7 @@ export class PRDetailPanel {
     private pr: GiteaPullRequest,
   ) {
     this.panel = panel;
+
     panel.onDidDispose(() => this.dispose(), null, this.disposables);
     panel.webview.onDidReceiveMessage(
       (msg) => this.handleMessage(msg),
@@ -156,11 +156,12 @@ export class PRDetailPanel {
       case "reopenPR":
         await this.setPRState("open");
         break;
-      case "editTitle":
-        await this.editTitle((msg.title as string) ?? "");
-        break;
-      case "changeBase":
-        await this.changeBase();
+      case "editPR":
+        await this.editPR(
+          (msg.title as string) ?? "",
+          (msg.body as string) ?? "",
+          msg.base as string | undefined,
+        );
         break;
       case "refresh":
         this.pr = await this.api.getPullRequest(this.repoInfo, this.pr.number);
@@ -176,6 +177,44 @@ export class PRDetailPanel {
           this.repoInfo,
         );
         break;
+      case "debug":
+        log("PR webview: " + (msg.body as string));
+        break;
+      default:
+        log("PR unknown message: " + msg.command);
+        break;
+    }
+  }
+
+  private async editPR(
+    title: string,
+    body: string,
+    base?: string,
+  ): Promise<void> {
+    if (!title.trim()) {
+      vscode.window.showWarningMessage("Title cannot be empty.");
+      return;
+    }
+    const params: { title?: string; body?: string; base?: string } = {
+      title: title.trim(),
+      body,
+    };
+    if (base && base !== this.pr.base.ref) {
+      params.base = base;
+    }
+    try {
+      this.pr = await this.api.updatePullRequest(
+        this.repoInfo,
+        this.pr.number,
+        params,
+      );
+      this.panel.title = `PR #${this.pr.number}: ${this.pr.title}`;
+      await this.update(this.pr);
+      vscode.window.showInformationMessage(
+        `PR #${this.pr.number} updated.`,
+      );
+    } catch (err) {
+      vscode.window.showErrorMessage(`Failed: ${(err as Error).message}`);
     }
   }
 
@@ -210,62 +249,6 @@ export class PRDetailPanel {
     }
   }
 
-  private async editTitle(currentTitle: string): Promise<void> {
-    const newTitle = await vscode.window.showInputBox({
-      prompt: "New PR title",
-      value: currentTitle,
-      ignoreFocusOut: true,
-    });
-    if (!newTitle || newTitle === currentTitle) {
-      return;
-    }
-    try {
-      this.pr = await this.api.updatePullRequest(
-        this.repoInfo,
-        this.pr.number,
-        { title: newTitle },
-      );
-      this.panel.title = `PR #${this.pr.number}: ${this.pr.title}`;
-      await this.update(this.pr);
-    } catch (err) {
-      vscode.window.showErrorMessage(`Failed: ${(err as Error).message}`);
-    }
-  }
-
-  private async changeBase(): Promise<void> {
-    let branches: string[] = [];
-    try {
-      branches = await this.api.listBranches(this.repoInfo);
-    } catch {
-      /* ignored */
-    }
-    const pick =
-      branches.length > 0
-        ? await vscode.window.showQuickPick(branches, {
-            placeHolder: `Current base: ${this.pr.base.ref}`,
-            ignoreFocusOut: true,
-          })
-        : await vscode.window.showInputBox({
-            prompt: "New base branch",
-            value: this.pr.base.ref,
-            ignoreFocusOut: true,
-          });
-    if (!pick || pick === this.pr.base.ref) {
-      return;
-    }
-    try {
-      this.pr = await this.api.updatePullRequest(
-        this.repoInfo,
-        this.pr.number,
-        { base: pick },
-      );
-      await this.update(this.pr);
-      vscode.window.showInformationMessage(`Base changed to "${pick}".`);
-    } catch (err) {
-      vscode.window.showErrorMessage(`Failed: ${(err as Error).message}`);
-    }
-  }
-
   private async submitReviewWithComments(
     event: "APPROVED" | "REQUEST_CHANGES" | "COMMENT",
     body: string,
@@ -284,6 +267,9 @@ export class PRDetailPanel {
         body,
         comments,
       );
+      this.panel.webview.postMessage({
+        command: "reviewSubmitted",
+      });
       const label =
         event === "APPROVED"
           ? "Approved"
@@ -337,10 +323,10 @@ export class PRDetailPanel {
   }
 
   async update(pr: GiteaPullRequest): Promise<void> {
+    log("PR update: #" + pr.number);
     this.panel.webview.postMessage({ command: "loading" });
     try {
-      // Fetch all data in parallel; raw diff may fail gracefully
-      const [comments, reviews, files, commits, reviewComments, rawDiff] =
+      const [comments, reviews, files, commits, reviewComments, rawDiff, branches] =
         await Promise.all([
           this.api.listPRComments(this.repoInfo, pr.number),
           this.api.listReviews(this.repoInfo, pr.number),
@@ -350,9 +336,9 @@ export class PRDetailPanel {
             .listAllPRReviewComments(this.repoInfo, pr.number)
             .catch(() => [] as GiteaReviewComment[]),
           this.api.getPRRawDiff(this.repoInfo, pr.number).catch(() => ""),
+          this.api.listBranches(this.repoInfo).catch(() => [] as string[]),
         ]);
 
-      // Merge patch data from raw diff into file list (more reliable than the /files endpoint)
       const patchMap = parseRawDiff(rawDiff);
       const enrichedFiles = files.map((f) => ({
         ...f,
@@ -366,6 +352,7 @@ export class PRDetailPanel {
         enrichedFiles,
         commits,
         reviewComments,
+        branches,
       );
     } catch (err) {
       this.panel.webview.html = `<!DOCTYPE html><html><body style="padding:20px;color:var(--vscode-foreground,#ccc);background:var(--vscode-editor-background,#1e1e1e)"><h2>Error loading PR</h2><p>${escHtml((err as Error).message)}</p></body></html>`;
@@ -383,7 +370,6 @@ export class PRDetailPanel {
       return `<tr><td colspan="3" class="empty-diff">No diff available (binary file or content unchanged)</td></tr>`;
     }
 
-    // Group existing review comments by new_position:old_position
     const rcMap = new Map<string, GiteaReviewComment[]>();
     for (const c of reviewComments.filter((r) => r.path === filename)) {
       const key = `${c.new_position ?? 0}:${c.old_position ?? 0}`;
@@ -439,7 +425,6 @@ export class PRDetailPanel {
           `<td class="lc"><pre>${displayContent}</pre></td></tr>`;
       }
 
-      // Existing review comments inline
       const rcKey = `${ln.newLine ?? 0}:${ln.oldLine ?? 0}`;
       for (const c of rcMap.get(rcKey) ?? []) {
         rows +=
@@ -459,10 +444,26 @@ export class PRDetailPanel {
     files: (GiteaFileDiff & { patch: string })[],
     commits: GiteaCommit[],
     reviewComments: GiteaReviewComment[],
+    branches: string[],
   ): string {
     const isOpen = pr.state === "open" && !pr.merged;
     const stateBg = pr.merged ? "#6f42c1" : isOpen ? "#2da44e" : "#cf222e";
     const stateLabel = pr.merged ? "Merged" : isOpen ? "Open" : "Closed";
+
+    // Compute the latest review status from non-stale reviews sorted by submitted_at
+    const nonStaleReviews = reviews
+      .filter((r) => !r.stale)
+      .sort((a, b) => new Date(a.submitted_at).getTime() - new Date(b.submitted_at).getTime());
+    let reviewStatus: "approved" | "changes-requested" | "pending" = "pending";
+    if (nonStaleReviews.length > 0) {
+      const latest = nonStaleReviews[nonStaleReviews.length - 1].state;
+      if (latest === "APPROVED") {
+        reviewStatus = "approved";
+      } else if (latest === "REQUEST_CHANGES") {
+        reviewStatus = "changes-requested";
+      }
+      // COMMENT, REQUEST_REVIEW, REJECTED, pending all map to "pending"
+    }
 
     const labelsHtml = pr.labels?.length
       ? pr.labels
@@ -481,38 +482,13 @@ export class PRDetailPanel {
       ? `<span class="mi">🏁 ${escHtml(pr.milestone.title)}</span>`
       : "";
 
-    const commentsHtml =
-      comments.length === 0
-        ? '<p class="empty">No comments yet.</p>'
-        : comments
-            .map(
-              (c) =>
-                `<div class="comment">` +
-                `<div class="comment-hdr"><img src="${escHtml(c.user.avatar_url)}" class="avatar" alt="">` +
-                `<strong>${escHtml(c.user.login)}</strong>` +
-                `<span class="time">${new Date(c.created_at).toLocaleString()}</span></div>` +
-                `<div class="comment-body">${escHtml(c.body)}</div></div>`,
-            )
-            .join("");
+    const branchOptions = branches
+      .map(
+        (b) =>
+          `<option value="${escHtml(b)}"${b === pr.base.ref ? " selected" : ""}>${escHtml(b)}</option>`,
+      )
+      .join("");
 
-    const reviewsHtml =
-      reviews.length === 0
-        ? '<p class="empty">No reviews yet.</p>'
-        : reviews
-            .map(
-              (r) =>
-                `<div class="review review-${r.state.toLowerCase()}">` +
-                `<div class="review-hdr"><strong>${escHtml(r.user.login)}</strong>&nbsp;` +
-                `<span class="badge badge-${r.state.toLowerCase()}">${escHtml(r.state.replace("_", " "))}</span>` +
-                `<span class="dim ml8">${new Date(r.submitted_at).toLocaleString()}</span></div>` +
-                (r.body?.trim()
-                  ? `<p class="review-body">${escHtml(r.body)}</p>`
-                  : "") +
-                `</div>`,
-            )
-            .join("");
-
-    // Build files HTML — all collapsed initially, diff pre-embedded as data
     const stColors: Record<string, string> = {
       added: "#2da44e",
       deleted: "#cf222e",
@@ -551,6 +527,24 @@ export class PRDetailPanel {
       })
       .join("");
 
+    const reviewsHtml =
+      reviews.length === 0
+        ? '<p class="empty">No reviews yet.</p>'
+        : reviews
+            .filter((r) => !r.stale)
+            .map(
+              (r) =>
+                `<div class="review review-${r.state.toLowerCase()}">` +
+                `<div class="review-hdr"><strong>${escHtml(r.user.login)}</strong>&nbsp;` +
+                `<span class="badge badge-${r.state.toLowerCase()}">${escHtml(r.state.replace("_", " "))}</span>` +
+                `<span class="dim ml8">${new Date(r.submitted_at).toLocaleString()}</span></div>` +
+                (r.body?.trim()
+                  ? `<div class="review-body" data-raw="${escAttr(r.body)}"></div>`
+                  : "") +
+                `</div>`,
+            )
+            .join("");
+
     const commitsHtml =
       commits.length === 0
         ? '<p class="empty">No commits.</p>'
@@ -564,15 +558,24 @@ export class PRDetailPanel {
             )
             .join("");
 
-    const titleJson = JSON.stringify(pr.title);
+    const commentsJson = JSON.stringify(comments).replace(/</g, "\\u003c").replace(/>/g, "\\u003e");
+    const bodyJson = JSON.stringify(pr.body || "").replace(/</g, "\\u003c").replace(/>/g, "\\u003e");
+    const titleJson = JSON.stringify(pr.title).replace(/</g, "\\u003c").replace(/>/g, "\\u003e");
+    const baseJson = JSON.stringify(pr.base.ref).replace(/</g, "\\u003c").replace(/>/g, "\\u003e");
+    const headJson = JSON.stringify(pr.head.ref).replace(/</g, "\\u003c").replace(/>/g, "\\u003e");
+    const branchOptsJson = JSON.stringify(branchOptions).replace(/</g, "\\u003c").replace(/>/g, "\\u003e");
+    const filesJson = JSON.stringify(files.map(f => ({ filename: f.filename, patch: f.patch, status: f.status, additions: f.additions, deletions: f.deletions }))).replace(/</g, "\\u003c").replace(/>/g, "\\u003e");
+    const reviewCommentsJson = JSON.stringify(reviewComments).replace(/</g, "\\u003c").replace(/>/g, "\\u003e");
+    const isOpenJson = JSON.stringify(isOpen);
 
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: data:; style-src 'unsafe-inline'; script-src 'unsafe-inline';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: data: vscode-resource:; style-src 'unsafe-inline'; script-src 'unsafe-inline';">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>PR #${pr.number}</title>
+
 <style>
 :root {
   --bg: var(--vscode-editor-background,#1e1e1e);
@@ -615,18 +618,33 @@ code{background:var(--block-bg);padding:1px 5px;border-radius:3px;font-size:.85e
 .btn.sec{background:var(--btn2-bg);color:var(--btn2-fg)}.btn.sec:hover{background:var(--btn2-hover)}
 .btn.danger{background:#b91c1c;color:#fff}.btn.danger:hover{background:#dc2626}
 .btn.success{background:#15803d;color:#fff}.btn.success:hover{background:#16a34a}
+.btn.sm{font-size:.75em;padding:3px 8px}
 .tabs{display:flex;gap:1px;border-bottom:1px solid var(--border);margin:0 0 14px}
 .tab{background:none;border:none;border-bottom:2px solid transparent;color:var(--dim);cursor:pointer;padding:7px 13px;font-size:.88em;font-family:inherit}
 .tab:hover{color:var(--fg)}.tab.active{color:var(--fg);border-bottom-color:var(--focus);font-weight:600}
 .tab-content{display:none}.tab-content.active{display:block}
 .comment{border:1px solid var(--border);border-radius:6px;margin-bottom:10px;overflow:hidden}
 .comment-hdr{display:flex;align-items:center;gap:8px;padding:7px 12px;background:var(--block-bg);border-bottom:1px solid var(--border);font-size:.84em}
-.comment-body{padding:10px 12px;white-space:pre-wrap;line-height:1.5}
+.comment-body{padding:10px 12px;line-height:1.5;overflow:hidden;word-break:break-word}
+.comment-body p{margin:0 0 0.5em}.comment-body p:last-child{margin:0}
+.comment-body code{background:var(--block-bg);padding:1px 5px;border-radius:3px;font-family:var(--mono);font-size:.85em}
+.comment-body pre{background:var(--block-bg);padding:8px 12px;border-radius:4px;overflow-x:auto;margin:0.5em 0}
+.comment-body pre code{background:none;padding:0}
+.comment-body ul,.comment-body ol{padding-left:1.5em;margin:0.5em 0}
+.comment-body blockquote{border-left:3px solid var(--border);padding-left:12px;margin:0.5em 0;color:var(--dim)}
+.comment-body a{color:var(--focus)}
+.comment-body img{max-width:100%;height:auto}
 .avatar{width:20px;height:20px;border-radius:50%}
 .time{margin-left:auto;color:var(--dim)}
 .review{border-left:3px solid var(--border);padding:8px 12px;margin-bottom:8px;border-radius:0 4px 4px 0;background:var(--block-bg)}
 .review-hdr{display:flex;align-items:center;gap:6px;margin-bottom:4px}
-.review-body{white-space:pre-wrap;font-size:.88em;margin-top:6px;line-height:1.5}
+.review-body{line-height:1.5;font-size:.88em;margin-top:6px;overflow:hidden;word-break:break-word}
+.review-body p{margin:0 0 0.5em}.review-body p:last-child{margin:0}
+.review-body code{background:var(--block-bg);padding:1px 5px;border-radius:3px;font-family:var(--mono);font-size:.85em}
+.review-body pre{background:var(--block-bg);padding:8px 12px;border-radius:4px;overflow-x:auto;margin:0.5em 0}
+.review-body pre code{background:none;padding:0}
+.review-body ul,.review-body ol{padding-left:1.5em;margin:0.5em 0}
+.review-body blockquote{border-left:3px solid var(--border);padding-left:12px;margin:0.5em 0;color:var(--dim)}
 .review-approved{border-left-color:#2da44e}
 .review-request_changes{border-left-color:#cf222e}
 .review-comment,.review-commented{border-left-color:#0969da}
@@ -639,7 +657,26 @@ code{background:var(--block-bg);padding:1px 5px;border-radius:3px;font-size:.85e
 textarea{width:100%;background:var(--input-bg);color:var(--input-fg);border:1px solid var(--input-border);border-radius:4px;padding:7px;font-family:inherit;font-size:.9em;resize:vertical}
 textarea:focus{outline:1px solid var(--focus)}
 select{background:var(--input-bg);color:var(--input-fg);border:1px solid var(--input-border);padding:5px 10px;border-radius:4px;font-family:inherit;font-size:.87em}
-.desc-body{white-space:pre-wrap;line-height:1.6;background:var(--block-bg);border:1px solid var(--border);border-radius:5px;padding:12px;margin-bottom:14px}
+input[type="text"]{width:100%;background:var(--input-bg);color:var(--input-fg);border:1px solid var(--input-border);border-radius:4px;padding:6px 8px;font-family:inherit;font-size:.9em;box-sizing:border-box}
+input[type="text"]:focus{outline:1px solid var(--focus)}
+.desc-body{line-height:1.6;background:var(--block-bg);border:1px solid var(--border);border-radius:5px;padding:12px;margin-bottom:14px;overflow:hidden;word-break:break-word}
+.desc-body p{margin:0 0 0.5em}.desc-body p:last-child{margin:0}
+.desc-body code{background:var(--block-bg);padding:1px 5px;border-radius:3px;font-family:var(--mono);font-size:.85em}
+.desc-body pre{background:rgba(0,0,0,0.2);padding:8px 12px;border-radius:4px;overflow-x:auto;margin:0.5em 0}
+.desc-body pre code{background:none;padding:0}
+.desc-body ul,.desc-body ol{padding-left:1.5em;margin:0.5em 0}
+.desc-body blockquote{border-left:3px solid var(--border);padding-left:12px;margin:0.5em 0;color:var(--dim)}
+.desc-body a{color:var(--focus)}
+.desc-body img{max-width:100%;height:auto}
+.md-toggle-row{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.md-toggle-row .dim{font-size:.8em}
+
+/* ── edit form ── */
+.edit-form{background:var(--block-bg);border:1px solid var(--focus);border-radius:6px;padding:14px;margin-bottom:14px}
+.edit-form label{display:block;font-size:.82em;font-weight:600;margin-bottom:3px;color:var(--dim);text-transform:uppercase;letter-spacing:.04em}
+.edit-form .field{margin-bottom:10px}
+.edit-form .field:last-of-type{margin-bottom:0}
+.edit-actions{display:flex;gap:8px;margin-top:10px}
 
 /* ── review panel ── */
 .review-submit-bar{background:var(--block-bg);border:1px solid var(--border);border-radius:6px;padding:12px 14px;margin-bottom:14px}
@@ -707,9 +744,21 @@ td.lc pre{margin:0;padding:0;font-family:inherit;font-size:inherit;white-space:p
 </head>
 <body>
 
-<h1>#${pr.number}: ${escHtml(pr.title)}
-  <button class="btn sec" style="font-size:.7em;padding:2px 8px;vertical-align:middle;margin-left:10px" onclick="post('editTitle',{title:${titleJson}})">✏️ Edit</button>
-</h1>
+<div class="title-row" style="display:flex;align-items:baseline;gap:10px;margin-bottom:4px">
+  <span class="pr-icon" style="font-size:1.18em;color:${reviewStatus === 'approved' ? '#2da44e' : reviewStatus === 'changes-requested' ? '#cf222e' : '#d97706'}">⎔</span>
+  <h1 id="pr-title" style="margin-left:0">#${pr.number}: ${escHtml(pr.title)}</h1>
+  <button class="btn sm" onclick="startEdit()">✏️ Edit</button>
+</div>
+
+<div class="branch-row" style="margin-bottom:8px">
+  <span class="branch-tag">${escHtml(pr.head.ref)}</span>
+  <span class="dim">→</span>
+  <span class="branch-tag">${escHtml(pr.base.ref)}</span>
+  <span class="merge-status" style="color:${reviewStatus === 'approved' ? '#2da44e' : reviewStatus === 'changes-requested' ? '#cf222e' : '#d97706'}">
+    <span class="merge-icon">⎔</span>
+    <span class="dim">${reviewStatus === 'approved' ? 'Approved' : reviewStatus === 'changes-requested' ? 'Changes Requested' : 'Pending'}</span>
+  </span>
+</div>
 
 <div class="meta-row">
   <span class="badge" style="background:${stateBg}">${stateLabel}</span>
@@ -718,29 +767,10 @@ td.lc pre{margin:0;padding:0;font-family:inherit;font-size:inherit;white-space:p
   ${labelsHtml}${assigneesHtml}${milestoneHtml}
 </div>
 
-<div class="branch-row">
-  <span class="dim">Base:</span>
-  <span class="branch-tag">${escHtml(pr.base.ref)}</span>
-  <button class="btn sec" style="font-size:.73em;padding:2px 7px" onclick="post('changeBase')">Change</button>
-  <span class="dim">←</span>
-  <span class="branch-tag">${escHtml(pr.head.ref)}</span>
-</div>
-
-${
-  pr.commits != null || pr.additions != null
-    ? `<div class="stats-row">
-  ${pr.commits != null ? `<div class="stat"><span class="stat-lbl">Commits</span><span class="stat-val">${pr.commits}</span></div>` : ""}
-  ${pr.additions != null ? `<div class="stat"><span class="stat-lbl">Additions</span><span class="stat-val" style="color:#2da44e">+${pr.additions}</span></div>` : ""}
-  ${pr.deletions != null ? `<div class="stat"><span class="stat-lbl">Deletions</span><span class="stat-val" style="color:#cf222e">-${pr.deletions}</span></div>` : ""}
-  ${pr.changed_files != null ? `<div class="stat"><span class="stat-lbl">Files</span><span class="stat-val">${pr.changed_files}</span></div>` : ""}
-</div>`
-    : ""
-}
-
 <div class="actions">
   <button class="btn" onclick="post('openInBrowser')">🔗 Open in Browser</button>
-  <button class="btn sec" onclick="post('checkout')">⎇ Checkout Branch</button>
-  <button class="btn sec" onclick="post('refresh')">↺ Refresh</button>
+  <button class="btn" onclick="post('checkout')">⎇ Checkout</button>
+  <button class="btn" onclick="post('refresh')">↺ Refresh</button>
   ${
     isOpen
       ? `<select id="mergeMethod"><option value="merge">Merge commit</option><option value="rebase">Rebase</option><option value="squash">Squash</option></select>
@@ -751,27 +781,58 @@ ${
   ${pr.state === "closed" && !pr.merged ? `<button class="btn success" onclick="post('reopenPR')">↺ Re-open</button>` : ""}
 </div>
 
-${pr.body?.trim() ? `<div class="desc-body">${escHtml(pr.body)}</div>` : ""}
-
-<div class="tabs">
-  <button class="tab active" onclick="showTab('comments',this)">💬 Comments (${comments.length})</button>
-  <button class="tab" onclick="showTab('reviews',this)">🔍 Reviews (${reviews.length})</button>
-  <button class="tab" onclick="showTab('files',this)">📄 Files (${files.length})</button>
-  <button class="tab" onclick="showTab('commits',this)">📦 Commits (${commits.length})</button>
-</div>
-
-<div id="tab-comments" class="tab-content active">
-  ${commentsHtml}
-  <div class="form-section">
-    <h2>Add a comment</h2>
-    <textarea id="commentBody" style="height:80px" placeholder="Write a comment..."></textarea>
-    <div style="margin-top:8px"><button class="btn" onclick="submitComment()">Post Comment</button></div>
+<div id="edit-form" class="edit-form" style="display:none">
+  <div class="field">
+    <label>Title</label>
+    <input type="text" id="edit-title" value="${escHtml(pr.title)}">
+  </div>
+  <div class="field">
+    <label>Body</label>
+    <textarea id="edit-body" style="height:120px">${escHtml(pr.body || "")}</textarea>
+  </div>
+  <div class="field">
+    <label>Base Branch</label>
+    <select id="edit-base">${branchOptions}</select>
+  </div>
+  <div class="edit-actions">
+    <button class="btn" onclick="saveEdit()">Save</button>
+    <button class="btn sec" onclick="cancelEdit()">Cancel</button>
   </div>
 </div>
 
-<div id="tab-reviews" class="tab-content">${reviewsHtml}</div>
+<div class="tabs">
+  <button class="tab active" onclick="showTab('details',this)">Details</button>
+  <button class="tab" onclick="showTab('reviews',this)">🔍 Reviews (${reviews.length})</button>
+  <button class="tab" onclick="showTab('commits',this)">📦 Commits (${commits.length})</button>
+</div>
 
-<div id="tab-files" class="tab-content">
+<div id="tab-details" class="tab-content active">
+  ${
+    pr.body?.trim()
+      ? `<div id="body-content" class="desc-body"></div>`
+      : `<div class="desc-body" style="color:var(--dim);font-style:italic">(no description)</div>`
+  }
+  ${
+    pr.commits != null || pr.additions != null
+      ? `<div class="stats-row">
+  ${pr.commits != null ? `<div class="stat"><span class="stat-lbl">Commits</span><span class="stat-val">${pr.commits}</span></div>` : ""}
+  ${pr.additions != null ? `<div class="stat"><span class="stat-lbl">Additions</span><span class="stat-val" style="color:#2da44e">+${pr.additions}</span></div>` : ""}
+  ${pr.deletions != null ? `<div class="stat"><span class="stat-lbl">Deletions</span><span class="stat-val" style="color:#cf222e">-${pr.deletions}</span></div>` : ""}
+  ${pr.changed_files != null ? `<div class="stat"><span class="stat-lbl">Files</span><span class="stat-val">${pr.changed_files}</span></div>` : ""}
+</div>`
+      : ""
+  }
+  <div style="margin-top:14px">
+    <h2>Comments (${comments.length})</h2>
+    <div id="comments-list"></div>
+    <div class="form-section">
+      <textarea id="commentBody" style="height:60px" placeholder="Write a comment..."></textarea>
+      <div style="margin-top:8px"><button class="btn" onclick="submitComment()">Post Comment</button></div>
+    </div>
+  </div>
+</div>
+
+<div id="tab-reviews" class="tab-content">
   <div class="review-submit-bar">
     <div class="rsb-title">Submit Review <span id="pc-count"></span></div>
     <textarea id="rv-body" style="height:60px" placeholder="Overall review comment (optional)..."></textarea>
@@ -782,82 +843,161 @@ ${pr.body?.trim() ? `<div class="desc-body">${escHtml(pr.body)}</div>` : ""}
       <button class="btn danger" onclick="submitReview('REQUEST_CHANGES')">⚠️ Request Changes</button>`
           : ""
       }
-      <button class="btn sec" onclick="submitReview('COMMENT')">💬 Comment Only</button>
+      <button class="btn" onclick="submitReview('COMMENT')">💬 Comment</button>
     </div>
   </div>
   <div class="files-summary">${files.length} file(s) changed &nbsp;·&nbsp; Click any diff line to add an inline comment</div>
   ${filesHtml}
+  <h2 style="margin-top:16px">Submitted Reviews</h2>
+  ${reviewsHtml}
 </div>
 
 <div id="tab-commits" class="tab-content">${commitsHtml}</div>
 
 <script>
 const vscode = acquireVsCodeApi();
+function debugLog(msg) { vscode.postMessage({ command: 'debug', body: msg }); }
+window.onerror = function(msg, url, line, col, err) {
+  try {
+    var e = err ? (err.stack || err.message) : msg + ' line ' + line;
+    debugLog('ERROR: ' + e);
+  } catch(x) {}
+  return false;
+};
+debugLog('PR webview loaded - step1');
+const bodyText = ${bodyJson};
+const commentsData = ${commentsJson};
+debugLog('PR webview loaded - step2');
 let pendingComments = [];
 let openFormKey = null;
 
+function esc(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
 function post(cmd, extra) {
+  debugLog('post: ' + cmd + (extra ? ' with extra' : ''));
   vscode.postMessage(Object.assign({ command: cmd }, extra || {}));
 }
+
 function showTab(name, btn) {
-  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-  document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+  debugLog('showTab: ' + name);
+  document.querySelectorAll('.tab-content').forEach(function(el) { el.classList.remove('active'); });
+  document.querySelectorAll('.tab').forEach(function(el) { el.classList.remove('active'); });
   document.getElementById('tab-' + name).classList.add('active');
   btn.classList.add('active');
 }
+
+function renderBody() {
+  try {
+    var el = document.getElementById('body-content');
+    if (!el) { debugLog('renderBody: no body-content element'); return; }
+    el.innerHTML = '<pre style="margin:0;white-space:pre-wrap">' + esc(bodyText) + '</pre>';
+    debugLog('renderBody done, body length=' + (bodyText ? bodyText.length : 0));
+  } catch(e) { debugLog('renderBody error: ' + e.message); }
+}
+
+function renderComments() {
+  try {
+    var container = document.getElementById('comments-list');
+    if (!container) { debugLog('renderComments: no comments-list element'); return; }
+    if (commentsData.length === 0) {
+      container.innerHTML = '<p class="empty">No comments yet.</p>';
+      debugLog('renderComments: no comments');
+      return;
+    }
+    var html = '';
+    for (var i = 0; i < commentsData.length; i++) {
+      var c = commentsData[i];
+      html += '<div class="comment" id="comment-' + c.id + '">' +
+        '<div class="comment-hdr">' +
+        '<img src="' + esc(c.user.avatar_url) + '" class="avatar" alt="">' +
+        '<strong>' + esc(c.user.login) + '</strong>' +
+        '<span class="time">' + new Date(c.created_at).toLocaleString() + '</span>' +
+        '</div>' +
+        '<div class="comment-body"><pre style="margin:0;white-space:pre-wrap">' + esc(c.body) + '</pre></div>' +
+        '</div>';
+    }
+    container.innerHTML = html;
+    debugLog('renderComments done, count=' + commentsData.length);
+  } catch(e) { debugLog('renderComments error: ' + e.message); }
+}
+
+function startEdit() {
+  debugLog('startEdit');
+  document.getElementById('edit-form').style.display = 'block';
+}
+
+function cancelEdit() {
+  debugLog('cancelEdit');
+  document.getElementById('edit-form').style.display = 'none';
+}
+
+function saveEdit() {
+  var title = document.getElementById('edit-title').value;
+  var body = document.getElementById('edit-body').value;
+  var base = document.getElementById('edit-base').value;
+  post('editPR', { title: title, body: body, base: base });
+  document.getElementById('edit-form').style.display = 'none';
+}
+
 function submitComment() {
-  const el = document.getElementById('commentBody');
-  const body = (el.value || '').trim();
+  var el = document.getElementById('commentBody');
+  var body = (el.value || '').trim();
   if (!body) return;
-  post('addComment', { body });
+  post('addComment', { body: body });
   el.value = '';
 }
+
 function toggleFile(fi, e) {
   if (e && e.target && (e.target.type === 'checkbox')) return;
-  const w = document.getElementById('fd-' + fi);
-  const ic = document.getElementById('ti-' + fi);
-  const nowHidden = w.style.display === 'none';
+  var w = document.getElementById('fd-' + fi);
+  var ic = document.getElementById('ti-' + fi);
+  var nowHidden = w.style.display === 'none';
   w.style.display = nowHidden ? '' : 'none';
   ic.textContent = nowHidden ? '▼' : '▶';
 }
+
 function markViewed(fi, checked) {
   document.getElementById('fb-' + fi).classList.toggle('viewed', checked);
   if (checked) {
-    const w = document.getElementById('fd-' + fi);
-    const ic = document.getElementById('ti-' + fi);
+    var w = document.getElementById('fd-' + fi);
+    var ic = document.getElementById('ti-' + fi);
     if (w) { w.style.display = 'none'; }
     if (ic) { ic.textContent = '▶'; }
   }
 }
+
 function clickLine(tr) {
-  const key = tr.dataset.fi + '-' + tr.dataset.pos;
-  const form = document.getElementById('cf-' + key);
+  var key = tr.dataset.fi + '-' + tr.dataset.pos;
+  var form = document.getElementById('cf-' + key);
   if (!form) return;
   if (openFormKey && openFormKey !== key) {
-    const prev = document.getElementById('cf-' + openFormKey);
+    var prev = document.getElementById('cf-' + openFormKey);
     if (prev) prev.style.display = 'none';
   }
-  const show = form.style.display === 'none';
+  var show = form.style.display === 'none';
   form.style.display = show ? 'table-row' : 'none';
   openFormKey = show ? key : null;
-  if (show) { setTimeout(() => { const ta = form.querySelector('textarea'); if (ta) ta.focus(); }, 40); }
+  if (show) { setTimeout(function() { var ta = form.querySelector('textarea'); if (ta) ta.focus(); }, 40); }
 }
+
 function cancelLine(btn) {
   btn.closest('tr').style.display = 'none';
   openFormKey = null;
 }
+
 function addInlineComment(btn) {
-  const row = btn.closest('tr.cf-row');
-  const ta = row.querySelector('textarea');
-  const body = (ta.value || '').trim();
+  var row = btn.closest('tr.cf-row');
+  var ta = row.querySelector('textarea');
+  var body = (ta.value || '').trim();
   if (!body) return;
-  const path = row.dataset.path;
-  const newPos = parseInt(row.dataset.nl || '0');
-  const oldPos = parseInt(row.dataset.ol || '0');
-  const idx = pendingComments.length;
-  pendingComments.push({ path, new_position: newPos, old_position: oldPos, body });
-  // Insert a pending-comment display row after form row
-  const pcHtml = '<tr class="pc-row"><td colspan="3"><div class="pc">' +
+  var path = row.dataset.path;
+  var newPos = parseInt(row.dataset.nl || '0');
+  var oldPos = parseInt(row.dataset.ol || '0');
+  var idx = pendingComments.length;
+  pendingComments.push({ path: path, new_position: newPos, old_position: oldPos, body: body });
+  var pcHtml = '<tr class="pc-row"><td colspan="3"><div class="pc">' +
     '<span class="pc-tag">Pending</span>' +
     '<span class="pc-body">' + esc(body) + '</span>' +
     '<button class="pc-rm" title="Remove" onclick="removeComment(' + idx + ',this)">✕</button>' +
@@ -868,27 +1008,53 @@ function addInlineComment(btn) {
   openFormKey = null;
   updatePCCount();
 }
+
 function removeComment(idx, btn) {
   pendingComments[idx] = null;
   btn.closest('tr').remove();
   updatePCCount();
 }
+
 function updatePCCount() {
-  const n = pendingComments.filter(Boolean).length;
-  const el = document.getElementById('pc-count');
+  var n = pendingComments.filter(Boolean).length;
+  var el = document.getElementById('pc-count');
   if (el) el.textContent = n > 0 ? '(' + n + ' pending inline comment' + (n !== 1 ? 's' : '') + ')' : '';
 }
+
 function submitReview(event) {
-  const body = (document.getElementById('rv-body').value || '');
-  const comments = pendingComments.filter(Boolean);
-  post('submitReview', { event, body, comments });
+  var body = (document.getElementById('rv-body').value || '');
+  var comments = pendingComments.filter(Boolean);
+  post('submitReview', { event: event, body: body, comments: comments });
 }
-function esc(s) {
-  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+function renderReviews() {
+  try {
+    document.querySelectorAll('.review-body').forEach(function(el) {
+      var raw = el.getAttribute('data-raw');
+      if (raw) el.innerHTML = '<pre style="margin:0;white-space:pre-wrap">' + esc(raw) + '</pre>';
+    });
+    debugLog('renderReviews done');
+  } catch(e) { debugLog('renderReviews error: ' + e.message); }
 }
-window.addEventListener('message', ev => {
-  if (ev.data && ev.data.command === 'loading') { document.body.style.opacity = '0.7'; }
+
+window.addEventListener("message", function(event) {
+  var message = event.data;
+  debugLog('message received: ' + (message ? message.command : 'null'));
+  if (!message || !message.command) return;
+  if (message.command === "loading") {
+    document.body.style.opacity = "0.7";
+  } else if (message.command === "reviewSubmitted") {
+    pendingComments.length = 0;
+    document.querySelectorAll(".pc-row").forEach(function(row) { row.remove(); });
+    var reviewBody = document.getElementById("rv-body");
+    if (reviewBody) reviewBody.value = "";
+    updatePCCount();
+  }
 });
+
+renderBody();
+renderComments();
+renderReviews();
 </script>
 </body>
 </html>`;
@@ -911,4 +1077,16 @@ function escHtml(s: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+function escAttr(s: string): string {
+  return String(s ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;")
+    .replace(/\n/g, "\\n")
+    .replace(/\r/g, "\\r")
+    .replace(/\t/g, "\\t");
 }

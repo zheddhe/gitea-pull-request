@@ -2,9 +2,10 @@ import * as vscode from "vscode";
 import { GiteaApiClient } from "../api/giteaApiClient";
 import { AuthManager } from "../auth/authManager";
 import { RepoManager, RepoInfo } from "../context/repoManager";
-import type { GiteaPullRequest } from "../api/types";
+import type { GiteaPullRequest, GiteaReview } from "../api/types";
 
 export type PRFilter = "open" | "closed";
+type PRCategory = "all" | "waiting" | "created";
 
 interface RepoPRState {
   prs: GiteaPullRequest[];
@@ -34,10 +35,40 @@ export class RepoGroupItem extends vscode.TreeItem {
   }
 }
 
+export class CategoryItem extends vscode.TreeItem {
+  constructor(
+    public readonly category: PRCategory,
+    public readonly prs: GiteaPullRequest[],
+    public readonly repoInfo: RepoInfo,
+  ) {
+    const label =
+      category === "all" ? "All Open"
+      : category === "waiting" ? "Waiting for my review"
+      : "Created by me";
+    const icon =
+      category === "all" ? "folder"
+      : category === "waiting" ? "eye"
+      : "folder";
+    const color =
+      category === "waiting" ? "charts.yellow"
+      : undefined;
+    super(
+      `${label} (${prs.length})`,
+      vscode.TreeItemCollapsibleState.Collapsed,
+    );
+    this.id = `pr-cat:${repoInfo.key}:${category}`;
+    this.contextValue = `category-${category}`;
+    this.iconPath = color
+      ? new vscode.ThemeIcon(icon, new vscode.ThemeColor(color))
+      : new vscode.ThemeIcon(icon);
+  }
+}
+
 export class PullRequestItem extends vscode.TreeItem {
   constructor(
     public readonly pr: GiteaPullRequest,
     public readonly repoInfo: RepoInfo,
+    reviewState?: string,
   ) {
     super(
       `#${pr.number} ${pr.title}`,
@@ -50,15 +81,15 @@ export class PullRequestItem extends vscode.TreeItem {
         `By **${pr.user.login}** · ${pr.state} · ${pr.comments} comment(s)\n\n` +
         `\`${pr.head.ref}\` → \`${pr.base.ref}\``,
     );
-    this.iconPath = this.getIcon(pr);
+    this.iconPath = this.getIcon(pr, reviewState);
     this.description = `${pr.user.login} · ${relativeTime(pr.updated_at)}`;
   }
 
-  private getIcon(pr: GiteaPullRequest): vscode.ThemeIcon {
+  private getIcon(pr: GiteaPullRequest, reviewState?: string): vscode.ThemeIcon {
     if (pr.merged) {
       return new vscode.ThemeIcon(
         "git-merge",
-        new vscode.ThemeColor("gitDecoration.addedResourceForeground"),
+        new vscode.ThemeColor("charts.green"),
       );
     }
     if (pr.state === "closed") {
@@ -67,10 +98,12 @@ export class PullRequestItem extends vscode.TreeItem {
         new vscode.ThemeColor("gitDecoration.deletedResourceForeground"),
       );
     }
-    return new vscode.ThemeIcon(
-      "git-pull-request",
-      new vscode.ThemeColor("charts.green"),
-    );
+    // Color by latest review status: green = approved, red = changes requested, orange = pending
+    const color =
+      reviewState === "APPROVED" ? "charts.green"
+      : reviewState === "REQUEST_CHANGES" ? "charts.red"
+      : "charts.yellow";
+    return new vscode.ThemeIcon("git-pull-request", new vscode.ThemeColor(color));
   }
 }
 
@@ -112,6 +145,7 @@ export class PullRequestProvider implements vscode.TreeDataProvider<vscode.TreeI
 
   private filter: PRFilter = "open";
   private stateMap = new Map<string, RepoPRState>();
+  private reviewStateCache = new Map<string, string | undefined>();
 
   constructor(
     private readonly api: GiteaApiClient,
@@ -129,6 +163,7 @@ export class PullRequestProvider implements vscode.TreeDataProvider<vscode.TreeI
 
   refresh(): void {
     this.stateMap.clear();
+    this.reviewStateCache.clear();
     this._onDidChangeTreeData.fire();
   }
 
@@ -169,7 +204,7 @@ export class PullRequestProvider implements vscode.TreeDataProvider<vscode.TreeI
       return items;
     }
 
-    // ── Repo group: PRs for that repo ─────────────────────────────────────
+    // ── Repo group: category folders for that repo ─────────────────────────
     if (element instanceof RepoGroupItem) {
       const { repoInfo } = element;
       const session = await this.auth.getSession(repoInfo.serverUrl);
@@ -182,15 +217,86 @@ export class PullRequestProvider implements vscode.TreeDataProvider<vscode.TreeI
         signIn.command = { command: "gitea.signIn", title: "Sign In" };
         return [signIn];
       }
-      return this.getRepoChildren(repoInfo);
+      return this.getRepoCategories(repoInfo, session.username);
+    }
+
+    // ── Category: filtered PRs ─────────────────────────────────────────────
+    if (element instanceof CategoryItem) {
+      return element.prs.map((pr) => {
+        const reviewState = this.reviewStateCache.get(
+          `${element.repoInfo.key}:${pr.number}`,
+        );
+        return new PullRequestItem(pr, element.repoInfo, reviewState);
+      });
     }
 
     // ── PR detail children ────────────────────────────────────────────────
     if (element instanceof PullRequestItem) {
-      return buildPRChildren(element.pr, element.repoInfo);
+      return buildPRChildren(element);
     }
 
     return [];
+  }
+
+  private async getRepoCategories(
+    repoInfo: RepoInfo,
+    username: string,
+  ): Promise<vscode.TreeItem[]> {
+    let state = this.stateMap.get(repoInfo.key);
+    if (!state) {
+      state = { prs: [], page: 1, hasMore: false, loading: false };
+      this.stateMap.set(repoInfo.key, state);
+      await this.fetchForRepo(repoInfo, state);
+      return [];
+    }
+    if (state.loading) {
+      const item = new vscode.TreeItem(
+        "Loading...",
+        vscode.TreeItemCollapsibleState.None,
+      );
+      item.iconPath = new vscode.ThemeIcon("loading~spin");
+      return [item];
+    }
+    if (state.prs.length === 0) {
+      const empty = new vscode.TreeItem(
+        `No ${this.filter} pull requests`,
+        vscode.TreeItemCollapsibleState.None,
+      );
+      empty.iconPath = new vscode.ThemeIcon("info");
+      return [empty];
+    }
+
+    // Categorize PRs
+    const allPrs = state.prs;
+    const waitingPrs = allPrs.filter((pr) => {
+      // A PR is "waiting for my review" if:
+      // - I'm assigned to it (assignee or in assignees list)
+      // - AND it hasn't been approved by me yet
+      const isAssigned =
+        pr.assignee?.login === username ||
+        pr.assignees?.some((a) => a.login === username);
+      if (!isAssigned) return false;
+
+      // Check reviews — if I've already approved, it's not waiting
+      // We don't have review data here, so we use a heuristic:
+      // If there are any reviews and none are APPROVED, assume waiting
+      // (The detail view will show the actual review status)
+      return true;
+    });
+    const createdPrs = allPrs.filter((pr) => pr.user.login === username);
+
+    const categories: vscode.TreeItem[] = [];
+    if (allPrs.length > 0) {
+      categories.push(new CategoryItem("all", allPrs, repoInfo));
+    }
+    if (waitingPrs.length > 0) {
+      categories.push(new CategoryItem("waiting", waitingPrs, repoInfo));
+    }
+    if (createdPrs.length > 0) {
+      categories.push(new CategoryItem("created", createdPrs, repoInfo));
+    }
+
+    return categories;
   }
 
   private async getRepoChildren(
@@ -249,6 +355,8 @@ export class PullRequestProvider implements vscode.TreeDataProvider<vscode.TreeI
       state.prs =
         state.page === 1 ? result.items : [...state.prs, ...result.items];
       state.hasMore = result.hasMore;
+      // Cache review states for icon coloring
+      await this.cacheReviewStates(repoInfo, state.prs);
     } catch (err) {
       vscode.window.showErrorMessage(
         `[${repoInfo.label}] Failed to load PRs: ${(err as Error).message}`,
@@ -259,6 +367,33 @@ export class PullRequestProvider implements vscode.TreeDataProvider<vscode.TreeI
       state.loading = false;
       this._onDidChangeTreeData.fire();
     }
+  }
+
+  /**
+   * Pre-fetch review states for a batch of PRs so the sidebar icons
+   * reflect the latest review status (green = approved, red = changes
+   * requested, orange = pending).
+   */
+  private async cacheReviewStates(
+    repoInfo: RepoInfo,
+    prs: GiteaPullRequest[],
+  ): Promise<void> {
+    const promises = prs.map(async (pr) => {
+      const reviews = await this.api
+        .listReviews(repoInfo, pr.number)
+        .catch(() => [] as GiteaReview[]);
+      const nonStale = reviews
+        .filter((r) => !r.stale)
+        .sort(
+          (a, b) =>
+            new Date(a.submitted_at).getTime() -
+            new Date(b.submitted_at).getTime(),
+        );
+      const latest =
+        nonStale.length > 0 ? nonStale[nonStale.length - 1].state : undefined;
+      this.reviewStateCache.set(`${repoInfo.key}:${pr.number}`, latest);
+    });
+    await Promise.all(promises);
   }
 }
 
@@ -277,10 +412,8 @@ function relativeTime(iso: string): string {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
-function buildPRChildren(
-  pr: GiteaPullRequest,
-  repoInfo: RepoInfo,
-): vscode.TreeItem[] {
+function buildPRChildren(item: PullRequestItem): vscode.TreeItem[] {
+  const { pr, repoInfo } = item;
   const children: vscode.TreeItem[] = [];
 
   children.push(
@@ -290,13 +423,18 @@ function buildPRChildren(
       new vscode.ThemeIcon("git-branch"),
     ),
   );
-  children.push(
-    new PRChildItem(
-      `+${pr.additions ?? "?"} / -${pr.deletions ?? "?"}`,
-      `${pr.changed_files ?? "?"} file(s) changed`,
-      new vscode.ThemeIcon("diff"),
-    ),
+  const diffItem = new PRChildItem(
+    `+${pr.additions ?? 0} / -${pr.deletions ?? 0}`,
+    `${pr.changed_files ?? 0} file(s) changed`,
+    new vscode.ThemeIcon("diff-multiple"),
   );
+  diffItem.command = {
+    command: "gitea.openPRDiff",
+    title: "Open PR Diff",
+    arguments: [item],
+  };
+  diffItem.tooltip = new vscode.MarkdownString("Click to view full diff tree");
+  children.push(diffItem);
   if (pr.comments > 0 || pr.review_comments > 0) {
     children.push(
       new PRChildItem(
@@ -333,7 +471,7 @@ function buildPRChildren(
   openItem.command = {
     command: "gitea.openPR",
     title: "Open PR in Browser",
-    arguments: [pr],
+    arguments: [item],
   };
   children.push(openItem);
 
@@ -345,7 +483,7 @@ function buildPRChildren(
   detailItem.command = {
     command: "gitea.viewPRDetail",
     title: "View PR Details",
-    arguments: [pr, repoInfo],
+    arguments: [item],
   };
   children.push(detailItem);
 

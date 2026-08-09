@@ -172,7 +172,7 @@ export class IssuesProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
     }
 
     if (element instanceof IssueItem) {
-      return buildIssueChildren(element.issue, element.repoInfo);
+      return buildIssueChildren(element);
     }
 
     return [];
@@ -262,10 +262,8 @@ function relativeTime(iso: string): string {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
-function buildIssueChildren(
-  issue: GiteaIssue,
-  repoInfo: RepoInfo,
-): vscode.TreeItem[] {
+function buildIssueChildren(item: IssueItem): vscode.TreeItem[] {
+  const { issue, repoInfo } = item;
   const children: vscode.TreeItem[] = [];
 
   if (issue.body?.trim()) {
@@ -319,7 +317,7 @@ function buildIssueChildren(
   openItem.command = {
     command: "gitea.openIssue",
     title: "Open Issue in Browser",
-    arguments: [issue],
+    arguments: [item],
   };
   children.push(openItem);
 
@@ -331,7 +329,7 @@ function buildIssueChildren(
   detailItem.command = {
     command: "gitea.viewIssueDetail",
     title: "View Issue Details",
-    arguments: [issue, repoInfo],
+    arguments: [item],
   };
   children.push(detailItem);
 

@@ -35,8 +35,13 @@ export function registerIssueCommands(
 
     vscode.commands.registerCommand(
       "gitea.viewIssueDetail",
-      async (issue: GiteaIssue, repoInfo: RepoInfo) => {
-        await IssueDetailPanel.show(context.extensionUri, api, repoInfo, issue);
+      async (item: IssueItem) => {
+        await IssueDetailPanel.show(
+          context.extensionUri,
+          api,
+          item.repoInfo,
+          item.issue,
+        );
       },
     ),
 

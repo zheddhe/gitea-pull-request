@@ -10,10 +10,14 @@ import { registerPRCommands } from "./commands/prCommands";
 import { registerCICommands } from "./commands/ciCommands";
 import { registerAuthCommands } from "./commands/authCommands";
 import { registerIssueCommands } from "./commands/issueCommands";
+import { initOutputChannel } from "./debug/outputChannel";
 
 export async function activate(
   context: vscode.ExtensionContext,
 ): Promise<void> {
+  const outputChannel = initOutputChannel();
+  context.subscriptions.push(outputChannel);
+
   const auth = new AuthManager(context);
   const repoManager = new RepoManager();
   const api = new GiteaApiClient(auth);
