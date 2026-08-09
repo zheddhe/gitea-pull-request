@@ -34,7 +34,6 @@ Build a VSCode extension that mirrors core GitHub extension workflows for Gitea:
 - ❌ Notifications and activity feed
 - ❌ Inline code review annotations in editor (existing annotations in PR detail panel)
 - ❌ Advanced filtering/search/saved queries
-- ❌ Enterprise/self-hosted admin controls
 
 ## Technical Notes
 

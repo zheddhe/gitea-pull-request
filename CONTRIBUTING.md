@@ -75,10 +75,10 @@ npx vsce package --no-dependencies --allow-missing-repository
 1. Fork the repository and create a branch: `git checkout -b feat/my-feature`
 2. Make your changes.
 3. Run `npm run compile` to ensure there are no TypeScript errors.
-4. Follow the existing code style — no linting config is enforced beyond `tsc --strict`.
+4. Follow the existing code style — ESLint 9 flat config + `tsc --strict`.
 5. Keep the scope of changes small and focused — one feature/fix per PR.
 6. Update `README.md` if you add user-facing functionality.
-7. Open the PR against the `main` branch.
+7. Open the PR against the `master` branch.
 
 ### Adding a New API Method
 
