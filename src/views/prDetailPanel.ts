@@ -841,17 +841,15 @@ td.lc pre{margin:0;padding:0;font-family:inherit;font-size:inherit;white-space:p
 <div id="tab-commits" class="tab-content">${commitsHtml}</div>
 
 <script>
+const vscode = acquireVsCodeApi();
+function debugLog(msg) { vscode.postMessage({ command: 'debug', body: msg }); }
 window.onerror = function(msg, url, line, col, err) {
   try {
     var e = err ? (err.stack || err.message) : msg + ' line ' + line;
-    if (typeof vscode !== 'undefined') {
-      vscode.postMessage({ command: 'debug', body: 'ERROR: ' + e });
-    }
+    debugLog('ERROR: ' + e);
   } catch(x) {}
   return false;
 };
-const vscode = acquireVsCodeApi();
-function debugLog(msg) { vscode.postMessage({ command: 'debug', body: msg }); }
 debugLog('PR webview loaded - step1');
 const bodyText = ${bodyJson};
 const commentsData = ${commentsJson};
