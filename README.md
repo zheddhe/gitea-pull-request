@@ -8,15 +8,15 @@ A VS Code extension that brings your [Gitea](https://gitea.io) repositories dire
 
 **Sidebar — PRs, Issues, CI/Actions with category folders**
 
-![Sidebar](resources/screenshots/screenshot-sidebar.png)
+![Sidebar](./resources/screenshots/screenshot-sidebar.png)
 
 **PR detail — inline review, merge, edit form**
 
-![PR Detail](resources/screenshots/screenshot-pr-detail.png)
+![PR Detail](./resources/screenshots/screenshot-pr-detail.png)
 
 **Issue detail — body, comments, edit form**
 
-![Issue Detail](resources/screenshots/screenshot-issue-detail.png)
+![Issue Detail](./resources/screenshots/screenshot-issue-detail.png)
 
 ---
 
@@ -51,7 +51,7 @@ A VS Code extension that brings your [Gitea](https://gitea.io) repositories dire
 
 ### From VSIX
 
-1. Download the latest `.vsix` from the [Releases](../../releases) page.
+1. Download the latest `.vsix` from the [Releases](https://github.com/zheddhe/gitea-vscode-extension/releases) page.
 2. Open the Command Palette (`Ctrl+Shift+P`) → **Extensions: Install from VSIX…**.
 3. Select the downloaded file.
 

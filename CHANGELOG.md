@@ -5,54 +5,39 @@ All notable changes to the Gitea VS Code extension will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [7.0.0-fork1.1.0] - 2026-08-10
+## [7.0.0-fork1.0.0] - 2026-08-10
 
 ### Added
 
-- **Unified PR/Issue panels** — full-width tabbed layout with markdown rendering toggle (rendered/raw) for body + comments
-- **Inline edit form** — edit title, body, and base branch (PR) / title + body (Issue) as a global overlay above tabs
-- **Merge status icon** — colored icon (green/yellow/red) below PR title showing latest review status (Approved/Pending/Changes Requested)
-- **PR category folders** — sidebar sub-folders: All Open, Waiting for my review, Created by me with color-coded icons
-- **`updateIssue()` API method** — PATCH `/repos/{owner}/{repo}/issues/{number}`
-
-### Changed
-
-- **PR tabs restructured**: Details (body + comments), Reviews (with inline file diffs), Commits
-- **Issue tabs restructured**: Details (body + comments), History
-- **Edit form moved above tabs** — visible from any tab, auto-hides after Save
-- **PR diff tree** — native file icons via `resourceUri`, full expand support, approval coloring
-- **Consistent button colors**: blue (edit/open/refresh), green (approve/merge/reopen), red (close/request-changes)
-- **marked library** — replaced hand-rolled markdown parser with `marked` (^18.0.9) for in-webview rendering
-
-### Fixed
-
-- Webview rendering issues: inlined markdown renderer, escaped backticks in marked UMD, switched to string concatenation
-- Shipped `marked` package in VSIX bundle to avoid missing dependency at runtime
-- Nested markdown renderer helpers inside `renderMd` to fix webview crashes
-- Reordered `vscode` acquisition before `window.onerror` in PR webview
-- Added output channel and debug logging for webview troubleshooting
-
-## [7.0.0-fork1.0.0] - 2026-08-08
-
-### Added
-
-- **PR diff tree view** — dedicated `CHANGES IN PULL REQUEST` panel in the sidebar with full directory tree, native file icons, checkbox tracking per file, and `vscode.diff` editor on click
+- **PR diff tree view** — dedicated `Changes in Pull Request` sidebar panel with directory tree, native file icons, checkbox tracking, and `vscode.diff` editor on click
 - **`getFileContents()` API method** — fetch file content from a specific branch
 - Clickable diff stats in the PR list — opens the PR Diff panel
+- **Unified PR/Issue detail panels** — full-width tabbed layout (Details, Reviews, Commits for PR; Details, History for Issue)
+- **Inline edit form** — global overlay above tabs to edit title, body, and base branch (PR) / title + body (Issue)
+- **Merge status icon** — colored icon (green/yellow/red) in the title row showing latest review status
+- **PR category folders** — sidebar sub-folders: All Open, Waiting for my review, Created by me
+- **`updateIssue()` API method** — PATCH `/repos/{owner}/{repo}/issues/{number}`
+- **Output channel** — debug logging for webview troubleshooting
 
 ### Changed
 
 - Rebranded as `gitea-vscode-pullrequest-enhanced` with publisher `zheddhe`
-- PR icons: yellow for pending review, green when approved or merged
+- **PR sidebar icons** — colored by review status: yellow (pending), green (approved/merged), red (changes requested/closed)
+- **Edit form** — moved above tabs, visible from any tab, auto-hides after Save
+- **PR diff tree** — native file icons via `resourceUri`, full expand support, approval coloring
+- **Consistent button colors**: blue (edit/open/refresh), green (approve/merge/reopen), red (close/request-changes)
 - Dev dependencies upgraded: eslint 8→9 (flat config), @typescript-eslint 6→8, mocha 10→11, removed unused `node-fetch`
 
 ### Fixed
 
-- Progress notifications now dismiss immediately after API response (create, merge, review, comment)
+- Progress notifications dismiss immediately after API response (create, merge, review, comment)
 - PR review submission shows full authentication error messages
 - `gitea.openPRDiff` accepts `PullRequestItem` from context menus
 - Checkbox state persists across re-opens; provider refreshes on PR switch
 - Diff stats show real values instead of `+? / -?`
+- Webview script safety — nested renderer helpers, string concatenation for script injection
+- Removed non-existent `view-mode` reference in issue edit form
+- Tidy issue detail labels and aligned PR icon colors with sidebar
 
 ## [0.6.0] - 2026-03-12
 
@@ -141,8 +126,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Repository context detection
 - Authentication via Gitea API tokens
 
-[7.0.0-fork1.1.0]: https://github.com/dj0024javia/gitea-vscode-extension/compare/v7.0.0-fork1.0.0...v7.0.0-fork1.1.0
-[7.0.0-fork1.0.0]: https://github.com/dj0024javia/gitea-vscode-extension/compare/v0.6.0...v7.0.0-fork1.0.0
-[0.6.0]: https://github.com/dj0024javia/gitea-vscode-extension/compare/v0.5.1...v0.6.0
-[0.5.0]: https://github.com/dj0024javia/gitea-vscode-extension/compare/v0.4.0...v0.5.0
-[0.4.0]: https://github.com/dj0024javia/gitea-vscode-extension/releases/tag/v0.4.0
+[7.0.0-fork1.0.0]: https://github.com/zheddhe/gitea-vscode-extension/compare/v0.6.0...v7.0.0-fork1.0.0
+[0.6.0]: https://github.com/zheddhe/gitea-vscode-extension/compare/v0.5.1...v0.6.0
+[0.5.0]: https://github.com/zheddhe/gitea-vscode-extension/compare/v0.4.0...v0.5.0
+[0.4.0]: https://github.com/zheddhe/gitea-vscode-extension/releases/tag/v0.4.0
