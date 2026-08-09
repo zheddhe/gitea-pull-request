@@ -3,7 +3,7 @@ import { GiteaApiClient } from "../api/giteaApiClient";
 import type { RepoInfo } from "../context/repoManager";
 import type { GiteaIssue, GiteaComment } from "../api/types";
 import { log } from "../debug/outputChannel";
-import { getMarkedScriptTag } from "./webviewScripts";
+import { getMarkedInlineScript } from "./webviewScripts";
 
 export class IssueDetailPanel {
   private static panels = new Map<string, IssueDetailPanel>();
@@ -195,10 +195,10 @@ export class IssueDetailPanel {
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: data: vscode-resource:; style-src 'unsafe-inline'; script-src 'unsafe-inline' vscode-resource:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: data: vscode-resource:; style-src 'unsafe-inline'; script-src 'unsafe-inline';">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Issue #${issue.number}</title>
-${getMarkedScriptTag(this.extensionUri, this.panel.webview)}
+${getMarkedInlineScript()}
 <style>
 :root {
   --bg: var(--vscode-editor-background,#1e1e1e);
