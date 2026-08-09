@@ -48,10 +48,9 @@ export class CategoryItem extends vscode.TreeItem {
     const icon =
       category === "all" ? "folder"
       : category === "waiting" ? "eye"
-      : "git-pull-request";
+      : "folder";
     const color =
       category === "waiting" ? "charts.yellow"
-      : category === "created" ? "charts.green"
       : undefined;
     super(
       `${label} (${prs.length})`,
