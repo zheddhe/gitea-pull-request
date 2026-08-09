@@ -450,6 +450,21 @@ export class PRDetailPanel {
     const stateBg = pr.merged ? "#6f42c1" : isOpen ? "#2da44e" : "#cf222e";
     const stateLabel = pr.merged ? "Merged" : isOpen ? "Open" : "Closed";
 
+    // Compute the latest review status from non-stale reviews sorted by submitted_at
+    const nonStaleReviews = reviews
+      .filter((r) => !r.stale)
+      .sort((a, b) => new Date(a.submitted_at).getTime() - new Date(b.submitted_at).getTime());
+    let reviewStatus: "approved" | "changes-requested" | "pending" = "pending";
+    if (nonStaleReviews.length > 0) {
+      const latest = nonStaleReviews[nonStaleReviews.length - 1].state;
+      if (latest === "APPROVED") {
+        reviewStatus = "approved";
+      } else if (latest === "REQUEST_CHANGES") {
+        reviewStatus = "changes-requested";
+      }
+      // COMMENT, REQUEST_REVIEW, REJECTED, pending all map to "pending"
+    }
+
     const labelsHtml = pr.labels?.length
       ? pr.labels
           .map(
@@ -734,6 +749,16 @@ td.lc pre{margin:0;padding:0;font-family:inherit;font-size:inherit;white-space:p
   <button class="btn sm" onclick="startEdit()">✏️ Edit</button>
 </div>
 
+<div class="branch-row" style="margin-bottom:8px">
+  <span class="branch-tag">${escHtml(pr.head.ref)}</span>
+  <span class="dim">→</span>
+  <span class="branch-tag">${escHtml(pr.base.ref)}</span>
+  <span class="merge-status" style="color:${reviewStatus === 'approved' ? '#2da44e' : reviewStatus === 'changes-requested' ? '#cf222e' : '#d97706'}">
+    <span class="merge-icon">⎔</span>
+    <span class="dim">${reviewStatus === 'approved' ? 'Approved' : reviewStatus === 'changes-requested' ? 'Changes Requested' : 'Pending'}</span>
+  </span>
+</div>
+
 <div class="meta-row">
   <span class="badge" style="background:${stateBg}">${stateLabel}</span>
   by <strong>${escHtml(pr.user.login)}</strong>
@@ -786,12 +811,6 @@ td.lc pre{margin:0;padding:0;font-family:inherit;font-size:inherit;white-space:p
       ? `<div id="body-content" class="desc-body"></div>`
       : `<div class="desc-body" style="color:var(--dim);font-style:italic">(no description)</div>`
   }
-  <div class="branch-row" style="margin-top:10px">
-    <span class="dim">Base:</span>
-    <span class="branch-tag">${escHtml(pr.base.ref)}</span>
-    <span class="dim">←</span>
-    <span class="branch-tag">${escHtml(pr.head.ref)}</span>
-  </div>
   ${
     pr.commits != null || pr.additions != null
       ? `<div class="stats-row">

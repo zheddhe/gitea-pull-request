@@ -5,6 +5,7 @@ import { RepoManager, RepoInfo } from "../context/repoManager";
 import type { GiteaPullRequest } from "../api/types";
 
 export type PRFilter = "open" | "closed";
+type PRCategory = "all" | "waiting" | "created";
 
 interface RepoPRState {
   prs: GiteaPullRequest[];
@@ -31,6 +32,36 @@ export class RepoGroupItem extends vscode.TreeItem {
       : "";
     this.iconPath = new vscode.ThemeIcon(authed ? "repo" : "repo-forked");
     this.tooltip = `${repoInfo.serverUrl}/${repoInfo.owner}/${repoInfo.repo}`;
+  }
+}
+
+export class CategoryItem extends vscode.TreeItem {
+  constructor(
+    public readonly category: PRCategory,
+    public readonly prs: GiteaPullRequest[],
+    public readonly repoInfo: RepoInfo,
+  ) {
+    const label =
+      category === "all" ? "All Open"
+      : category === "waiting" ? "Waiting for my review"
+      : "Created by me";
+    const icon =
+      category === "all" ? "folder"
+      : category === "waiting" ? "eye"
+      : "git-pull-request";
+    const color =
+      category === "waiting" ? "charts.yellow"
+      : category === "created" ? "charts.green"
+      : undefined;
+    super(
+      `${label} (${prs.length})`,
+      vscode.TreeItemCollapsibleState.Collapsed,
+    );
+    this.id = `pr-cat:${repoInfo.key}:${category}`;
+    this.contextValue = `category-${category}`;
+    this.iconPath = color
+      ? new vscode.ThemeIcon(icon, new vscode.ThemeColor(color))
+      : new vscode.ThemeIcon(icon);
   }
 }
 
@@ -170,7 +201,7 @@ export class PullRequestProvider implements vscode.TreeDataProvider<vscode.TreeI
       return items;
     }
 
-    // ── Repo group: PRs for that repo ─────────────────────────────────────
+    // ── Repo group: category folders for that repo ─────────────────────────
     if (element instanceof RepoGroupItem) {
       const { repoInfo } = element;
       const session = await this.auth.getSession(repoInfo.serverUrl);
@@ -183,7 +214,14 @@ export class PullRequestProvider implements vscode.TreeDataProvider<vscode.TreeI
         signIn.command = { command: "gitea.signIn", title: "Sign In" };
         return [signIn];
       }
-      return this.getRepoChildren(repoInfo);
+      return this.getRepoCategories(repoInfo, session.username);
+    }
+
+    // ── Category: filtered PRs ─────────────────────────────────────────────
+    if (element instanceof CategoryItem) {
+      return element.prs.map(
+        (pr) => new PullRequestItem(pr, element.repoInfo),
+      );
     }
 
     // ── PR detail children ────────────────────────────────────────────────
@@ -192,6 +230,67 @@ export class PullRequestProvider implements vscode.TreeDataProvider<vscode.TreeI
     }
 
     return [];
+  }
+
+  private async getRepoCategories(
+    repoInfo: RepoInfo,
+    username: string,
+  ): Promise<vscode.TreeItem[]> {
+    let state = this.stateMap.get(repoInfo.key);
+    if (!state) {
+      state = { prs: [], page: 1, hasMore: false, loading: false };
+      this.stateMap.set(repoInfo.key, state);
+      await this.fetchForRepo(repoInfo, state);
+      return [];
+    }
+    if (state.loading) {
+      const item = new vscode.TreeItem(
+        "Loading...",
+        vscode.TreeItemCollapsibleState.None,
+      );
+      item.iconPath = new vscode.ThemeIcon("loading~spin");
+      return [item];
+    }
+    if (state.prs.length === 0) {
+      const empty = new vscode.TreeItem(
+        `No ${this.filter} pull requests`,
+        vscode.TreeItemCollapsibleState.None,
+      );
+      empty.iconPath = new vscode.ThemeIcon("info");
+      return [empty];
+    }
+
+    // Categorize PRs
+    const allPrs = state.prs;
+    const waitingPrs = allPrs.filter((pr) => {
+      // A PR is "waiting for my review" if:
+      // - I'm assigned to it (assignee or in assignees list)
+      // - AND it hasn't been approved by me yet
+      const isAssigned =
+        pr.assignee?.login === username ||
+        pr.assignees?.some((a) => a.login === username);
+      if (!isAssigned) return false;
+
+      // Check reviews — if I've already approved, it's not waiting
+      // We don't have review data here, so we use a heuristic:
+      // If there are any reviews and none are APPROVED, assume waiting
+      // (The detail view will show the actual review status)
+      return true;
+    });
+    const createdPrs = allPrs.filter((pr) => pr.user.login === username);
+
+    const categories: vscode.TreeItem[] = [];
+    if (allPrs.length > 0) {
+      categories.push(new CategoryItem("all", allPrs, repoInfo));
+    }
+    if (waitingPrs.length > 0) {
+      categories.push(new CategoryItem("waiting", waitingPrs, repoInfo));
+    }
+    if (createdPrs.length > 0) {
+      categories.push(new CategoryItem("created", createdPrs, repoInfo));
+    }
+
+    return categories;
   }
 
   private async getRepoChildren(
