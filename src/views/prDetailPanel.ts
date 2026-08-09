@@ -10,7 +10,6 @@ import type {
   GiteaReviewComment,
 } from "../api/types";
 import { log } from "../debug/outputChannel";
-import { getMarkedInlineScript } from "./webviewScripts";
 
 // ── Raw diff parser ──────────────────────────────────────────────────────────
 
@@ -561,7 +560,7 @@ export class PRDetailPanel {
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: data: vscode-resource:; style-src 'unsafe-inline'; script-src 'unsafe-inline';">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>PR #${pr.number}</title>
-${getMarkedInlineScript()}
+
 <style>
 :root {
   --bg: var(--vscode-editor-background,#1e1e1e);
@@ -767,11 +766,7 @@ td.lc pre{margin:0;padding:0;font-family:inherit;font-size:inherit;white-space:p
   <div id="view-mode">
     ${
       pr.body?.trim()
-        ? `<div class="md-toggle-row">
-          <button class="btn sec sm" id="body-toggle" onclick="toggleMd('body')">Raw</button>
-          <span class="dim">Description</span>
-        </div>
-        <div id="body-content" class="desc-body" data-raw="${escAttr(pr.body)}"></div>`
+        ? `<div id="body-content" class="desc-body"></div>`
         : `<div class="desc-body" style="color:var(--dim);font-style:italic">(no description)</div>`
     }
     <div class="branch-row" style="margin-top:10px">
@@ -858,85 +853,56 @@ const commentsData = ${commentsJson};
 debugLog('PR webview loaded - step2');
 let pendingComments = [];
 let openFormKey = null;
-let mdMode = { body: 'rendered' };
 
 function esc(s) {
   return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
-function renderMd(text) {
-  if (!text) return '';
-  return marked.parse(text);
-}
-
 function post(cmd, extra) {
+  debugLog('post: ' + cmd + (extra ? ' with extra' : ''));
   vscode.postMessage(Object.assign({ command: cmd }, extra || {}));
 }
 
 function showTab(name, btn) {
+  debugLog('showTab: ' + name);
   document.querySelectorAll('.tab-content').forEach(function(el) { el.classList.remove('active'); });
   document.querySelectorAll('.tab').forEach(function(el) { el.classList.remove('active'); });
   document.getElementById('tab-' + name).classList.add('active');
   btn.classList.add('active');
 }
 
-function toggleMd(id) {
-  mdMode[id] = mdMode[id] === 'rendered' ? 'raw' : 'rendered';
-  if (id === 'body') {
-    renderBody();
-  } else {
-    renderComments();
-  }
-}
-
 function renderBody() {
   try {
     var el = document.getElementById('body-content');
-    var btn = document.getElementById('body-toggle');
-    if (!el) return;
-    if (mdMode.body === 'rendered') {
-      el.innerHTML = renderMd(bodyText);
-      if (btn) btn.textContent = 'Raw';
-    } else {
-      el.innerHTML = '<pre style="margin:0;white-space:pre-wrap">' + esc(bodyText) + '</pre>';
-      if (btn) btn.textContent = 'Rendered';
-    }
-    debugLog('renderBody done');
+    if (!el) { debugLog('renderBody: no body-content element'); return; }
+    el.innerHTML = '<pre style="margin:0;white-space:pre-wrap">' + esc(bodyText) + '</pre>';
+    debugLog('renderBody done, body length=' + (bodyText ? bodyText.length : 0));
   } catch(e) { debugLog('renderBody error: ' + e.message); }
 }
 
 function renderComments() {
   try {
     var container = document.getElementById('comments-list');
-    if (!container) return;
+    if (!container) { debugLog('renderComments: no comments-list element'); return; }
     if (commentsData.length === 0) {
       container.innerHTML = '<p class="empty">No comments yet.</p>';
+      debugLog('renderComments: no comments');
       return;
     }
     var html = '';
     for (var i = 0; i < commentsData.length; i++) {
       var c = commentsData[i];
-      var cid = 'comment-' + c.id;
-      var mode = mdMode[cid] || 'rendered';
-      var bodyHtml;
-      if (mode === 'rendered') {
-        bodyHtml = renderMd(c.body);
-      } else {
-        bodyHtml = '<pre style="margin:0;white-space:pre-wrap">' + esc(c.body) + '</pre>';
-      }
-      var toggleText = mode === 'rendered' ? 'Raw' : 'Rendered';
-      html += '<div class="comment" id="' + cid + '">' +
+      html += '<div class="comment" id="comment-' + c.id + '">' +
         '<div class="comment-hdr">' +
         '<img src="' + esc(c.user.avatar_url) + '" class="avatar" alt="">' +
         '<strong>' + esc(c.user.login) + '</strong>' +
         '<span class="time">' + new Date(c.created_at).toLocaleString() + '</span>' +
-        '<button class="btn sec sm" onclick="toggleMd(\'' + cid + '\')">' + toggleText + '</button>' +
         '</div>' +
-        '<div class="comment-body">' + bodyHtml + '</div>' +
+        '<div class="comment-body"><pre style="margin:0;white-space:pre-wrap">' + esc(c.body) + '</pre></div>' +
         '</div>';
     }
     container.innerHTML = html;
-    debugLog('renderComments done');
+    debugLog('renderComments done, count=' + commentsData.length);
   } catch(e) { debugLog('renderComments error: ' + e.message); }
 }
 
@@ -1047,7 +1013,7 @@ function renderReviews() {
   try {
     document.querySelectorAll('.review-body').forEach(function(el) {
       var raw = el.getAttribute('data-raw');
-      if (raw) el.innerHTML = renderMd(raw);
+      if (raw) el.innerHTML = '<pre style="margin:0;white-space:pre-wrap">' + esc(raw) + '</pre>';
     });
     debugLog('renderReviews done');
   } catch(e) { debugLog('renderReviews error: ' + e.message); }
@@ -1055,6 +1021,7 @@ function renderReviews() {
 
 window.addEventListener("message", function(event) {
   var message = event.data;
+  debugLog('message received: ' + (message ? message.command : 'null'));
   if (!message || !message.command) return;
   if (message.command === "loading") {
     document.body.style.opacity = "0.7";
