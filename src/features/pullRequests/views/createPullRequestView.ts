@@ -62,7 +62,9 @@ export class CreatePullRequestViewProvider
       this.repoManager.onDidChange(() => {
         if (
           this.draft &&
-          !this.repoManager.getRepos().some((repo) => repo.key === this.draft?.repoInfo.key)
+          !this.repoManager
+            .getRepos()
+            .some((repo) => repo.key === this.draft?.repoInfo.key)
         ) {
           this.draft = undefined;
           this.render();
@@ -85,7 +87,9 @@ export class CreatePullRequestViewProvider
   async start(): Promise<void> {
     if (this.draft && this.session.current.kind === "creating") {
       this.render();
-      await vscode.commands.executeCommand(`${CreatePullRequestViewProvider.viewType}.focus`);
+      await vscode.commands.executeCommand(
+        `${CreatePullRequestViewProvider.viewType}.focus`,
+      );
       return;
     }
 
@@ -136,7 +140,9 @@ export class CreatePullRequestViewProvider
     );
 
     this.render();
-    await vscode.commands.executeCommand(`${CreatePullRequestViewProvider.viewType}.focus`);
+    await vscode.commands.executeCommand(
+      `${CreatePullRequestViewProvider.viewType}.focus`,
+    );
   }
 
   dispose(): void {
@@ -221,7 +227,12 @@ export class CreatePullRequestViewProvider
     }
   }
 
-  private applyForm(message: Exclude<CreateViewMessage, { type: "cancel" } | { type: "openLegacy" }>): void {
+  private applyForm(
+    message: Exclude<
+      CreateViewMessage,
+      { type: "cancel" } | { type: "openLegacy" }
+    >,
+  ): void {
     if (!this.draft) {
       return;
     }
@@ -257,7 +268,9 @@ export class CreatePullRequestViewProvider
         users.map((user) => ({
           label: user.login,
           description: user.full_name || undefined,
-          picked: this.draft?.assignees.some((item) => item.login === user.login),
+          picked: this.draft?.assignees.some(
+            (item) => item.login === user.login,
+          ),
           user,
         })),
         { canPickMany: true, placeHolder: "Select pull request assignees" },
@@ -274,12 +287,16 @@ export class CreatePullRequestViewProvider
   private async pickReviewers(): Promise<void> {
     if (!this.draft) return;
     try {
-      const users = await this.metadataApi.listReviewerCandidates(this.draft.repoInfo);
+      const users = await this.metadataApi.listReviewerCandidates(
+        this.draft.repoInfo,
+      );
       const selected = await vscode.window.showQuickPick(
         users.map((user) => ({
           label: user.login,
           description: user.full_name || undefined,
-          picked: this.draft?.reviewers.some((item) => item.login === user.login),
+          picked: this.draft?.reviewers.some(
+            (item) => item.login === user.login,
+          ),
           user,
         })),
         { canPickMany: true, placeHolder: "Select requested reviewers" },
@@ -318,8 +335,13 @@ export class CreatePullRequestViewProvider
   private async pickMilestone(): Promise<void> {
     if (!this.draft) return;
     try {
-      const milestones = await this.metadataApi.listMilestones(this.draft.repoInfo);
-      const clearItem = { label: "$(circle-slash) No milestone", milestone: undefined as GiteaMilestone | undefined };
+      const milestones = await this.metadataApi.listMilestones(
+        this.draft.repoInfo,
+      );
+      const clearItem = {
+        label: "$(circle-slash) No milestone",
+        milestone: undefined as GiteaMilestone | undefined,
+      };
       const selected = await vscode.window.showQuickPick(
         [
           clearItem,
@@ -374,7 +396,11 @@ export class CreatePullRequestViewProvider
 
       if (reviewers.length > 0) {
         try {
-          await this.metadataApi.requestReviewers(repoInfo, pullRequest.number, reviewers);
+          await this.metadataApi.requestReviewers(
+            repoInfo,
+            pullRequest.number,
+            reviewers,
+          );
         } catch (error) {
           vscode.window.showWarningMessage(
             `PR #${pullRequest.number} was created, but reviewers could not be requested: ${(error as Error).message}`,
