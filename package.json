@@ -3,7 +3,7 @@
   "displayName": "Gitea Pull Request",
   "description": "Pull requests, reviews, issues and CI context for self-hosted Gitea, directly in Visual Studio Code",
   "readme": "./README.md",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "publisher": "zheddhe",
   "repository": {
     "type": "git",
@@ -95,8 +95,13 @@
       "activitybar": [
         {
           "id": "giteaPullRequest",
+          "title": "Gitea",
+          "icon": "resources/gitea-forge-activity.svg"
+        },
+        {
+          "id": "giteaPullRequestContext",
           "title": "Gitea Pull Request",
-          "icon": "resources/gitea-activity.svg"
+          "icon": "resources/gitea-pr-activity.svg"
         }
       ]
     },
@@ -114,10 +119,22 @@
           "when": "gitea.prSession.creating"
         },
         {
+          "id": "gitea.issues",
+          "name": "Issues",
+          "icon": "resources/gitea-activity.svg"
+        },
+        {
+          "id": "gitea.ciRuns",
+          "name": "CI / Actions",
+          "icon": "resources/gitea-activity.svg"
+        }
+      ],
+      "giteaPullRequestContext": [
+        {
           "id": "gitea.prDiff",
           "name": "Changes in Pull Request",
           "when": "gitea.prSession.active || gitea.prDiffVisible",
-          "icon": "resources/gitea-activity.svg"
+          "icon": "resources/gitea-pr-activity.svg"
         },
         {
           "id": "gitea.reviewPullRequest",
@@ -130,16 +147,6 @@
           "name": "Pull Request Merged",
           "type": "webview",
           "when": "gitea.prSession.merged"
-        },
-        {
-          "id": "gitea.issues",
-          "name": "Issues",
-          "icon": "resources/gitea-activity.svg"
-        },
-        {
-          "id": "gitea.ciRuns",
-          "name": "CI / Actions",
-          "icon": "resources/gitea-activity.svg"
         }
       ]
     },

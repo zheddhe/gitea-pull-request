@@ -2,6 +2,8 @@ import * as vscode from "vscode";
 import { PullRequestItem } from "../../../views/pullRequestProvider";
 import { PullRequestSessionService } from "../services/pullRequestSessionService";
 
+const PULL_REQUEST_CONTEXT_CONTAINER = "workbench.view.extension.giteaPullRequestContext";
+
 export function registerPullRequestSessionCommands(
   context: vscode.ExtensionContext,
   session: PullRequestSessionService,
@@ -23,6 +25,8 @@ export function registerPullRequestSessionCommands(
           },
           item.pr,
         );
+
+        await vscode.commands.executeCommand(PULL_REQUEST_CONTEXT_CONTAINER);
       },
     ),
     vscode.commands.registerCommand("gitea.clearActivePR", async () => {
