@@ -69,15 +69,75 @@ See [`docs/ROADMAP.md`](docs/ROADMAP.md) for the transformation phases and archi
 
 ## Installation
 
-### Development / VSIX
+### Development / local VSIX
+
+Development build, validation, packaging and local installation are centralized in the repository `Makefile` so the same sequence can be reproduced consistently.
+
+The packaging tool is pinned to `@vscode/vsce 3.9.2`; local VSIX packaging therefore requires **Node.js 22+**. The VS Code command-line launcher (`code`) is only required for the installation targets.
+
+Run a complete clean rebuild:
 
 ```bash
-npm install
-npm run compile
-npm run package
+make rebuild-vsix
 ```
 
-Then install the generated `.vsix` through **Extensions: Install from VSIX…** in VS Code.
+This performs, in order:
+
+1. removal of previous TypeScript/build artifacts;
+2. `npm ci` from the committed lock file;
+3. TypeScript compilation;
+4. ESLint validation;
+5. extension tests;
+6. VSIX packaging.
+
+Generated packages are kept outside the source tree under:
+
+```text
+.artifacts/vsix/gitea-pull-request-<version>.vsix
+```
+
+`.artifacts/` is ignored by Git and is the canonical location for disposable local build outputs.
+
+To force-install the package that was just built into the local VS Code installation:
+
+```bash
+make install-vsix
+```
+
+For the normal end-to-end developer loop, use:
+
+```bash
+make reinstall-vsix
+```
+
+which performs a clean rebuild and then executes the equivalent of:
+
+```bash
+code --install-extension .artifacts/vsix/gitea-pull-request-<version>.vsix --force
+```
+
+Useful targets:
+
+```bash
+make help          # list targets
+make doctor        # validate Node/npm/npx and report VS Code CLI availability
+make compile       # TypeScript only
+make lint          # ESLint only
+make test          # compile + extension tests
+make verify        # compile + lint + tests
+make vsix          # verify + package, without reinstalling dependencies
+make rebuild-vsix  # clean + npm ci + verify + package
+make install-vsix  # install the already-built VSIX
+make reinstall-vsix# clean rebuild + local installation
+make show-vsix     # print the generated VSIX path
+make ci            # reproduce the clean CI build/package sequence
+```
+
+If a different VS Code-compatible launcher is used, override it explicitly, for example:
+
+```bash
+make install-vsix CODE=codium
+```
 
 Marketplace publication will use the standalone extension identity **Gitea Pull Request** (`publisher: zheddhe`).
 
