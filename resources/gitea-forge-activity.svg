@@ -1,11 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
-  <g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M4.25 6.5h12.5v8.25A4.25 4.25 0 0 1 12.5 19h-4A4.25 4.25 0 0 1 4.25 14.75V6.5Z"/>
-    <path d="M16.75 8.25h1.5a2.75 2.75 0 0 1 0 5.5h-1.5"/>
-    <circle cx="8" cy="10" r="1.35"/>
-    <circle cx="13" cy="14.75" r="1.35"/>
-    <path d="M8 11.35v1.15a2.25 2.25 0 0 0 2.25 2.25h1.4"/>
-    <path d="M8 8.65V5"/>
-    <path d="M6.5 3.5 8 5l1.5-1.5"/>
+  <g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Larger Gitea cup/forge silhouette to match Activity Bar visual weight -->
+    <path d="M3 5.5h13.5v9A5 5 0 0 1 11.5 19.5h-3.5A5 5 0 0 1 3 14.5v-9Z"/>
+    <path d="M16.5 7.5h1.75a3 3 0 0 1 0 6H16.5"/>
+    <circle cx="7.25" cy="9.5" r="1.5"/>
+    <circle cx="12.75" cy="15" r="1.5"/>
+    <path d="M7.25 11v1.25A2.75 2.75 0 0 0 10 15h1.25"/>
+    <path d="M7.25 8V4.25"/>
+    <path d="M5.5 2.5 7.25 4.25 9 2.5"/>
   </g>
 </svg>
