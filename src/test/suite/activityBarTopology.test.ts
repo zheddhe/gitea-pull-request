@@ -8,7 +8,10 @@ suite("Activity Bar topology", () => {
   ) as {
     contributes?: {
       viewsContainers?: { activitybar?: Array<{ id: string; title: string; icon: string }> };
-      views?: Record<string, Array<{ id: string; name: string; when?: string }>>;
+      views?: Record<
+        string,
+        Array<{ id: string; name: string; when?: string; initialSize?: number }>
+      >;
       commands?: Array<{ command: string; title: string; icon?: string }>;
       menus?: {
         "view/title"?: Array<{ command: string; when?: string; group?: string }>;
@@ -87,6 +90,16 @@ suite("Activity Bar topology", () => {
     assert.match(source, /contextValue === "category-all"/);
     assert.match(source, /contextValue === "category-waiting"/);
     assert.match(source, /TreeItemCollapsibleState\.Expanded/);
+  });
+
+  test("gives Create Pull Request half of the general Gitea workspace when visible", () => {
+    const general = packageJson.contributes?.views?.giteaPullRequest ?? [];
+    const byId = new Map(general.map((view) => [view.id, view]));
+
+    assert.strictEqual(byId.get("gitea.pullRequests")?.initialSize, 1);
+    assert.strictEqual(byId.get("gitea.createPullRequest")?.initialSize, 3);
+    assert.strictEqual(byId.get("gitea.issues")?.initialSize, 1);
+    assert.strictEqual(byId.get("gitea.ciRuns")?.initialSize, 1);
   });
 
   test("uses refresh then close consistently on active PR view titles", () => {
