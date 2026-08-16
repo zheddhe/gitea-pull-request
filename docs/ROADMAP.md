@@ -102,7 +102,9 @@ Phase 4 development exposed additional Phase 3 edge cases and completed them wit
 
 **Release:** `0.5.0`
 
-Completed: explicit merged-session sidebar, exact branch identity discovery, safe checkout-before-delete, independent local/remote cleanup, remote deletion from resolved refs, Create New Pull Request, checkout-base-without-delete and keep-branches completion paths. Interactive validation covered deletion of both local and `origin/gitea/test`, independent selection and WIP recreation.
+Completed: explicit merged-state view, exact repository/branch identity discovery, safe local/remote cleanup, checkout-before-delete, independent remote deletion, Create New Pull Request, checkout-without-delete, keep-branches completion and cleanup safety tests.
+
+Interactive validation confirmed local + remote deletion, actual remote ref removal, default dual selection, WIP recreation, post-merge completion and coherent return to idle.
 
 ---
 
@@ -112,42 +114,42 @@ Completed: explicit merged-session sidebar, exact branch identity discovery, saf
 
 ### Goal
 
-Separate general Gitea discovery/forge workflows from work on one active pull request by introducing two distinct Activity Bar containers.
+Separate general Gitea browsing from the contextual active-PR lifecycle using two distinct Activity Bar containers while preserving the existing sidebar-first workflow.
 
-### Target topology
+### Implemented
 
-```text
-Gitea
-├─ Pull Requests
-├─ Create Pull Request
-├─ Issues
-└─ CI / Actions
+- General **Gitea** Activity Bar container contains Pull Requests, Create Pull Request, Issues and CI / Actions.
+- Dedicated **Gitea Pull Request** Activity Bar container contains Changes in Pull Request, Review Pull Request and Pull Request Merged.
+- Contextual container uses a distinct monochrome review-oriented icon and coexists visually with the official GitHub Pull Requests extension.
+- Activating a PR focuses the contextual pull-request container.
+- Active/merged visibility remains driven by existing session context keys.
+- Post-merge cleanup remains entirely in the contextual container and the merged view disappears once cleanup completes.
+- On first entry into the Gitea workspace, repository groups plus **All Open** and **Waiting for my review** expand by default so open and assigned/review work is immediately visible.
+- Contribution tests cover container membership, labels, context conditions and distinct icon assets.
+- General CI / Actions intentionally stays in the main Gitea workspace; PR-centric CI presentation remains Phase 6 polish.
 
-Gitea Pull Request
-├─ Changes in Pull Request
-├─ Review Pull Request
-└─ Pull Request Merged
+### Interactive validation completed
+
+- both Activity Bar containers render with the intended grouping;
+- both icons are distinguishable and coexist correctly with GitHub Pull Requests;
+- active PR navigation opens Changes + Review in the contextual container;
+- merge transitions to the post-merge context;
+- cleanup completes correctly and removes the merged contextual view;
+- general Pull Requests / Issues / CI remain in the Gitea workspace.
+
+### Release gate remaining
+
+- final documentation review;
+- `make verify` on final Phase 5 code;
+- promote atomically with:
+
+```bash
+make promote RELEASE_VERSION=0.6.0
 ```
 
-The general container retains the existing `giteaPullRequest` contribution identity to minimize VS Code layout-state disruption. The contextual container uses `giteaPullRequestContext` and is entered automatically when a PR is activated.
-
-### Implemented / validated so far
-
-- Two independent Activity Bar containers are contributed.
-- General Gitea browsing retains Pull Requests, Create Pull Request, Issues and CI / Actions.
-- Changes, Review and post-merge views live in the contextual Gitea Pull Request container.
-- General and contextual containers use distinct monochrome SVG assets; the contextual pull-request icon is intentionally distinguishable from the official GitHub Pull Requests icon without relying on color.
-- Activating a PR focuses the contextual Pull Request container after the session becomes active.
-- Contribution tests assert container membership, contextual `when` clauses, workspace labels and distinct icon assets.
-- Initial interactive validation confirmed the dual-container structure and icons match the intended workflow.
-
-### Remaining before Phase 5 completion
-
-- Validate `active -> merged` inside the new contextual container and post-merge visibility there.
-- Validate create remains cleanly associated with the general Gitea workspace.
-- Perform mixed GitHub/Gitea smoke validation with official GitHub Pull Requests installed.
-- Final review of README / CHANGELOG / Story / PR for the new topology.
-- Promote to `0.6.0`, run `make verify`, reinstall VSIX and perform final smoke validation.
+- run `make verify` again after promotion;
+- run `make reinstall-vsix` and final smoke validation;
+- mark the Phase 5 PR ready and merge.
 
 ---
 
@@ -157,20 +159,19 @@ The general container retains the existing `giteaPullRequest` contribution ident
 
 ### Goal
 
-Polish the stabilized dual-container product topology and improve secondary workflows without changing the main navigation architecture again.
+Complete the product around the stabilized dual-container PR workflow and perform the dedicated UX/ergonomic refinement pass.
 
 ### Work
 
-- Native refresh action in the **Changes in Pull Request** view title using the existing explicit refresh/rebind path.
-- Reduce duplicate controls where practical.
-- Visual/interaction consistency across Create, Review and post-merge views.
-- PR-centric CI/check refinement while general CI / Actions remains in the Gitea container.
+- Native refresh action/icon in the **Changes in Pull Request** view title, reusing explicit safe refresh semantics.
+- Visual/interaction consistency across Create Pull Request, Review Pull Request and post-merge views.
+- PR-centric CI/check presentation while general CI / Actions remains in the Gitea workspace.
 - Notifications/activity feed if useful.
 - Richer issue integration without requiring GitHub-specific branch-from-issue behavior.
 - Advanced filtering/search/saved queries if useful.
-- Markdown rendering where plain text is limiting.
+- Markdown rendering.
 - Accessibility/keyboarding review.
-- Broader command/API integration tests and Marketplace/documentation polish.
+- Broader command/API integration tests and Marketplace packaging/documentation.
 
 ---
 
@@ -185,25 +186,25 @@ Polish the stabilized dual-container product topology and improve secondary work
 | `src/views/prDiffProvider.ts` | Keep and evolve; active-PR driven with explicit reload semantics |
 | `src/views/prDetailPanel.ts` | Retain as secondary full-details view |
 | `src/views/issuesProvider.ts` | Keep |
-| `src/views/ciRunsProvider.ts` | Keep in general Gitea container; PR-specific refinement belongs to Phase 6 |
+| `src/views/ciRunsProvider.ts` | Keep in general Gitea workspace; add PR-centric presentation separately if useful |
 | `src/commands/prCommands.ts` | Split progressively by workflow responsibility |
 | `src/extension.ts` | Evolve into composition/bootstrap rather than workflow coordinator |
 
 ## Testing strategy
 
-Each phase adds tests at the lowest stable layer first: domain/session unit tests, pure planning tests, API contract-style tests, command/Git orchestration tests, contribution/topology tests and extension-host tests where practical.
+Each phase adds tests at the lowest stable layer first: domain/session unit tests, pure planning tests, API contract-style tests, command/Git orchestration tests, and extension-host tests where practical. Destructive cleanup safety/error-path coverage is a release requirement rather than deferred polish.
 
 Minimum regression workflows:
 
 1. authenticate and discover repository;
-2. list PRs in the general Gitea workspace;
-3. activate a PR and enter the contextual PR workspace;
-4. refresh PR and open diff;
-5. create normal or WIP/draft PR from the general Gitea workflow;
-6. comment/review and mark WIP ready;
-7. merge with supported methods and block no-delta/WIP/server-non-mergeable states appropriately;
-8. complete post-merge cleanup in the contextual PR workspace;
-9. keep GitHub and Gitea workspaces isolated in mixed-forge use.
+2. list PRs;
+3. activate/refresh PR and open diff;
+4. create normal or WIP/draft PR;
+5. comment/review and mark WIP ready;
+6. merge with supported methods and block no-delta/WIP/server-non-mergeable states appropriately;
+7. post-merge branch identity, checkout and cleanup;
+8. switch repository while a PR is active;
+9. coexist with GitHub Pull Requests using the dual Gitea workspace topology.
 
 ## Migration rule
 
