@@ -6,6 +6,7 @@ import type {
 } from "../../../api/types";
 import type { RepoInfo } from "../../../context/repoManager";
 import { RepoManager } from "../../../context/repoManager";
+import { log } from "../../../debug/outputChannel";
 import { PullRequestProvider } from "../../../views/pullRequestProvider";
 import type { PullRequestWorkspaceState } from "../domain/pullRequestState";
 import {
@@ -110,9 +111,10 @@ export class ReviewPullRequestViewProvider
     this.view = view;
     view.webview.options = { enableScripts: true };
     this.disposables.push(
-      view.webview.onDidReceiveMessage((message: ReviewViewMessage) =>
-        this.handleMessage(message),
-      ),
+      view.webview.onDidReceiveMessage((message: ReviewViewMessage) => {
+        log(`[review-view] message received type=${message.type}`);
+        void this.handleMessage(message);
+      }),
     );
     this.render();
     const active = this.activeContext();
@@ -146,11 +148,13 @@ export class ReviewPullRequestViewProvider
 
   private async handleMessage(message: ReviewViewMessage): Promise<void> {
     if (this.busy) {
+      log(`[review-view] ignored type=${message.type}; busy=true`);
       return;
     }
 
     const active = this.activeContext();
     if (!active) {
+      log(`[review-view] ignored type=${message.type}; no active PR`);
       vscode.window.showWarningMessage(
         "No active Gitea pull request is available for review.",
       );
@@ -158,6 +162,7 @@ export class ReviewPullRequestViewProvider
     }
 
     if (message.type === "refresh") {
+      log(`[review-view] refresh requested pr=#${active.state.pullRequest.number}`);
       await this.refreshActivePullRequest(active.repoInfo);
       const refreshed = this.activeContext();
       if (refreshed) await this.loadReadiness(refreshed.repoInfo, refreshed.state);
@@ -168,6 +173,7 @@ export class ReviewPullRequestViewProvider
       const supported = supportedMergeMethods(this.readiness.mergeSettings);
       if (supported.includes(message.method)) {
         await this.workspaceState.update(MERGE_METHOD_STATE_KEY, message.method);
+        log(`[review-view] merge method selected=${message.method}`);
         this.render();
       }
       return;
@@ -203,10 +209,12 @@ export class ReviewPullRequestViewProvider
 
     try {
       if (message.type === "comment") {
-        await this.api.addPRComment(active.repoInfo, number, body);
+        log(`[review-view] posting comment pr=#${number}`);
+        await this.reviewApi.addComment(active.repoInfo, number, body);
         vscode.window.showInformationMessage(`Comment posted on PR #${number}.`);
       } else if (message.type === "approve") {
-        await this.api.createReview(
+        log(`[review-view] approving pr=#${number}`);
+        await this.reviewApi.createReview(
           active.repoInfo,
           number,
           "APPROVED",
@@ -214,7 +222,8 @@ export class ReviewPullRequestViewProvider
         );
         vscode.window.showInformationMessage(`PR #${number} approved.`);
       } else {
-        await this.api.createReview(
+        log(`[review-view] requesting changes pr=#${number}`);
+        await this.reviewApi.createReview(
           active.repoInfo,
           number,
           "REQUEST_CHANGES",
@@ -228,6 +237,7 @@ export class ReviewPullRequestViewProvider
       const refreshed = this.activeContext();
       if (refreshed) await this.loadReadiness(refreshed.repoInfo, refreshed.state);
     } catch (error) {
+      log(`[review-view] action type=${message.type} failed: ${(error as Error).message}`);
       vscode.window.showErrorMessage(
         `Unable to update PR #${number}: ${(error as Error).message}`,
       );
@@ -244,6 +254,7 @@ export class ReviewPullRequestViewProvider
     }
 
     try {
+      log(`[review-view] refreshing PR repo=${repoInfo.label} pr=#${state.pullRequest.number}`);
       const pullRequest = await this.api.getPullRequest(
         repoInfo,
         state.pullRequest.number,
@@ -254,7 +265,9 @@ export class ReviewPullRequestViewProvider
         state.checkoutState,
       );
       this.prProvider.refresh();
+      log(`[review-view] refreshed PR repo=${repoInfo.label} pr=#${pullRequest.number}`);
     } catch (error) {
+      log(`[review-view] PR refresh failed: ${(error as Error).message}`);
       vscode.window.showErrorMessage(
         `Unable to refresh active pull request: ${(error as Error).message}`,
       );
@@ -266,12 +279,18 @@ export class ReviewPullRequestViewProvider
     state: ActivePullRequestState,
   ): Promise<void> {
     const identity = `${repoInfo.key}#${state.pullRequest.number}@${state.pullRequest.head.sha}`;
+    if (this.readiness.loading && this.readiness.identity === identity) {
+      log(`[review-view] readiness already loading identity=${identity}`);
+      return;
+    }
+
     this.readiness = { loading: true, identity };
+    log(`[review-view] readiness start identity=${identity}`);
     this.render();
 
     const [status, reviews, mergeSettings, branchPolicy] = await Promise.allSettled([
       this.reviewApi.getCombinedStatus(repoInfo, state.pullRequest.head.sha),
-      this.api.listReviews(repoInfo, state.pullRequest.number),
+      this.reviewApi.listReviews(repoInfo, state.pullRequest.number),
       this.reviewApi.getRepositoryMergeSettings(repoInfo),
       this.reviewApi.getBranchMergePolicy(repoInfo, state.pullRequest.base.ref),
     ]);
@@ -281,6 +300,7 @@ export class ReviewPullRequestViewProvider
       !current ||
       `${current.repoInfo.key}#${current.state.pullRequest.number}@${current.state.pullRequest.head.sha}` !== identity
     ) {
+      log(`[review-view] readiness discarded stale identity=${identity}`);
       return;
     }
 
@@ -300,6 +320,9 @@ export class ReviewPullRequestViewProvider
         branchPolicy.status === "fulfilled" ? branchPolicy.value : undefined,
       warning: warnings.length > 0 ? warnings.join(" | ") : undefined,
     };
+    log(
+      `[review-view] readiness complete identity=${identity} status=${status.status} reviews=${reviews.status} settings=${mergeSettings.status} branch=${branchPolicy.status}`,
+    );
     this.render();
   }
 
@@ -364,6 +387,7 @@ export class ReviewPullRequestViewProvider
       );
       if (confirm !== "Merge") return;
 
+      log(`[review-view] merge start pr=#${latestPr.number} method=${method}`);
       await this.api.mergePullRequest(repoInfo, latestPr.number, method);
 
       let mergedPr = latestPr;
@@ -375,10 +399,12 @@ export class ReviewPullRequestViewProvider
       const presence = await this.branchPresence(repoInfo, latestPr.head.ref);
       await this.session.markMerged(originalState.repository, mergedPr, presence);
       this.prProvider.refresh();
+      log(`[review-view] merge complete pr=#${latestPr.number} method=${method}`);
       vscode.window.showInformationMessage(
         `PR #${latestPr.number} merged using ${mergeMethodLabel(method)}.`,
       );
     } catch (error) {
+      log(`[review-view] merge failed: ${(error as Error).message}`);
       vscode.window.showErrorMessage(
         `Merge failed: ${(error as Error).message}`,
       );
