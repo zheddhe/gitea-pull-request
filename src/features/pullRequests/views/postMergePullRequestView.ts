@@ -36,7 +36,12 @@ export class PostMergePullRequestViewProvider
         this.identity = undefined;
         this.warning = undefined;
         this.render();
-        if (state.kind === "merged") void this.loadIdentity(state);
+        if (state.kind === "merged") {
+          void this.loadIdentity(state);
+          void vscode.commands.executeCommand(
+            `${PostMergePullRequestViewProvider.viewType}.focus`,
+          );
+        }
       }),
       this.repoManager.onDidChange(() => {
         this.render();
