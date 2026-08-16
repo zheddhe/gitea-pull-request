@@ -32,5 +32,15 @@ export function registerPullRequestSessionCommands(
     vscode.commands.registerCommand("gitea.clearActivePR", async () => {
       await session.clear();
     }),
+    vscode.commands.registerCommand("gitea.cancelCreatePR", async () => {
+      if (session.current.kind === "creating") {
+        await session.clear();
+      }
+    }),
+    vscode.commands.registerCommand("gitea.finishPostMerge", async () => {
+      if (session.current.kind === "merged") {
+        await session.clear();
+      }
+    }),
   );
 }
