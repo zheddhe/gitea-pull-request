@@ -10,37 +10,38 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 
 - Dedicated **Pull Request #N Merged** post-merge sidebar WebviewView driven by the `merged` pull-request session state.
 - Automatic focus of the post-merge view after a successful sidebar merge.
-- `BranchCleanupService` foundation for resolving the actual local and remote head/base branch identities before any destructive cleanup action.
-- Independent local/remote branch identity handling, including local aliases that track a differently named remote PR branch.
-- Post-merge branch-state diagnostics and manual refresh.
-- Pure cleanup planning for upcoming local/remote deletion actions, including whether checkout of the base branch is required first.
-- Tests covering exact and aliased local branches, remote-only branches, multiple remotes, origin preference, cleanup eligibility and safe-checkout planning.
+- `BranchCleanupService` for resolving and safely cleaning the actual local and remote head/base branch identities.
+- Independent local/remote branch cleanup selection, including local aliases that track a differently named remote PR branch.
+- Safe checkout of the target/base branch before deleting a currently checked-out local head branch.
+- Remote branch deletion using the resolved remote + PR head identity rather than the local branch name.
+- Post-merge lifecycle actions: **Create New Pull Request...**, **Delete Branch...**, **Checkout '<base>' without deleting branch**, **Keep branches and finish**, and branch-state refresh.
+- **Mark Ready for Review** in the contextual review view for Gitea draft/WIP pull requests.
+- Tests covering branch identity, cleanup planning/execution, checkout-before-delete ordering, partial failure, WIP readiness distinction and ready-for-review title normalization.
 
 ### Changed
 
 - The post-merge workflow no longer ends with the Phase 3 Changes/Review views simply disappearing: the `merged` session now has an explicit sidebar successor state.
-- Merge-readiness presentation now explains `mergeable=false` as an automatic-merge blocker requiring conflict or other server-side mergeability resolution before merge. Gitea remains authoritative because its public API does not reliably expose the exact conflicting-file list for this state.
+- Local and remote cleanup choices are selected independently and are both preselected when both branches exist, matching the expected GitHub Pull Requests cleanup ergonomics.
+- Remote branch discovery uses Git refs directly so branches such as `origin/gitea/test` are not missed by VS Code Git API ref-shape differences.
+- Merge-readiness presentation distinguishes **Draft / WIP**, **No changes to merge**, and **Not mergeable (Gitea)** instead of presenting every `mergeable=false` signal as a conflict-style blocker.
+- A WIP/no-delta PR no longer receives an additional misleading generic Gitea server-side mergeability reason when its explicit blocker already explains why merge is unavailable.
+- Refreshing an active PR now rebinds and reloads the existing **Changes in Pull Request** provider when the PR head SHA/title/refs change, so newly pushed commits update the contextual diff instead of leaving stale zero-diff content.
 - Phase 4 cleanup decisions are based on resolved Git identities rather than assuming the PR head name, local branch name and remote branch name are identical.
 
 ### Validation
 
-Current Phase 4 foundation validation covers:
+Interactive Phase 4 validation covers:
 
-- post-merge transition into the dedicated merged view;
+- transition from successful merge into the dedicated post-merge view;
 - exact merged PR/repository/head/base context preservation;
-- local and remote branch identity resolution;
-- local alias tracking independent from the PR remote branch name;
-- remote-only branch state and multiple-remotes/origin preference;
-- safe cleanup planning with checkout-before-delete requirements;
-- explicit merge blocking for a PR reported by Gitea as not mergeable;
-- 36 extension/domain tests passing before the Phase 4 destructive cleanup implementation.
+- local + remote branch cleanup with both choices selected by default;
+- independent local-only / remote-only selection behavior;
+- correct remote discovery and deletion for `origin/gitea/test`-style refs;
+- Create New Pull Request lifecycle transition, including creation of a new draft/WIP PR;
+- merge/readiness handling for no-diff and WIP PRs;
+- Phase 3 conflict/non-mergeable handling retained during Phase 4 work.
 
-### Remaining Phase 4 work
-
-- Execute checkout-base and local branch deletion safely.
-- Execute remote branch deletion with independent local/remote selection.
-- Add **Create New Pull Request...** and coherent lifecycle completion/decline transitions.
-- Complete interactive cleanup validation, documentation review and the `0.5.0` release gate.
+Final release validation still requires the normal release gate after promotion: `make verify`, `make reinstall-vsix`, and final smoke checks.
 
 ## [0.4.0] - 2026-08-16
 
