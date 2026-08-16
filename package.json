@@ -110,23 +110,27 @@
         {
           "id": "gitea.pullRequests",
           "name": "Pull Requests",
-          "icon": "resources/gitea-activity.svg"
+          "icon": "resources/gitea-activity.svg",
+          "initialSize": 1
         },
         {
           "id": "gitea.createPullRequest",
           "name": "Create Pull Request",
           "type": "webview",
-          "when": "gitea.prSession.creating"
+          "when": "gitea.prSession.creating",
+          "initialSize": 3
         },
         {
           "id": "gitea.issues",
           "name": "Issues",
-          "icon": "resources/gitea-activity.svg"
+          "icon": "resources/gitea-activity.svg",
+          "initialSize": 1
         },
         {
           "id": "gitea.ciRuns",
           "name": "CI / Actions",
-          "icon": "resources/gitea-activity.svg"
+          "icon": "resources/gitea-activity.svg",
+          "initialSize": 1
         }
       ],
       "giteaPullRequestContext": [
