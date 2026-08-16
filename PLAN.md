@@ -1,70 +1,43 @@
-# Gitea VSCode Extension Plan
+# Gitea Pull Request — Development Plan
 
-## Goal
+The project is now developed as the standalone **Gitea Pull Request** extension by **zheddhe**.
 
-Build a VSCode extension that mirrors core GitHub extension workflows for Gitea:
+The canonical transformation and implementation plan is maintained in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
-- Pull requests: list, view details, checkout branches, create/review/comment/merge
-- Actions-like CI view: workflows/runs/jobs/logs/status
-- Auth/account/repo context management for self-hosted Gitea instances
+## Current product direction
 
-## Scope (Phase 1) — ✅ Complete
+The extension is moving toward a sidebar-first pull-request experience for Gitea:
 
-1. Extension bootstrap and architecture
-   - ✅ TypeScript VSCode extension scaffold
-   - ✅ API client layer for Gitea REST (GraphQL not available in Gitea)
-   - ✅ Configuration for multiple Gitea servers and tokens
-2. Pull Request features
-   - ✅ Tree views: open PRs grouped by repository with category folders (All Open, Waiting for my review, Created by me)
-   - ✅ PR sidebar icons colored by review status (yellow/green/red)
-   - ✅ PR diff tree view: dedicated sidebar panel with directory tree, native file icons, checkbox tracking, and `vscode.diff` editor
-   - ✅ PR details panel: unified tabbed layout (Details, Reviews, Commits)
-   - ✅ PR actions: checkout branch, open diff, add review comment, approve/request changes, merge
-   - ✅ Inline edit form: global overlay above tabs to edit title, body, and base branch
-   - ✅ Merge status icon: colored icon in title row showing latest review status
-3. Issue features
-   - ✅ Issue details panel: unified tabbed layout (Details, History)
-   - ✅ Inline edit form: edit title and body
-   - ✅ `updateIssue()` API method: PATCH `/repos/{owner}/{repo}/issues/{number}`
-4. CI/Actions-like features
-   - ✅ Workflow/runs explorer (mapped to Gitea Actions APIs)
-   - ✅ Run detail view with jobs/logs and status badges (steps not available via Gitea API)
-   - ✅ Quick actions: rerun/cancel/open in browser
-   - ✅ Live log streaming with auto-scroll
-5. UX and reliability
-   - ✅ Status bar context (repo/branch/account)
-   - ✅ Command palette entries for all core operations
-   - ✅ Pagination (load more) and robust error handling
-   - ✅ Output channel for debug logging
-   - ⚠️ Caching: basic job cache in CI provider, no global cache layer
+- native TreeView navigation for repositories, PR categories and changed files;
+- WebviewView only for richer creation/review forms where native controls are insufficient;
+- VS Code QuickPick for reviewers, assignees, labels, milestones and similar selections;
+- explicit PR workspace/session state controlling contextual UI;
+- native `vscode.diff` for file inspection;
+- full PR detail webview retained as an alternative secondary view;
+- post-merge local/remote branch cleanup as an explicit workflow step.
 
-## Scope (Phase 2)
+## Existing foundation retained
 
-- ❌ Notifications and activity feed
-- ❌ Inline code review annotations in editor (existing annotations in PR detail panel)
-- ❌ Advanced filtering/search/saved queries
-- ❌ Markdown rendering in detail views (`marked` library present but not yet integrated)
+The current implementation already provides reusable foundations for:
 
-## Technical Notes
+- Gitea REST API access;
+- authentication and SecretStorage;
+- repository/workspace context;
+- pull-request listing and category grouping;
+- changed-file tree and native diff integration;
+- reviews, comments and merge operations;
+- issues;
+- Gitea Actions / CI runs and logs.
 
-- ✅ Use VSCode APIs: TreeDataProvider, WebviewView, Authentication/SecretStorage
-- ✅ Keep API layer strongly typed and isolated from UI commands
-- ✅ `getFileContents()` API method: fetch file content from a specific branch
-- ❌ Add integration tests for command handlers and API adapters (unit tests for repoContext only)
+These capabilities are migrated progressively rather than rewritten wholesale.
 
-## Milestones
+## Implementation phases
 
-1. ✅ Bootstrap + auth + repo detection
-2. ✅ PR list/detail/read-only
-3. ✅ PR write operations (review/merge)
-4. ✅ CI runs/jobs/logs
-5. ✅ Polish + packaging + marketplace docs
-6. ✅ Enhanced PR/Issue panels with unified tabs, diff tree, and review status icons (7.0.0-fork1.0.0)
+1. **Phase 0 — Product split and foundation**
+2. **Phase 1 — Active pull-request session model**
+3. **Phase 2 — Sidebar-first PR creation**
+4. **Phase 3 — Sidebar-first review and merge**
+5. **Phase 4 — Post-merge lifecycle and branch cleanup**
+6. **Phase 5 — Secondary workflows and polish**
 
-## Known Limitations
-
-- **Job steps**: Gitea API returns `"steps": null` — step-level details are not available in the tree view
-- **Assigned/created/mentioned PR views**: Only open PRs per repository are shown
-- **Single token per server**: Multiple users per server are not supported
-- **No GraphQL**: Gitea does not provide a GraphQL API
-- **Markdown rendering**: Detail views currently render body/comments as plain text in `<pre>` tags; `marked` library is present but not yet integrated
+For detailed scope, acceptance criteria and target architecture, see [`docs/ROADMAP.md`](docs/ROADMAP.md).
