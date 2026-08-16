@@ -114,4 +114,28 @@ suite("Activity Bar topology", () => {
       assert.strictEqual(closeAction.group, "navigation@2");
     }
   });
+
+  test("uses native close semantics for create and post-merge views", () => {
+    const commands = packageJson.contributes?.commands ?? [];
+    for (const commandId of ["gitea.cancelCreatePR", "gitea.finishPostMerge"]) {
+      const command = commands.find((item) => item.command === commandId);
+      assert.strictEqual(command?.icon, "$(close)");
+    }
+
+    const titleActions = packageJson.contributes?.menus?.["view/title"] ?? [];
+    assert.ok(
+      titleActions.some(
+        (item) =>
+          item.command === "gitea.cancelCreatePR" &&
+          item.when === "view == gitea.createPullRequest && gitea.prSession.creating",
+      ),
+    );
+    assert.ok(
+      titleActions.some(
+        (item) =>
+          item.command === "gitea.finishPostMerge" &&
+          item.when === "view == gitea.postMergePullRequest && gitea.prSession.merged",
+      ),
+    );
+  });
 });
