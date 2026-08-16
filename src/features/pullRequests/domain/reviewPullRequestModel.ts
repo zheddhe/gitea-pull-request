@@ -33,6 +33,13 @@ export function isWorkInProgress(pr: GiteaPullRequest): boolean {
   return /^(?:WIP:|\[WIP\])/i.test((pr.title ?? "").trim());
 }
 
+export function readyForReviewTitle(title: string): string {
+  return title
+    .trim()
+    .replace(/^(?:WIP:\s*|\[WIP\]\s*)/i, "")
+    .trim();
+}
+
 export function hasNoChangesToMerge(pr: GiteaPullRequest): boolean {
   return (
     pr.changed_files === 0 &&
@@ -82,23 +89,28 @@ export function evaluateMergeReadiness(
 ): MergeReadiness {
   const blockingReasons: string[] = [];
   const warnings: string[] = [];
+  const noChanges = hasNoChangesToMerge(pr);
+  const wip = isWorkInProgress(pr);
 
   if (pr.merged) blockingReasons.push("Pull request is already merged");
   else if (pr.state !== "open") blockingReasons.push("Pull request is closed");
 
-  if (hasNoChangesToMerge(pr)) {
+  if (noChanges) {
     blockingReasons.push(
       "No changes to merge; the head branch is already contained in the target branch",
     );
   }
 
-  if (isWorkInProgress(pr)) {
+  if (wip) {
     blockingReasons.push("Pull request is marked Work In Progress");
   }
 
-  if (pr.mergeable === false) {
+  // Gitea can report mergeable=false for WIP/no-delta PRs as well as for real
+  // server-side mergeability blockers. Avoid presenting a conflict-style reason
+  // when an explicit local reason already explains why merge is unavailable.
+  if (pr.mergeable === false && !wip && !noChanges) {
     blockingReasons.push(
-      "Pull request cannot be merged automatically; resolve conflicts with the target branch or other server-side mergeability blockers first",
+      "Gitea reports this pull request as not automatically mergeable; resolve conflicts or other server-side mergeability blockers first",
     );
   } else if (pr.mergeable === undefined) {
     warnings.push("Mergeability is not reported by Gitea");
