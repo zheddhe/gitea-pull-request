@@ -138,7 +138,7 @@ The general container retains the existing `giteaPullRequest` contribution ident
 - Changes, Review and post-merge views live in the contextual Gitea Pull Request container.
 - General and contextual containers use distinct monochrome SVG assets; the contextual pull-request icon is intentionally distinguishable from the official GitHub Pull Requests icon without relying on color.
 - Activating a PR focuses the contextual Pull Request container after the session becomes active.
-- Contribution tests assert container membership, contextual `when` clauses and distinct icon assets.
+- Contribution tests assert container membership, contextual `when` clauses, workspace labels and distinct icon assets.
 - Initial interactive validation confirmed the dual-container structure and icons match the intended workflow.
 
 ### Remaining before Phase 5 completion
