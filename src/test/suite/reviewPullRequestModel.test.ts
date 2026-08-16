@@ -27,6 +27,27 @@ suite("reviewPullRequestModel", () => {
     );
   });
 
+  test("blocks pull requests whose head is already contained in base", () => {
+    const readiness = evaluateMergeReadiness(
+      pullRequest({
+        mergeable: true,
+        changed_files: 0,
+        additions: 0,
+        deletions: 0,
+      }),
+      combinedStatus("success"),
+      [review("alice", "APPROVED")],
+      { user_can_merge: true, required_approvals: 1 },
+    );
+
+    assert.strictEqual(readiness.canMerge, false);
+    assert.ok(
+      readiness.blockingReasons.some((reason) =>
+        reason.includes("No changes to merge"),
+      ),
+    );
+  });
+
   test("blocks failed checks and requested changes", () => {
     const readiness = evaluateMergeReadiness(
       pullRequest({ mergeable: true }),
