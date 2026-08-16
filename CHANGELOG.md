@@ -4,7 +4,29 @@ All notable changes to **Gitea Pull Request** are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and the standalone product line follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.5.0] - Unreleased
+## [0.6.0] - Unreleased
+
+### Added
+
+- Dedicated **Gitea Pull Request** Activity Bar container for the active pull-request lifecycle.
+- Separate monochrome Activity Bar icons for the general Gitea workspace and the contextual pull-request workspace.
+- Contribution tests covering container membership, contextual visibility conditions and distinct icon assets.
+
+### Changed
+
+- The general **Gitea** Activity Bar workspace now contains Pull Requests, Create Pull Request, Issues and CI / Actions.
+- **Changes in Pull Request**, **Review Pull Request** and **Pull Request Merged** now live in the dedicated contextual pull-request workspace.
+- Activating a pull request automatically focuses the contextual Gitea Pull Request container after the active session is established.
+- The existing general-container contribution identity is retained to reduce VS Code layout-state disruption during the topology split.
+- Phase 6 now owns the broader visual/ergonomic polish, Changes-view refresh title action, PR-centric CI refinement, notifications, Markdown and accessibility work.
+
+### Validation
+
+Initial interactive Phase 5 validation confirms that the dual-container structure and both Activity Bar icons match the intended workflow and remain visually distinguishable alongside GitHub Pull Requests.
+
+Remaining release validation covers active-to-merged visibility in the contextual container, create placement, mixed GitHub/Gitea smoke testing, final documentation review and the normal `0.6.0` release gate.
+
+## [0.5.0] - 2026-08-16
 
 ### Added
 
@@ -30,18 +52,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 
 ### Validation
 
-Interactive Phase 4 validation covers:
-
-- transition from successful merge into the dedicated post-merge view;
-- exact merged PR/repository/head/base context preservation;
-- local + remote branch cleanup with both choices selected by default;
-- independent local-only / remote-only selection behavior;
-- correct remote discovery and deletion for `origin/gitea/test`-style refs;
-- Create New Pull Request lifecycle transition, including creation of a new draft/WIP PR;
-- merge/readiness handling for no-diff and WIP PRs;
-- Phase 3 conflict/non-mergeable handling retained during Phase 4 work.
-
-Final release validation still requires the normal release gate after promotion: `make verify`, `make reinstall-vsix`, and final smoke checks.
+Interactive Phase 4 validation covered transition to the dedicated post-merge view, exact merged context, local + remote cleanup, independent cleanup selection, actual deletion of `origin/gitea/test`, Create New Pull Request including WIP recreation, and inherited no-diff/WIP/conflict readiness behavior.
 
 ## [0.4.0] - 2026-08-16
 
