@@ -1,5 +1,9 @@
 import * as assert from "assert";
-import { parseRemoteUrl } from "../../context/repoManager";
+import {
+  parseRemoteUrl,
+  repositoryListsEqual,
+  type RepoInfo,
+} from "../../context/repoManager";
 
 suite("RepoManager remote classification", () => {
   test("accepts self-hosted Gitea HTTPS remotes", () => {
@@ -66,4 +70,47 @@ suite("RepoManager remote classification", () => {
 
     assert.strictEqual(info?.serverUrl, "https://gitea.example.com");
   });
+
+  test("treats repeated detection of the same repository as unchanged", () => {
+    const first = repo("main");
+    const second = { ...first };
+
+    assert.strictEqual(repositoryListsEqual([first], [second]), true);
+  });
+
+  test("detects a semantic repository change when HEAD branch changes", () => {
+    assert.strictEqual(
+      repositoryListsEqual([repo("main")], [repo("feature/phase-3")]),
+      false,
+    );
+  });
+
+  test("repository comparison is independent of detection order", () => {
+    const first = repo("main");
+    const second: RepoInfo = {
+      ...repo("develop"),
+      owner: "bob",
+      repo: "other",
+      label: "bob/other",
+      key: "https://gitea.example.com|bob/other",
+      rootPath: "/workspace/other",
+    };
+
+    assert.strictEqual(
+      repositoryListsEqual([first, second], [second, first]),
+      true,
+    );
+  });
 });
+
+function repo(currentBranch: string): RepoInfo {
+  return {
+    serverUrl: "https://gitea.example.com",
+    owner: "alice",
+    repo: "project",
+    currentBranch,
+    rootPath: "/workspace/project",
+    label: "alice/project",
+    key: "https://gitea.example.com|alice/project",
+  };
+}
