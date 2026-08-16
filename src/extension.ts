@@ -22,7 +22,7 @@ export async function activate(
   context.subscriptions.push(outputChannel);
 
   const auth = new AuthManager(context);
-  const repoManager = new RepoManager();
+  const repoManager = new RepoManager(() => auth.getServerUrls());
   const api = new GiteaApiClient(auth);
   const prSession = new PullRequestSessionService();
   const prSessionCoordinator = new PullRequestSessionCoordinator(
@@ -40,6 +40,9 @@ export async function activate(
     vscode.window.registerTreeDataProvider("gitea.pullRequests", prProvider),
     vscode.window.registerTreeDataProvider("gitea.ciRuns", ciProvider),
     vscode.window.registerTreeDataProvider("gitea.issues", issuesProvider),
+    auth.onDidChangeSession(() => {
+      void repoManager.detect();
+    }),
     prSessionCoordinator,
     prSession,
     ciProvider, // Register for disposal
@@ -66,7 +69,6 @@ export async function activate(
   await prSessionCoordinator.initialize();
   statusBar.refresh();
 
-  // Set the when-clause context key
   const session = await auth.getSession();
   await vscode.commands.executeCommand(
     "setContext",
