@@ -4,6 +4,7 @@ import { log } from "../../../debug/outputChannel";
 import type { PullRequestWorkspaceState } from "../domain/pullRequestState";
 import {
   BranchCleanupService,
+  planBranchCleanup,
   type BranchIdentity,
 } from "../services/branchCleanupService";
 import { PullRequestSessionService } from "../services/pullRequestSessionService";
@@ -13,7 +14,16 @@ type MergedPullRequestState = Extract<
   { kind: "merged" }
 >;
 
-type PostMergeMessage = { type: "refreshBranches" };
+type PostMergeMessage =
+  | { type: "refreshBranches" }
+  | { type: "deleteBranches" }
+  | { type: "checkoutBase" }
+  | { type: "createNew" }
+  | { type: "done" };
+
+interface CleanupQuickPickItem extends vscode.QuickPickItem {
+  kind: "local" | "remote";
+}
 
 export class PostMergePullRequestViewProvider
   implements vscode.WebviewViewProvider, vscode.Disposable
@@ -23,6 +33,7 @@ export class PostMergePullRequestViewProvider
   private view: vscode.WebviewView | undefined;
   private identity: BranchIdentity | undefined;
   private loading = false;
+  private busy = false;
   private warning: string | undefined;
   private readonly disposables: vscode.Disposable[] = [];
 
@@ -55,12 +66,9 @@ export class PostMergePullRequestViewProvider
     this.view = view;
     view.webview.options = { enableScripts: true };
     this.disposables.push(
-      view.webview.onDidReceiveMessage((message: PostMergeMessage) => {
-        if (message.type === "refreshBranches") {
-          const state = this.mergedState();
-          if (state) void this.loadIdentity(state, true);
-        }
-      }),
+      view.webview.onDidReceiveMessage((message: PostMergeMessage) =>
+        this.handleMessage(message),
+      ),
     );
     this.render();
     const state = this.mergedState();
@@ -70,6 +78,31 @@ export class PostMergePullRequestViewProvider
   dispose(): void {
     for (const disposable of this.disposables) disposable.dispose();
     this.disposables.length = 0;
+  }
+
+  private async handleMessage(message: PostMergeMessage): Promise<void> {
+    if (this.busy) return;
+    const state = this.mergedState();
+    if (!state) return;
+
+    switch (message.type) {
+      case "refreshBranches":
+        await this.loadIdentity(state, true);
+        return;
+      case "deleteBranches":
+        await this.deleteBranches(state);
+        return;
+      case "checkoutBase":
+        await this.checkoutBase(state);
+        return;
+      case "createNew":
+        await this.session.clear();
+        await vscode.commands.executeCommand("gitea.createPRSidebar");
+        return;
+      case "done":
+        await this.session.clear();
+        return;
+    }
   }
 
   private mergedState(): MergedPullRequestState | undefined {
@@ -114,6 +147,133 @@ export class PostMergePullRequestViewProvider
     }
   }
 
+  private async ensureIdentity(
+    state: MergedPullRequestState,
+  ): Promise<{ repoInfo: RepoInfo; identity: BranchIdentity } | undefined> {
+    const repoInfo = this.repoInfo(state);
+    if (!repoInfo) {
+      this.warning = `Repository ${state.repository.fullName} is no longer available in this workspace.`;
+      this.render();
+      return undefined;
+    }
+    if (!this.identity) await this.loadIdentity(state, true);
+    if (!this.identity) return undefined;
+    return { repoInfo, identity: this.identity };
+  }
+
+  private async deleteBranches(state: MergedPullRequestState): Promise<void> {
+    const context = await this.ensureIdentity(state);
+    if (!context) return;
+    const plan = planBranchCleanup(context.identity);
+    const items: CleanupQuickPickItem[] = [];
+    if (plan.canDeleteLocal && plan.localBranch) {
+      items.push({
+        kind: "local",
+        label: `$(git-branch) Local: ${plan.localBranch}`,
+        description: plan.checkoutBaseRequired
+          ? `Checkout ${plan.checkoutBase} first`
+          : "Delete local branch",
+        picked: true,
+      });
+    }
+    if (plan.canDeleteRemote && plan.remoteBranch) {
+      items.push({
+        kind: "remote",
+        label: `$(cloud) Remote: ${plan.remoteBranch.remote}/${plan.remoteBranch.branch}`,
+        description: "Delete branch from remote",
+        picked: true,
+      });
+    }
+
+    if (items.length === 0) {
+      vscode.window.showInformationMessage("No merged head branch remains to delete.");
+      return;
+    }
+
+    const selected = await vscode.window.showQuickPick(items, {
+      canPickMany: true,
+      placeHolder: "Select branches to delete. Local and remote cleanup are independent.",
+      title: `Clean up PR #${state.pullRequest.number}`,
+    });
+    if (!selected || selected.length === 0) return;
+
+    const deleteLocal = selected.some((item) => item.kind === "local");
+    const deleteRemote = selected.some((item) => item.kind === "remote");
+    const labels = selected.map((item) => item.label.replace(/^\$\([^)]*\)\s*/, ""));
+    const confirm = await vscode.window.showWarningMessage(
+      `Delete ${labels.join(" and ")}?`,
+      { modal: true },
+      "Delete",
+    );
+    if (confirm !== "Delete") return;
+
+    this.busy = true;
+    this.warning = undefined;
+    this.render();
+    try {
+      const result = await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: `Cleaning up branches for PR #${state.pullRequest.number}...`,
+        },
+        () =>
+          this.branchCleanup.cleanup(context.repoInfo, context.identity, {
+            deleteLocal,
+            deleteRemote,
+          }),
+      );
+
+      if (result.errors.length > 0) {
+        this.warning = result.errors.join(" | ");
+        vscode.window.showErrorMessage(`Branch cleanup incomplete: ${this.warning}`);
+        this.identity = undefined;
+        await this.loadIdentity(state, true);
+        return;
+      }
+
+      const deleted: string[] = [];
+      if (result.localDeleted) deleted.push("local branch");
+      if (result.remoteDeleted) deleted.push("remote branch");
+      vscode.window.showInformationMessage(
+        deleted.length > 0
+          ? `Deleted ${deleted.join(" and ")} for PR #${state.pullRequest.number}.`
+          : `No branch deletion was required for PR #${state.pullRequest.number}.`,
+      );
+      await this.session.clear();
+    } finally {
+      this.busy = false;
+      this.render();
+    }
+  }
+
+  private async checkoutBase(state: MergedPullRequestState): Promise<void> {
+    const context = await this.ensureIdentity(state);
+    if (!context) return;
+
+    this.busy = true;
+    this.warning = undefined;
+    this.render();
+    try {
+      await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: `Checking out ${state.pullRequest.base.ref}...`,
+        },
+        () => this.branchCleanup.checkoutBase(context.repoInfo, context.identity),
+      );
+      vscode.window.showInformationMessage(
+        `Checked out base branch: ${state.pullRequest.base.ref}`,
+      );
+      await this.session.clear();
+    } catch (error) {
+      this.warning = (error as Error).message;
+      vscode.window.showErrorMessage(`Failed to checkout base branch: ${this.warning}`);
+    } finally {
+      this.busy = false;
+      this.render();
+    }
+  }
+
   private render(): void {
     if (!this.view) return;
     const state = this.mergedState();
@@ -125,6 +285,7 @@ export class PostMergePullRequestViewProvider
     const pr = state.pullRequest;
     this.view.title = `Pull Request #${pr.number} Merged`;
     const identity = this.identity;
+    const plan = identity ? planBranchCleanup(identity) : undefined;
     const branchSummary = this.loading
       ? "<p>Resolving local and remote branch identity...</p>"
       : identity
@@ -140,6 +301,10 @@ export class PostMergePullRequestViewProvider
     const warning = this.warning
       ? `<p class="warning">${escapeHtml(this.warning)}</p>`
       : "";
+    const disabled = this.loading || this.busy ? "disabled" : "";
+    const cleanupDisabled = !plan || (!plan.canDeleteLocal && !plan.canDeleteRemote) || this.loading || this.busy
+      ? "disabled"
+      : "";
 
     this.view.webview.html = this.html(`
       <h3>Pull request successfully merged.</h3>
@@ -148,10 +313,19 @@ export class PostMergePullRequestViewProvider
       ${warning}
       <h4>Branch state</h4>
       ${branchSummary}
-      <button id="refresh" ${this.loading ? "disabled" : ""}>Refresh branch state</button>
-      <p class="muted">Cleanup actions are enabled in the next Phase 4 increments after branch identity has been validated.</p>
+      <div class="actions">
+        <button id="create" ${disabled}>Create New Pull Request...</button>
+        <button id="delete" ${cleanupDisabled}>Delete Branch...</button>
+        <button id="checkout" ${disabled}>Checkout '${escapeHtml(pr.base.ref)}' without deleting branch</button>
+        <button id="done" class="secondary" ${disabled}>Keep branches and finish</button>
+        <button id="refresh" class="secondary" ${disabled}>Refresh branch state</button>
+      </div>
       <script>
         const vscode = acquireVsCodeApi();
+        document.getElementById('create')?.addEventListener('click', () => vscode.postMessage({ type: 'createNew' }));
+        document.getElementById('delete')?.addEventListener('click', () => vscode.postMessage({ type: 'deleteBranches' }));
+        document.getElementById('checkout')?.addEventListener('click', () => vscode.postMessage({ type: 'checkoutBase' }));
+        document.getElementById('done')?.addEventListener('click', () => vscode.postMessage({ type: 'done' }));
         document.getElementById('refresh')?.addEventListener('click', () => vscode.postMessage({ type: 'refreshBranches' }));
       </script>
     `);
@@ -169,11 +343,13 @@ export class PostMergePullRequestViewProvider
   dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 12px; }
   dt { color: var(--vscode-descriptionForeground); }
   dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
-  button { color: var(--vscode-button-foreground); background: var(--vscode-button-background); border: 0; padding: 6px 12px; cursor: pointer; }
+  .actions { display: grid; gap: 7px; margin-top: 12px; }
+  button { color: var(--vscode-button-foreground); background: var(--vscode-button-background); border: 0; padding: 7px 12px; cursor: pointer; text-align: left; }
   button:hover { background: var(--vscode-button-hoverBackground); }
+  button.secondary { color: var(--vscode-button-secondaryForeground); background: var(--vscode-button-secondaryBackground); }
+  button.secondary:hover { background: var(--vscode-button-secondaryHoverBackground); }
   button:disabled { opacity: .55; cursor: default; }
   .warning { color: var(--vscode-errorForeground); }
-  .muted { color: var(--vscode-descriptionForeground); margin-top: 12px; }
 </style>
 </head>
 <body>${body}</body>
