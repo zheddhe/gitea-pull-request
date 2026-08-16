@@ -1,6 +1,8 @@
 import * as assert from "assert";
 import {
+  planBranchCleanup,
   resolveBranchIdentity,
+  type BranchIdentity,
   type BranchRefSnapshot,
 } from "../../features/pullRequests/services/branchCleanupService";
 
@@ -75,5 +77,88 @@ suite("BranchCleanupService identity resolution", () => {
     );
 
     assert.strictEqual(result.remoteHead?.remote, "origin");
+  });
+});
+
+suite("BranchCleanupService cleanup planning", () => {
+  function identity(overrides: Partial<BranchIdentity> = {}): BranchIdentity {
+    return {
+      prHead: "feature/work",
+      base: "main",
+      localHead: "feature/work",
+      localHeadCheckedOut: false,
+      remoteHead: {
+        remote: "origin",
+        branch: "feature/work",
+        refName: "origin/feature/work",
+      },
+      localBase: "main",
+      remoteBase: {
+        remote: "origin",
+        branch: "main",
+        refName: "origin/main",
+      },
+      currentBranch: "main",
+      ...overrides,
+    };
+  }
+
+  test("requires checkout before deleting the checked-out local head", () => {
+    const plan = planBranchCleanup(
+      identity({ currentBranch: "feature/work", localHeadCheckedOut: true }),
+    );
+
+    assert.strictEqual(plan.canDeleteLocal, true);
+    assert.strictEqual(plan.checkoutBaseRequired, true);
+    assert.strictEqual(plan.checkoutBase, "main");
+  });
+
+  test("does not require checkout when deleting a non-current local head", () => {
+    const plan = planBranchCleanup(identity());
+
+    assert.strictEqual(plan.canDeleteLocal, true);
+    assert.strictEqual(plan.checkoutBaseRequired, false);
+  });
+
+  test("does not offer local deletion when the local head is absent", () => {
+    const plan = planBranchCleanup(
+      identity({ localHead: undefined, localHeadCheckedOut: false }),
+    );
+
+    assert.strictEqual(plan.canDeleteLocal, false);
+    assert.strictEqual(plan.localBranch, undefined);
+  });
+
+  test("does not offer remote deletion when the remote head is absent", () => {
+    const plan = planBranchCleanup(identity({ remoteHead: undefined }));
+
+    assert.strictEqual(plan.canDeleteRemote, false);
+    assert.strictEqual(plan.remoteBranch, undefined);
+  });
+
+  test("keeps local and remote cleanup names independent", () => {
+    const plan = planBranchCleanup(
+      identity({
+        localHead: "my-local-work",
+        remoteHead: {
+          remote: "upstream",
+          branch: "feature/work",
+          refName: "upstream/feature/work",
+        },
+      }),
+    );
+
+    assert.strictEqual(plan.localBranch, "my-local-work");
+    assert.strictEqual(plan.remoteBranch?.remote, "upstream");
+    assert.strictEqual(plan.remoteBranch?.branch, "feature/work");
+  });
+
+  test("falls back to the PR base name when no local base branch exists", () => {
+    const plan = planBranchCleanup(
+      identity({ localBase: undefined, localHeadCheckedOut: true }),
+    );
+
+    assert.strictEqual(plan.checkoutBaseRequired, true);
+    assert.strictEqual(plan.checkoutBase, "main");
   });
 });
