@@ -12,7 +12,7 @@ ARTIFACT_ROOT ?= .artifacts
 VSIX_DIR ?= $(ARTIFACT_ROOT)/vsix
 VSIX_FILE := $(VSIX_DIR)/$(PROJECT_NAME)-$(VERSION).vsix
 
-.PHONY: help doctor deps clean compile lint test test-latest verify vsix rebuild-vsix install-vsix reinstall-vsix ci show-vsix
+.PHONY: help doctor lock bootstrap deps clean compile lint test test-latest verify vsix rebuild-vsix install-vsix reinstall-vsix ci show-vsix
 
 help: ## Show the available development targets
 	@printf '%s\n' 'Gitea Pull Request development workflow'
@@ -35,7 +35,14 @@ doctor: ## Check the local tools required to build/package/install the extension
 	fi
 	@echo "OK: Node $$(node --version), npm $$($(NPM) --version), VSIX output: $(VSIX_FILE)"
 
-deps: ## Install exactly the dependencies from package-lock.json
+lock: ## Create/update package-lock.json after any package.json dependency or metadata change
+	$(NPM) install --package-lock-only --ignore-scripts
+	@echo "package-lock.json synchronized with package.json. Review and commit it with package.json."
+
+bootstrap: lock ## Synchronize the lock file, then install the exact dependency set (use after clone or package.json changes)
+	$(NPM) ci
+
+deps: ## Install exactly the committed dependencies; fails if package.json and package-lock.json differ
 	$(NPM) ci
 
 clean: ## Remove generated TypeScript output and local build artifacts (keeps cached VS Code test runtimes)
@@ -63,7 +70,7 @@ vsix: doctor verify | $(VSIX_DIR) ## Build and validate a versioned VSIX under .
 	@test -s "$(VSIX_FILE)" || { echo 'ERROR: VSIX package was not created.' >&2; exit 1; }
 	@echo "VSIX ready: $(VSIX_FILE)"
 
-rebuild-vsix: ## Clean, reinstall dependencies, verify, and rebuild the local VSIX from scratch
+rebuild-vsix: ## Clean, install committed dependencies, verify, and rebuild the local VSIX from scratch
 	$(MAKE) clean
 	$(MAKE) deps
 	$(MAKE) vsix
@@ -78,7 +85,7 @@ reinstall-vsix: ## Full clean rebuild followed by forced local VSIX installation
 	$(MAKE) rebuild-vsix
 	$(MAKE) install-vsix
 
-ci: ## Reproduce the CI build/package path from a clean dependency install
+ci: ## Reproduce the CI build/package path from the committed lock file
 	$(MAKE) clean
 	$(MAKE) deps
 	$(MAKE) vsix
