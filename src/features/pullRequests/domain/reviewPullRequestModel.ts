@@ -30,7 +30,7 @@ export interface MergeReadiness {
 }
 
 export function isWorkInProgress(pr: GiteaPullRequest): boolean {
-  return /^(?:WIP:|\[WIP\])/i.test(pr.title.trim());
+  return /^(?:WIP:|\[WIP\])/i.test((pr.title ?? "").trim());
 }
 
 export function supportedMergeMethods(
@@ -94,24 +94,29 @@ export function evaluateMergeReadiness(
 
   let ciLabel = "Checks unavailable";
   if (status) {
-    ciLabel = `Checks: ${status.state}`;
-    if (status.state === "failure" || status.state === "error") {
-      blockingReasons.push(`Checks are ${status.state}`);
-    } else if (status.state === "pending") {
+    const state = typeof status.state === "string" ? status.state : "unknown";
+    ciLabel = `Checks: ${state}`;
+    if (state === "failure" || state === "error") {
+      blockingReasons.push(`Checks are ${state}`);
+    } else if (state === "pending") {
       blockingReasons.push("Checks are still pending");
-    } else if (status.state === "warning") {
+    } else if (state === "warning") {
       warnings.push("Checks completed with warnings");
     }
   } else if (policy?.enable_status_check) {
     warnings.push("Target branch requires status checks, but combined status could not be read");
   }
 
-  const effectiveReviews = latestReviewsByUser(reviews ?? []);
+  const reviewList = Array.isArray(reviews) ? reviews : [];
+  const effectiveReviews = latestReviewsByUser(reviewList);
   const approvals = effectiveReviews.filter((review) => review.state === "APPROVED").length;
   const changesRequested = effectiveReviews.filter(
     (review) => review.state === "REQUEST_CHANGES" || review.state === "REJECTED",
   ).length;
-  const requiredApprovals = policy?.required_approvals ?? 0;
+  const requiredApprovals =
+    typeof policy?.required_approvals === "number" && policy.required_approvals > 0
+      ? policy.required_approvals
+      : 0;
 
   let reviewLabel = `${approvals} approval${approvals === 1 ? "" : "s"}`;
   if (requiredApprovals > 0) {
@@ -138,12 +143,22 @@ export function evaluateMergeReadiness(
 
 function latestReviewsByUser(reviews: GiteaReview[]): GiteaReview[] {
   const byUser = new Map<string, GiteaReview>();
+  let anonymousIndex = 0;
+
   for (const review of reviews) {
-    if (review.stale) continue;
-    const existing = byUser.get(review.user.login);
-    if (!existing || Date.parse(review.submitted_at) >= Date.parse(existing.submitted_at)) {
-      byUser.set(review.user.login, review);
+    if (!review || review.stale) continue;
+
+    const login = review.user?.login?.trim();
+    const key = login || `anonymous-review-${review.id ?? anonymousIndex++}`;
+    const existing = byUser.get(key);
+    if (!existing || submittedAt(review) >= submittedAt(existing)) {
+      byUser.set(key, review);
     }
   }
   return [...byUser.values()];
+}
+
+function submittedAt(review: GiteaReview): number {
+  const parsed = Date.parse(review.submitted_at ?? "");
+  return Number.isNaN(parsed) ? 0 : parsed;
 }
