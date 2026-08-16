@@ -48,6 +48,24 @@ suite("reviewPullRequestModel", () => {
     );
   });
 
+  test("blocks pull requests Gitea reports as non-mergeable", () => {
+    const readiness = evaluateMergeReadiness(
+      pullRequest({ mergeable: false }),
+      combinedStatus("success"),
+      [review("alice", "APPROVED")],
+      { user_can_merge: true, required_approvals: 1 },
+    );
+
+    assert.strictEqual(readiness.canMerge, false);
+    assert.ok(
+      readiness.blockingReasons.some(
+        (reason) =>
+          reason.includes("cannot be merged automatically") &&
+          reason.includes("conflicts with the target branch"),
+      ),
+    );
+  });
+
   test("blocks failed checks and requested changes", () => {
     const readiness = evaluateMergeReadiness(
       pullRequest({ mergeable: true }),
