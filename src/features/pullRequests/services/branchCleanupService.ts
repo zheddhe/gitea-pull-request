@@ -30,6 +30,18 @@ export interface BranchIdentity {
   currentBranch?: string;
 }
 
+export interface BranchCleanupPlan {
+  localBranch?: string;
+  remoteBranch?: {
+    remote: string;
+    branch: string;
+  };
+  checkoutBaseRequired: boolean;
+  checkoutBase: string;
+  canDeleteLocal: boolean;
+  canDeleteRemote: boolean;
+}
+
 interface GitRepositoryLike {
   rootUri: vscode.Uri;
   fetch(options: { remote?: string; ref?: string }): Promise<void>;
@@ -102,6 +114,22 @@ export function resolveBranchIdentity(
     localBase,
     remoteBase: pickRemote(refs, base),
     currentBranch,
+  };
+}
+
+export function planBranchCleanup(identity: BranchIdentity): BranchCleanupPlan {
+  return {
+    localBranch: identity.localHead,
+    remoteBranch: identity.remoteHead
+      ? {
+          remote: identity.remoteHead.remote,
+          branch: identity.remoteHead.branch,
+        }
+      : undefined,
+    checkoutBaseRequired: !!identity.localHead && identity.localHeadCheckedOut,
+    checkoutBase: identity.localBase ?? identity.base,
+    canDeleteLocal: !!identity.localHead,
+    canDeleteRemote: !!identity.remoteHead,
   };
 }
 
