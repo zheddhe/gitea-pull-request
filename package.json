@@ -120,6 +120,12 @@
           "icon": "resources/gitea-activity.svg"
         },
         {
+          "id": "gitea.reviewPullRequest",
+          "name": "Review Pull Request",
+          "type": "webview",
+          "when": "gitea.prSession.active"
+        },
+        {
           "id": "gitea.issues",
           "name": "Issues",
           "icon": "resources/gitea-activity.svg"
