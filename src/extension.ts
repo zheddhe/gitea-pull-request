@@ -68,6 +68,7 @@ export async function activate(
 
   context.subscriptions.push(
     vscode.window.registerTreeDataProvider("gitea.pullRequests", prProvider),
+    vscode.window.registerTreeDataProvider("gitea.pullRequestsCreateMode", prProvider),
     vscode.window.registerWebviewViewProvider(
       CreatePullRequestViewProvider.viewType,
       createPullRequestView,
@@ -81,7 +82,9 @@ export async function activate(
       postMergePullRequestView,
     ),
     vscode.window.registerTreeDataProvider("gitea.ciRuns", ciProvider),
+    vscode.window.registerTreeDataProvider("gitea.ciRunsCreateMode", ciProvider),
     vscode.window.registerTreeDataProvider("gitea.issues", issuesProvider),
+    vscode.window.registerTreeDataProvider("gitea.issuesCreateMode", issuesProvider),
     vscode.commands.registerCommand("gitea.createPRSidebar", () =>
       createPullRequestView.start(),
     ),
