@@ -132,6 +132,34 @@ export function parseRemoteUrl(
   };
 }
 
+/**
+ * Repository detection is triggered by many VS Code Git state changes (fetch,
+ * HEAD/status updates, remote refreshes, etc.). Most of those events do not
+ * actually change the set of Gitea repositories. Keep repository-change events
+ * semantic so downstream providers do not refresh on every Git state pulse.
+ */
+export function repositoryListsEqual(a: RepoInfo[], b: RepoInfo[]): boolean {
+  if (a.length !== b.length) return false;
+
+  const normalize = (repos: RepoInfo[]) =>
+    [...repos]
+      .sort((left, right) => left.key.localeCompare(right.key))
+      .map((repo) =>
+        [
+          repo.key,
+          repo.serverUrl,
+          repo.owner,
+          repo.repo,
+          repo.rootPath,
+          repo.currentBranch ?? "",
+        ].join("\u0000"),
+      );
+
+  const left = normalize(a);
+  const right = normalize(b);
+  return left.every((value, index) => value === right[index]);
+}
+
 export class RepoManager implements vscode.Disposable {
   private _repos: RepoInfo[] = [];
   private _onDidChange = new vscode.EventEmitter<RepoInfo[]>();
@@ -236,6 +264,10 @@ export class RepoManager implements vscode.Disposable {
       } catch {
         /* ignore repository detection errors */
       }
+    }
+
+    if (repositoryListsEqual(this._repos, found)) {
+      return;
     }
 
     this._repos = found;
