@@ -4,6 +4,7 @@ NPM ?= npm
 NPX ?= npx
 CODE ?= code
 VSCE_VERSION ?= 3.9.2
+VSCODE_TEST_VERSION ?= 1.85.0
 
 PROJECT_NAME := $(shell node -p "require('./package.json').name")
 VERSION := $(shell node -p "require('./package.json').version")
@@ -11,7 +12,7 @@ ARTIFACT_ROOT ?= .artifacts
 VSIX_DIR ?= $(ARTIFACT_ROOT)/vsix
 VSIX_FILE := $(VSIX_DIR)/$(PROJECT_NAME)-$(VERSION).vsix
 
-.PHONY: help doctor deps clean compile lint test verify vsix rebuild-vsix install-vsix reinstall-vsix ci show-vsix
+.PHONY: help doctor deps clean compile lint test test-latest verify vsix rebuild-vsix install-vsix reinstall-vsix ci show-vsix
 
 help: ## Show the available development targets
 	@printf '%s\n' 'Gitea Pull Request development workflow'
@@ -37,7 +38,7 @@ doctor: ## Check the local tools required to build/package/install the extension
 deps: ## Install exactly the dependencies from package-lock.json
 	$(NPM) ci
 
-clean: ## Remove generated TypeScript output and local build artifacts
+clean: ## Remove generated TypeScript output and local build artifacts (keeps cached VS Code test runtimes)
 	rm -rf out "$(ARTIFACT_ROOT)"
 
 compile: ## Compile the TypeScript extension
@@ -46,8 +47,11 @@ compile: ## Compile the TypeScript extension
 lint: ## Run ESLint
 	$(NPM) run lint
 
-test: compile ## Run extension tests after compiling
-	$(NPM) test
+test: compile ## Run extension tests on the minimum supported VS Code version
+	VSCODE_TEST_VERSION="$(VSCODE_TEST_VERSION)" $(NPM) test
+
+test-latest: compile ## Run extension tests against the latest stable VS Code as an additional compatibility check
+	VSCODE_TEST_VERSION=stable $(NPM) test
 
 verify: compile lint test ## Run the local quality gate used before packaging
 
