@@ -131,6 +131,12 @@
         }
       ]
     },
+    "viewsWelcome": [
+      {
+        "view": "gitea.pullRequests",
+        "contents": "No pull requests are currently listed.\n[Create Pull Request](command:gitea.createPRSidebar)"
+      }
+    ],
     "commands": [
       { "command": "gitea.signIn", "title": "Gitea: Sign In" },
       { "command": "gitea.signOut", "title": "Gitea: Sign Out" },
@@ -166,7 +172,7 @@
     "menus": {
       "view/title": [
         { "command": "gitea.refreshPRs", "when": "view == gitea.pullRequests", "group": "navigation" },
-        { "command": "gitea.createPRSidebar", "when": "view == gitea.pullRequests && !gitea.prSession.creating", "group": "navigation" },
+        { "command": "gitea.createPRSidebar", "when": "view == gitea.pullRequests", "group": "navigation" },
         { "command": "gitea.clearActivePR", "when": "view == gitea.prDiff && gitea.prSession.active", "group": "navigation" },
         { "command": "gitea.refreshCI", "when": "view == gitea.ciRuns", "group": "navigation" },
         { "command": "gitea.refreshIssues", "when": "view == gitea.issues", "group": "navigation" },
