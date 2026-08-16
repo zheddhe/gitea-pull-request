@@ -119,18 +119,18 @@ code --install-extension .artifacts/vsix/gitea-pull-request-<version>.vsix --for
 Useful targets:
 
 ```bash
-make help          # list targets
-make doctor        # validate Node/npm/npx and report VS Code CLI availability
-make compile       # TypeScript only
-make lint          # ESLint only
-make test          # compile + extension tests
-make verify        # compile + lint + tests
-make vsix          # verify + package, without reinstalling dependencies
-make rebuild-vsix  # clean + npm ci + verify + package
-make install-vsix  # install the already-built VSIX
-make reinstall-vsix# clean rebuild + local installation
-make show-vsix     # print the generated VSIX path
-make ci            # reproduce the clean CI build/package sequence
+make help           # list targets
+make doctor         # validate Node/npm/npx and report VS Code CLI availability
+make compile        # TypeScript only
+make lint           # ESLint only
+make test           # compile + extension tests
+make verify         # compile + lint + tests
+make vsix           # verify + package, without reinstalling dependencies
+make rebuild-vsix   # clean + npm ci + verify + package
+make install-vsix   # install the already-built VSIX
+make reinstall-vsix # clean rebuild + local installation
+make show-vsix      # print the generated VSIX path
+make ci             # reproduce the clean CI build/package sequence
 ```
 
 If a different VS Code-compatible launcher is used, override it explicitly, for example:
