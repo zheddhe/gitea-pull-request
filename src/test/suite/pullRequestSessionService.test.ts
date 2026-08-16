@@ -77,11 +77,13 @@ suite("PullRequestSessionService", () => {
       "main",
       "feature/test",
     );
-    assert.strictEqual(service.current.kind, "creating");
+    const creatingState = service.current;
+    assert.strictEqual(creatingState.kind, "creating");
     assert.strictEqual(context.get("gitea.prSession.creating"), true);
 
     await service.activate(pullRequest);
-    assert.strictEqual(service.current.kind, "active");
+    const activeState = service.current;
+    assert.strictEqual(activeState.kind, "active");
     assert.strictEqual(context.get("gitea.prSession.active"), true);
     assert.strictEqual(context.get("gitea.prSession.checkedOut"), false);
 
@@ -89,18 +91,28 @@ suite("PullRequestSessionService", () => {
       kind: "checkedOut",
       localBranch: "feature/test",
     });
+    const checkedOutState = service.current;
+    assert.strictEqual(checkedOutState.kind, "active");
+    if (checkedOutState.kind === "active") {
+      assert.deepStrictEqual(checkedOutState.checkoutState, {
+        kind: "checkedOut",
+        localBranch: "feature/test",
+      });
+    }
     assert.strictEqual(context.get("gitea.prSession.checkedOut"), true);
 
     await service.markMerged(
       { ...pullRequest, merged: true, state: "closed" },
       { localBranchExists: true, remoteBranchExists: true },
     );
-    assert.strictEqual(service.current.kind, "merged");
+    const mergedState = service.current;
+    assert.strictEqual(mergedState.kind, "merged");
     assert.strictEqual(context.get("gitea.prSession.merged"), true);
     assert.strictEqual(context.get("gitea.prSession.active"), false);
 
     await service.clear();
-    assert.deepStrictEqual(service.current, { kind: "idle" });
+    const idleState = service.current;
+    assert.deepStrictEqual(idleState, { kind: "idle" });
     assert.strictEqual(context.get("gitea.prSession.merged"), false);
 
     service.dispose();
