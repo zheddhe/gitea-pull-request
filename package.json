@@ -184,7 +184,7 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "lint": "eslint src",
+    "lint": "eslint src --max-warnings=0",
     "test": "node ./out/test/runTest.js",
     "package": "vsce package"
   },
