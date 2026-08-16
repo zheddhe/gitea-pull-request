@@ -3,7 +3,13 @@ import { GiteaApiClient } from "../../../api/giteaApiClient";
 import type { RepoInfo } from "../../../context/repoManager";
 import { RepoManager } from "../../../context/repoManager";
 import { PullRequestProvider } from "../../../views/pullRequestProvider";
+import type { PullRequestWorkspaceState } from "../domain/pullRequestState";
 import { PullRequestSessionService } from "../services/pullRequestSessionService";
+
+type ActivePullRequestState = Extract<
+  PullRequestWorkspaceState,
+  { kind: "active" }
+>;
 
 type ReviewViewMessage =
   | { type: "comment"; body: string }
@@ -55,12 +61,9 @@ export class ReviewPullRequestViewProvider
   }
 
   private activeContext():
-    | {
-        repoInfo: RepoInfo;
-        state: Extract<ReturnType<typeof this.getState>, { kind: "active" }>;
-      }
+    | { repoInfo: RepoInfo; state: ActivePullRequestState }
     | undefined {
-    const state = this.getState();
+    const state = this.session.current;
     if (state.kind !== "active") {
       return undefined;
     }
@@ -75,10 +78,6 @@ export class ReviewPullRequestViewProvider
     return { repoInfo, state };
   }
 
-  private getState(): PullRequestSessionService["current"] {
-    return this.session.current;
-  }
-
   private async handleMessage(message: ReviewViewMessage): Promise<void> {
     if (this.busy) {
       return;
@@ -86,7 +85,9 @@ export class ReviewPullRequestViewProvider
 
     const active = this.activeContext();
     if (!active) {
-      vscode.window.showWarningMessage("No active Gitea pull request is available for review.");
+      vscode.window.showWarningMessage(
+        "No active Gitea pull request is available for review.",
+      );
       return;
     }
 
@@ -103,7 +104,9 @@ export class ReviewPullRequestViewProvider
       return;
     }
     if (message.type === "requestChanges" && !body) {
-      vscode.window.showWarningMessage("Describe the requested changes before submitting the review.");
+      vscode.window.showWarningMessage(
+        "Describe the requested changes before submitting the review.",
+      );
       return;
     }
 
@@ -116,10 +119,20 @@ export class ReviewPullRequestViewProvider
         await this.api.addPRComment(active.repoInfo, number, body);
         vscode.window.showInformationMessage(`Comment posted on PR #${number}.`);
       } else if (message.type === "approve") {
-        await this.api.createReview(active.repoInfo, number, "APPROVED", body);
+        await this.api.createReview(
+          active.repoInfo,
+          number,
+          "APPROVED",
+          body,
+        );
         vscode.window.showInformationMessage(`PR #${number} approved.`);
       } else {
-        await this.api.createReview(active.repoInfo, number, "REQUEST_CHANGES", body);
+        await this.api.createReview(
+          active.repoInfo,
+          number,
+          "REQUEST_CHANGES",
+          body,
+        );
         vscode.window.showInformationMessage(`Changes requested on PR #${number}.`);
       }
 
