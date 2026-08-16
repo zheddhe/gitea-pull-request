@@ -71,9 +71,38 @@ See [`docs/ROADMAP.md`](docs/ROADMAP.md) for the transformation phases and archi
 
 ### Development / local VSIX
 
-Development build, validation, packaging and local installation are centralized in the repository `Makefile` so the same sequence can be reproduced consistently.
+Development build, dependency locking, validation, packaging and local installation are centralized in the repository `Makefile` so the same sequence can be reproduced consistently.
 
 The packaging tool is pinned to `@vscode/vsce 3.9.2`; local VSIX packaging therefore requires **Node.js 22+**. The VS Code command-line launcher (`code`) is only required for the installation targets.
+
+### Dependency manifest and lock-file workflow
+
+`package.json` is the dependency manifest. `package-lock.json` is the committed reproducibility lock and **must be regenerated whenever dependency declarations or relevant package metadata in `package.json` change**.
+
+After a fresh clone, or after modifying `package.json`, run:
+
+```bash
+make bootstrap
+```
+
+This first executes:
+
+```bash
+npm install --package-lock-only --ignore-scripts
+```
+
+which creates or updates `package-lock.json`, then runs `npm ci` against the synchronized lock file.
+
+The two steps are also available separately:
+
+```bash
+make lock       # create/update package-lock.json from package.json
+make deps       # strict reproducible install from the committed lock file
+```
+
+`make deps` deliberately uses only `npm ci` and therefore fails when `package.json` and `package-lock.json` are out of sync. This is intentional: normal builds and CI must never silently rewrite dependency resolution. If `make lock` changes `package-lock.json`, review and commit it together with the corresponding `package.json` change.
+
+### Clean build and VSIX
 
 Run a complete clean rebuild:
 
@@ -121,9 +150,13 @@ Useful targets:
 ```bash
 make help           # list targets
 make doctor         # validate Node/npm/npx and report VS Code CLI availability
+make lock           # create/update package-lock.json from package.json
+make bootstrap      # sync package-lock.json, then npm ci
+make deps           # strict npm ci; fail when manifest and lock differ
 make compile        # TypeScript only
 make lint           # ESLint only
-make test           # compile + extension tests
+make test           # compile + tests on minimum supported VS Code
+make test-latest    # tests against latest stable VS Code
 make verify         # compile + lint + tests
 make vsix           # verify + package, without reinstalling dependencies
 make rebuild-vsix   # clean + npm ci + verify + package
