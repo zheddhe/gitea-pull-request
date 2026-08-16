@@ -423,18 +423,26 @@ function buildPRChildren(item: PullRequestItem): vscode.TreeItem[] {
       new vscode.ThemeIcon("git-branch"),
     ),
   );
-  const diffItem = new PRChildItem(
-    `+${pr.additions ?? 0} / -${pr.deletions ?? 0}`,
-    `${pr.changed_files ?? 0} file(s) changed`,
-    new vscode.ThemeIcon("diff-multiple"),
-  );
-  diffItem.command = {
-    command: "gitea.openPRDiff",
-    title: "Open PR Diff",
-    arguments: [item],
-  };
-  diffItem.tooltip = new vscode.MarkdownString("Click to view full diff tree");
-  children.push(diffItem);
+
+  const hasDiffStats =
+    typeof pr.additions === "number" &&
+    typeof pr.deletions === "number" &&
+    typeof pr.changed_files === "number";
+  if (hasDiffStats) {
+    const diffItem = new PRChildItem(
+      `+${pr.additions} / -${pr.deletions}`,
+      `${pr.changed_files} file(s) changed`,
+      new vscode.ThemeIcon("diff-multiple"),
+    );
+    diffItem.command = {
+      command: "gitea.openPRDiff",
+      title: "Open PR Diff",
+      arguments: [item],
+    };
+    diffItem.tooltip = new vscode.MarkdownString("Click to view full diff tree");
+    children.push(diffItem);
+  }
+
   if (pr.comments > 0 || pr.review_comments > 0) {
     children.push(
       new PRChildItem(
