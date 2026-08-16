@@ -6,6 +6,7 @@ import { RepoInfo, RepoManager } from "../../../context/repoManager";
 import { PullRequestProvider } from "../../../views/pullRequestProvider";
 import {
   draftTitle,
+  reconcileBranchSelection,
   suggestTitleFromBranch,
   validBranchPair,
 } from "../domain/createPullRequestModel";
@@ -32,6 +33,7 @@ interface FormSnapshot {
 }
 
 type CreateViewMessage =
+  | ({ type: "updateForm" } & FormSnapshot)
   | ({ type: "changeBranches" } & FormSnapshot)
   | ({ type: "pickAssignees" } & FormSnapshot)
   | ({ type: "pickReviewers" } & FormSnapshot)
@@ -58,7 +60,12 @@ export class CreatePullRequestViewProvider
     private readonly prProvider: PullRequestProvider,
   ) {
     this.disposables.push(
-      this.session.onDidChangeState(() => this.render()),
+      this.session.onDidChangeState((state) => {
+        if (state.kind !== "creating") {
+          this.draft = undefined;
+        }
+        this.render();
+      }),
       this.repoManager.onDidChange(() => {
         if (
           this.draft &&
@@ -145,6 +152,53 @@ export class CreatePullRequestViewProvider
     );
   }
 
+  async refreshBranches(): Promise<void> {
+    if (!this.draft || this.session.current.kind !== "creating") {
+      return;
+    }
+
+    const { repoInfo, baseBranch: previousBase, headBranch: previousHead } =
+      this.draft;
+
+    try {
+      const branches = await this.api.listBranches(repoInfo);
+      if (branches.length < 2) {
+        vscode.window.showWarningMessage(
+          `At least two branches are required to create a pull request in ${repoInfo.label}.`,
+        );
+        return;
+      }
+
+      const selection = reconcileBranchSelection(
+        branches,
+        previousBase,
+        previousHead,
+        repoInfo.currentBranch,
+      );
+
+      this.draft.branches = branches;
+      this.draft.baseBranch = selection.baseBranch;
+      this.draft.headBranch = selection.headBranch;
+
+      if (
+        selection.baseBranch !== previousBase ||
+        selection.headBranch !== previousHead
+      ) {
+        await this.session.startCreating(
+          this.repositoryRef(repoInfo),
+          selection.baseBranch,
+          selection.headBranch,
+        );
+      }
+
+      this.render();
+    } catch (error) {
+      vscode.window.showErrorMessage(
+        `Unable to refresh Gitea branches: ${(error as Error).message}`,
+      );
+    }
+  }
+
   dispose(): void {
     for (const disposable of this.disposables) {
       disposable.dispose();
@@ -206,6 +260,8 @@ export class CreatePullRequestViewProvider
     this.applyForm(message);
 
     switch (message.type) {
+      case "updateForm":
+        return;
       case "changeBranches":
         await this.changeBranches(message);
         return;
@@ -525,8 +581,11 @@ export class CreatePullRequestViewProvider
     return { type, baseBranch: base.value, headBranch: head.value, title: title.value, body: body.value, ...extra };
   }
   function branchesChanged() { vscode.postMessage(snapshot('changeBranches')); }
+  function formChanged() { vscode.postMessage(snapshot('updateForm')); }
   base.addEventListener('change', branchesChanged);
   head.addEventListener('change', branchesChanged);
+  title.addEventListener('input', formChanged);
+  body.addEventListener('input', formChanged);
   document.querySelectorAll('[data-action]').forEach((button) => button.addEventListener('click', () => vscode.postMessage(snapshot(button.dataset.action))));
   document.getElementById('cancel').addEventListener('click', () => vscode.postMessage({ type: 'cancel' }));
   document.getElementById('legacy').addEventListener('click', () => vscode.postMessage({ type: 'openLegacy' }));
