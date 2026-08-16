@@ -5,7 +5,30 @@ All notable changes to **Gitea Pull Request** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.0] - Unreleased
+## [0.2.0] - Unreleased
+
+### Added
+
+- Explicit active pull-request workspace/session context with repository identity.
+- `gitea.activatePR` and `gitea.clearActivePR` commands.
+- Session coordinator binding the active PR to the contextual `Changes in Pull Request` tree.
+- Context keys exposing active PR repository and pull-request number.
+- Dedicated `Open Full Pull Request Details` secondary workflow.
+- Tests covering active PR repository identity and stale-session invalidation.
+
+### Changed
+
+- `Changes in Pull Request` is now driven by the active PR session during the Phase 1 migration.
+- Repository detection is scoped to Gitea-compatible/authenticated hosts so GitHub, GitLab, Bitbucket and Azure DevOps repositories can coexist in the same VS Code workspace without being surfaced as Gitea repositories.
+- The Activity Bar container uses a standalone Gitea Pull Request identity instead of reusing the legacy container state.
+- The Activity Bar icon now represents a pull-request workflow.
+
+### Compatibility
+
+- The existing full PR detail panel remains available as a secondary view.
+- Existing PR, Issue and CI operations are intentionally preserved during the incremental migration.
+
+## [0.1.0] - 2026-08-16
 
 ### Added
 
@@ -103,7 +126,7 @@ The entries below describe the history inherited from the earlier Gitea VS Code 
 
 - **Run duration**: Shows total elapsed time for workflow runs
 - **Job duration**: Each job displays execution time in ⏱️ format
-- **Step duration**: Individual steps show their execution time
+- **Step duration**: Individual steps show execution time
 - **Live updates**: Duration updates automatically for running jobs
 
 #### 🔄 Enhanced CI Detail Panel
