@@ -112,6 +112,37 @@ function pickRemote(
   };
 }
 
+export function parseGitBranchRefs(output: string): BranchRefSnapshot[] {
+  const refs: BranchRefSnapshot[] = [];
+
+  for (const rawLine of output.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+
+    if (line.startsWith("refs/heads/")) {
+      const name = line.slice("refs/heads/".length);
+      if (name) refs.push({ name });
+      continue;
+    }
+
+    if (line.startsWith("refs/remotes/")) {
+      const shortName = line.slice("refs/remotes/".length);
+      const separator = shortName.indexOf("/");
+      if (separator <= 0) continue;
+
+      const remote = shortName.slice(0, separator);
+      const branch = shortName.slice(separator + 1);
+      if (!branch || branch === "HEAD") continue;
+      refs.push({
+        name: `${remote}/${branch}`,
+        remote,
+      });
+    }
+  }
+
+  return refs;
+}
+
 export function resolveBranchIdentity(
   refs: BranchRefSnapshot[],
   head: BranchRefSnapshot | undefined,
@@ -225,8 +256,16 @@ export class BranchCleanupService {
       log(`[branch-cleanup] fetch best-effort failed repo=${repoInfo.label}: ${(error as Error).message}`);
     }
 
+    let refs = repository.state.refs;
+    try {
+      refs = await this.branchRefs(repoInfo);
+      log(`[branch-cleanup] git refs loaded repo=${repoInfo.label} count=${refs.length}`);
+    } catch (error) {
+      log(`[branch-cleanup] git refs fallback repo=${repoInfo.label}: ${(error as Error).message}`);
+    }
+
     const identity = resolveBranchIdentity(
-      repository.state.refs,
+      refs,
       repository.state.HEAD,
       prHead,
       base,
@@ -279,6 +318,15 @@ export class BranchCleanupService {
       );
     }
     return result;
+  }
+
+  private async branchRefs(repoInfo: RepoInfo): Promise<BranchRefSnapshot[]> {
+    const { stdout } = await execFileAsync(
+      "git",
+      ["for-each-ref", "--format=%(refname)", "refs/heads", "refs/remotes"],
+      { cwd: repoInfo.rootPath, encoding: "utf8" },
+    );
+    return parseGitBranchRefs(String(stdout));
   }
 
   private async git(repoInfo: RepoInfo, args: string[]): Promise<void> {
