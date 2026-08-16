@@ -33,6 +33,14 @@ export function isWorkInProgress(pr: GiteaPullRequest): boolean {
   return /^(?:WIP:|\[WIP\])/i.test((pr.title ?? "").trim());
 }
 
+export function hasNoChangesToMerge(pr: GiteaPullRequest): boolean {
+  return (
+    pr.changed_files === 0 &&
+    (pr.additions ?? 0) === 0 &&
+    (pr.deletions ?? 0) === 0
+  );
+}
+
 export function supportedMergeMethods(
   settings: RepositoryMergeSettings | undefined,
 ): MergeMethod[] {
@@ -77,6 +85,12 @@ export function evaluateMergeReadiness(
 
   if (pr.merged) blockingReasons.push("Pull request is already merged");
   else if (pr.state !== "open") blockingReasons.push("Pull request is closed");
+
+  if (hasNoChangesToMerge(pr)) {
+    blockingReasons.push(
+      "No changes to merge; the head branch is already contained in the target branch",
+    );
+  }
 
   if (isWorkInProgress(pr)) {
     blockingReasons.push("Pull request is marked Work In Progress");
