@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { GiteaApiClient } from "../../../api/giteaApiClient";
 import { RepoInfo, RepoManager } from "../../../context/repoManager";
 import { PRDiffProvider } from "../../../views/prDiffProvider";
+import { PullRequestWorkspaceState } from "../domain/pullRequestState";
 import { PullRequestSessionService } from "./pullRequestSessionService";
 
 export class PullRequestSessionCoordinator implements vscode.Disposable {
@@ -38,9 +39,23 @@ export class PullRequestSessionCoordinator implements vscode.Disposable {
     await this.session.invalidateIfRepositoryUnavailable(repos.map((repo) => repo.key));
   }
 
-  private async applySessionState(
-    state: ReturnType<PullRequestSessionService["current"] extends never ? never : never>,
-  ): Promise<void> {
-    void state;
+  private async applySessionState(state: PullRequestWorkspaceState): Promise<void> {
+    if (state.kind !== "active") {
+      PRDiffProvider.clearAll();
+      await vscode.commands.executeCommand("setContext", "gitea.prDiffVisible", false);
+      return;
+    }
+
+    const repoInfo = this.repoManager
+      .getRepos()
+      .find((repo) => repo.key === state.repository.key);
+
+    if (!repoInfo) {
+      await this.session.clear();
+      return;
+    }
+
+    await vscode.commands.executeCommand("setContext", "gitea.prDiffVisible", true);
+    await PRDiffProvider.show(this.api, repoInfo, state.pullRequest);
   }
 }
