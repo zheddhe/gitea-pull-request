@@ -210,6 +210,16 @@
         "icon": "$(close)"
       },
       {
+        "command": "gitea.cancelCreatePR",
+        "title": "Gitea: Cancel Pull Request Creation",
+        "icon": "$(close)"
+      },
+      {
+        "command": "gitea.finishPostMerge",
+        "title": "Gitea: Keep Branches and Finish",
+        "icon": "$(close)"
+      },
+      {
         "command": "gitea.viewPRDetail",
         "title": "Gitea: Open Full Pull Request Details"
       },
@@ -304,6 +314,11 @@
           "group": "navigation"
         },
         {
+          "command": "gitea.cancelCreatePR",
+          "when": "view == gitea.createPullRequest && gitea.prSession.creating",
+          "group": "navigation@1"
+        },
+        {
           "command": "gitea.refreshActivePR",
           "when": "view == gitea.prDiff && gitea.prSession.active",
           "group": "navigation@1"
@@ -322,6 +337,11 @@
           "command": "gitea.clearActivePR",
           "when": "view == gitea.reviewPullRequest && gitea.prSession.active",
           "group": "navigation@2"
+        },
+        {
+          "command": "gitea.finishPostMerge",
+          "when": "view == gitea.postMergePullRequest && gitea.prSession.merged",
+          "group": "navigation@1"
         },
         {
           "command": "gitea.refreshCI",
