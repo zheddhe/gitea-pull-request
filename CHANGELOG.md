@@ -5,7 +5,40 @@ All notable changes to **Gitea Pull Request** will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.0] - Unreleased
+## [0.3.0] - Unreleased
+
+### Added
+
+- Dedicated sidebar-first **Create Pull Request** WebviewView in the Gitea Pull Request Activity Bar.
+- Explicit repository selection for PR creation in multi-repository workspaces.
+- BASE and MERGE/head branch selection with validation preventing identical source/target branches.
+- Editable pull-request title and description in the sidebar creation workflow.
+- Creation-session orchestration through `PullRequestSessionService` (`idle -> creating -> active`).
+- Automatic PR-tree refresh and activation of the newly created PR after successful creation.
+- Guarded `make promote RELEASE_VERSION=x.y.z` workflow for explicit phase/release version promotion.
+
+### Changed
+
+- The primary **Create Pull Request** action now opens the sidebar creation workflow instead of the legacy prompt sequence.
+- The create action remains available when the Pull Requests tree contains no open PRs.
+- Re-invoking Create while a creation session is already active refocuses the existing creation view rather than creating another draft state.
+- The previous create flow remains available as **Gitea: Create Pull Request (Legacy)** during Phase 2 migration.
+
+### Fixed
+
+- Creating a PR is no longer accidentally unavailable when the Pull Requests list is empty.
+- Cancel clears the `creating` session state so the sidebar cannot retain a stale creation context.
+
+### In progress for Phase 2
+
+- Files Changed for the selected base/head pair.
+- Reviewers, assignees, labels, milestone and projects metadata flows.
+- Draft pull-request capability detection and Create Draft action.
+- Additional create-view orchestration tests and prefill behavior.
+
+Visual and ergonomic refinement is intentionally deferred to the later product-polish phase; the `0.3.0` Phase 2 gate focuses first on workflow correctness and creation feature parity.
+
+## [0.2.0] - 2026-08-16
 
 ### Added
 
