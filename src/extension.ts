@@ -15,6 +15,7 @@ import { initOutputChannel } from "./debug/outputChannel";
 import { registerPullRequestSessionCommands } from "./features/pullRequests/commands/sessionCommands";
 import { PullRequestSessionCoordinator } from "./features/pullRequests/services/pullRequestSessionCoordinator";
 import { PullRequestSessionService } from "./features/pullRequests/services/pullRequestSessionService";
+import { PullRequestReviewApi } from "./features/pullRequests/services/pullRequestReviewApi";
 import { CreatePullRequestViewProvider } from "./features/pullRequests/views/createPullRequestView";
 import { ReviewPullRequestViewProvider } from "./features/pullRequests/views/reviewPullRequestView";
 
@@ -28,6 +29,7 @@ export async function activate(
   const repoManager = new RepoManager(() => auth.getServerUrls());
   const api = new GiteaApiClient(auth);
   const metadataApi = new PullRequestMetadataApi(auth);
+  const reviewApi = new PullRequestReviewApi(auth);
   const prSession = new PullRequestSessionService();
   const prSessionCoordinator = new PullRequestSessionCoordinator(
     api,
@@ -45,9 +47,11 @@ export async function activate(
   );
   const reviewPullRequestView = new ReviewPullRequestViewProvider(
     api,
+    reviewApi,
     repoManager,
     prSession,
     prProvider,
+    context.workspaceState,
   );
   const ciProvider = new CIRunsProvider(api, repoManager, auth);
   const issuesProvider = new IssuesProvider(api, repoManager, auth);
