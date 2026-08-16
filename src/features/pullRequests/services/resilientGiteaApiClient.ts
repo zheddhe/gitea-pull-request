@@ -2,7 +2,7 @@ import { GiteaApiClient } from "../../../api/giteaApiClient";
 import type { RepoInfo } from "../../../context/repoManager";
 import { log } from "../../../debug/outputChannel";
 
-const RETRY_DELAYS_MS = [750, 1500, 2500];
+const RETRY_DELAYS_MS = [1000, 2000, 4000, 8000, 12000];
 
 /**
  * Gitea can transiently return 405 "Please try again later" while its
@@ -12,6 +12,11 @@ const RETRY_DELAYS_MS = [750, 1500, 2500];
  * Keep the generic API client behavior intact and only retry this one
  * explicitly transient server response. Permission/WIP/validation failures
  * remain terminal and are surfaced immediately.
+ *
+ * Between retries we re-read the PR. Gitea explicitly treats GET
+ * /pulls/{index} as a "view" and uses it to resume a delayed mergeability
+ * check when the PR is in checking state. This makes the retry bounded and
+ * observable instead of blindly hammering the merge endpoint.
  */
 export class ResilientGiteaApiClient extends GiteaApiClient {
   override async mergePullRequest(
@@ -47,9 +52,21 @@ export class ResilientGiteaApiClient extends GiteaApiClient {
 
         const delay = RETRY_DELAYS_MS[attempt];
         log(
-          `[merge-api] Gitea mergeability check still running for pr=#${number}; retrying in ${delay}ms`,
+          `[merge-api] Gitea mergeability check still running for pr=#${number}; waiting ${delay}ms before recheck`,
         );
         await sleep(delay);
+
+        try {
+          const refreshed = await super.getPullRequest(repoInfo, number);
+          log(
+            `[merge-api] mergeability recheck pr=#${number} state=${refreshed.state} merged=${Boolean(refreshed.merged)} mergeable=${String(refreshed.mergeable)}`,
+          );
+        } catch (refreshError) {
+          log(
+            `[merge-api] mergeability recheck failed pr=#${number}: ${(refreshError as Error).message}`,
+          );
+        }
+
         attempt += 1;
       }
     }
