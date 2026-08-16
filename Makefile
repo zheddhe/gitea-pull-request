@@ -18,9 +18,6 @@ help: ## Show the available development targets
 	@printf '%s\n\n' 'Usage: make <target>'
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z0-9_.-]+:.*## / {printf "  %-18s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
- doctor:
-	@true
-
 doctor: ## Check the local tools required to build/package/install the extension
 	@command -v node >/dev/null || { echo 'ERROR: node is required.' >&2; exit 1; }
 	@command -v $(NPM) >/dev/null || { echo 'ERROR: npm is required.' >&2; exit 1; }
@@ -62,7 +59,10 @@ vsix: doctor verify | $(VSIX_DIR) ## Build and validate a versioned VSIX under .
 	@test -s "$(VSIX_FILE)" || { echo 'ERROR: VSIX package was not created.' >&2; exit 1; }
 	@echo "VSIX ready: $(VSIX_FILE)"
 
-rebuild-vsix: clean deps vsix ## Clean, reinstall dependencies, verify, and rebuild the local VSIX from scratch
+rebuild-vsix: ## Clean, reinstall dependencies, verify, and rebuild the local VSIX from scratch
+	$(MAKE) clean
+	$(MAKE) deps
+	$(MAKE) vsix
 
 install-vsix: ## Force-install the already-built local VSIX into VS Code
 	@test -s "$(VSIX_FILE)" || { echo "ERROR: $(VSIX_FILE) does not exist. Run 'make vsix' first." >&2; exit 1; }
@@ -70,9 +70,14 @@ install-vsix: ## Force-install the already-built local VSIX into VS Code
 	$(CODE) --install-extension "$(VSIX_FILE)" --force
 	@echo "Installed: $(VSIX_FILE)"
 
-reinstall-vsix: rebuild-vsix install-vsix ## Full clean rebuild followed by forced local VSIX installation
+reinstall-vsix: ## Full clean rebuild followed by forced local VSIX installation
+	$(MAKE) rebuild-vsix
+	$(MAKE) install-vsix
 
-ci: deps vsix ## Reproduce the CI build/package path from a clean dependency install
+ci: ## Reproduce the CI build/package path from a clean dependency install
+	$(MAKE) clean
+	$(MAKE) deps
+	$(MAKE) vsix
 
 show-vsix: ## Print the expected local VSIX path
 	@echo "$(VSIX_FILE)"
