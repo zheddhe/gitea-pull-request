@@ -37,7 +37,6 @@ type CreateViewMessage =
   | ({ type: "pickReviewers" } & FormSnapshot)
   | ({ type: "pickLabels" } & FormSnapshot)
   | ({ type: "pickMilestone" } & FormSnapshot)
-  | ({ type: "showProjects" } & FormSnapshot)
   | ({ type: "create"; draft: boolean } & FormSnapshot)
   | { type: "cancel" }
   | { type: "openLegacy" };
@@ -215,11 +214,6 @@ export class CreatePullRequestViewProvider
         return;
       case "pickMilestone":
         await this.pickMilestone();
-        return;
-      case "showProjects":
-        vscode.window.showInformationMessage(
-          "Gitea does not expose a portable pull-request project assignment API for this workflow. Projects are left unavailable rather than emulated incorrectly.",
-        );
         return;
       case "create":
         await this.create(message.draft);
@@ -486,7 +480,6 @@ export class CreatePullRequestViewProvider
     <button class="secondary" data-action="pickAssignees">Assignees · ${summary(assignees.map((user) => user.login), "None")}</button>
     <button class="secondary" data-action="pickLabels">Labels · ${summary(labels.map((label) => label.name), "None")}</button>
     <button class="secondary" data-action="pickMilestone">Milestone · ${escapeHtml(milestone?.title ?? "None")}</button>
-    <button class="secondary" data-action="showProjects">Projects · unavailable through portable Gitea PR API</button>
   </div>
 
   <div class="hint">Create Draft uses Gitea's work-in-progress convention by applying the configured-compatible <strong>WIP:</strong> title prefix.</div>
