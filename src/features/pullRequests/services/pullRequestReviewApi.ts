@@ -20,10 +20,34 @@ export class PullRequestReviewApi {
     repoInfo: RepoInfo,
     ref: string,
   ): Promise<GiteaCombinedStatus> {
-    return this.request<GiteaCombinedStatus>(
+    const status = await this.request<GiteaCombinedStatus>(
       repoInfo,
       `/repos/${repoInfo.owner}/${repoInfo.repo}/commits/${encodeURIComponent(ref)}/status`,
     );
+
+    const statuses = Array.isArray(status?.statuses)
+      ? status.statuses.filter(Boolean).map((item) => ({
+          ...item,
+          state: normalizeStatusState(item?.state),
+          context: typeof item?.context === "string" ? item.context : "",
+          description:
+            typeof item?.description === "string" ? item.description : "",
+          target_url:
+            typeof item?.target_url === "string" ? item.target_url : "",
+        }))
+      : [];
+
+    const normalized: GiteaCombinedStatus = {
+      ...status,
+      state: normalizeStatusState(status?.state),
+      statuses,
+      total_count:
+        typeof status?.total_count === "number" ? status.total_count : statuses.length,
+    };
+    log(
+      `[review-api] normalized combined status state=${normalized.state} checks=${statuses.length}`,
+    );
+    return normalized;
   }
 
   async getRepositoryMergeSettings(
@@ -49,10 +73,28 @@ export class PullRequestReviewApi {
     repoInfo: RepoInfo,
     number: number,
   ): Promise<GiteaReview[]> {
-    return this.request<GiteaReview[]>(
+    const reviews = await this.request<GiteaReview[]>(
       repoInfo,
       `/repos/${repoInfo.owner}/${repoInfo.repo}/pulls/${number}/reviews`,
     );
+    const normalized = Array.isArray(reviews)
+      ? reviews.filter(Boolean).map((review) => ({
+          ...review,
+          body: typeof review.body === "string" ? review.body : "",
+          submitted_at:
+            typeof review.submitted_at === "string" ? review.submitted_at : "",
+          stale: review.stale === true,
+          user: review.user
+            ? {
+                ...review.user,
+                login:
+                  typeof review.user.login === "string" ? review.user.login : "",
+              }
+            : ({ login: "", id: 0, full_name: "", email: "", avatar_url: "" } as GiteaReview["user"]),
+        }))
+      : [];
+    log(`[review-api] normalized reviews count=${normalized.length}`);
+    return normalized;
   }
 
   async addComment(
@@ -142,5 +184,19 @@ export class PullRequestReviewApi {
     } finally {
       clearTimeout(timeout);
     }
+  }
+}
+
+function normalizeStatusState(
+  value: unknown,
+): "pending" | "success" | "error" | "failure" | "warning" {
+  switch (value) {
+    case "success":
+    case "error":
+    case "failure":
+    case "warning":
+      return value;
+    default:
+      return "pending";
   }
 }
