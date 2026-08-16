@@ -19,9 +19,23 @@ export class SidebarPullRequestProvider extends PullRequestProvider {
     const items = await super.getChildren(element);
 
     for (const item of items) {
-      if (item.contextValue === "category-waiting") {
-        // This category is actionable and should be visible immediately.
+      if (item.contextValue === "repoGroup") {
+        // Entering the Gitea workspace should expose the useful PR categories
+        // immediately instead of requiring a first expansion per repository.
         item.collapsibleState = vscode.TreeItemCollapsibleState.Expanded;
+      }
+
+      if (
+        item.contextValue === "category-all" ||
+        item.contextValue === "category-waiting"
+      ) {
+        // The primary open-PR and actionable assigned/review queues should be
+        // visible on first entry. Users can still collapse them afterwards and
+        // VS Code remains free to persist their subsequent tree interaction.
+        item.collapsibleState = vscode.TreeItemCollapsibleState.Expanded;
+      }
+
+      if (item.contextValue === "category-waiting") {
         // The category aggregates PRs with potentially different review states;
         // keep the category icon neutral and color the individual PR icons only.
         item.iconPath = new vscode.ThemeIcon("folder");
