@@ -7,6 +7,7 @@ import type {
 import {
   evaluateMergeReadiness,
   preferredMergeMethod,
+  readyForReviewTitle,
   supportedMergeMethods,
 } from "../../features/pullRequests/domain/reviewPullRequestModel";
 
@@ -25,6 +26,27 @@ suite("reviewPullRequestModel", () => {
         reason.includes("Work In Progress"),
       ),
     );
+  });
+
+  test("does not misreport a WIP mergeable=false signal as a server conflict", () => {
+    const readiness = evaluateMergeReadiness(
+      pullRequest({ title: "WIP: phase 3", mergeable: false }),
+      combinedStatus("success"),
+      [],
+      { user_can_merge: true },
+    );
+
+    assert.strictEqual(readiness.canMerge, false);
+    assert.ok(readiness.blockingReasons.some((reason) => reason.includes("Work In Progress")));
+    assert.ok(
+      !readiness.blockingReasons.some((reason) => reason.includes("Gitea reports")),
+    );
+  });
+
+  test("removes Gitea WIP markers when marking a pull request ready", () => {
+    assert.strictEqual(readyForReviewTitle("WIP: Rework PR"), "Rework PR");
+    assert.strictEqual(readyForReviewTitle("[WIP] Rework PR"), "Rework PR");
+    assert.strictEqual(readyForReviewTitle("Normal PR"), "Normal PR");
   });
 
   test("blocks pull requests whose head is already contained in base", () => {
@@ -60,8 +82,8 @@ suite("reviewPullRequestModel", () => {
     assert.ok(
       readiness.blockingReasons.some(
         (reason) =>
-          reason.includes("cannot be merged automatically") &&
-          reason.includes("conflicts with the target branch"),
+          reason.includes("Gitea reports") &&
+          reason.includes("server-side mergeability blockers"),
       ),
     );
   });
