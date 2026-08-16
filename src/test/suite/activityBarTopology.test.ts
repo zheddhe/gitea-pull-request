@@ -9,6 +9,10 @@ suite("Activity Bar topology", () => {
     contributes?: {
       viewsContainers?: { activitybar?: Array<{ id: string; title: string; icon: string }> };
       views?: Record<string, Array<{ id: string; name: string; when?: string }>>;
+      commands?: Array<{ command: string; title: string; icon?: string }>;
+      menus?: {
+        "view/title"?: Array<{ command: string; when?: string; group?: string }>;
+      };
     };
   };
 
@@ -83,5 +87,28 @@ suite("Activity Bar topology", () => {
     assert.match(source, /contextValue === "category-all"/);
     assert.match(source, /contextValue === "category-waiting"/);
     assert.match(source, /TreeItemCollapsibleState\.Expanded/);
+  });
+
+  test("exposes refresh before close in Changes in Pull Request title", () => {
+    const commands = packageJson.contributes?.commands ?? [];
+    const refresh = commands.find(
+      (command) => command.command === "gitea.refreshActivePR",
+    );
+    assert.strictEqual(refresh?.icon, "$(refresh)");
+
+    const titleActions = packageJson.contributes?.menus?.["view/title"] ?? [];
+    const refreshAction = titleActions.find(
+      (item) => item.command === "gitea.refreshActivePR",
+    );
+    const closeAction = titleActions.find(
+      (item) => item.command === "gitea.clearActivePR",
+    );
+
+    assert.strictEqual(
+      refreshAction?.when,
+      "view == gitea.prDiff && gitea.prSession.active",
+    );
+    assert.strictEqual(refreshAction?.group, "navigation@1");
+    assert.strictEqual(closeAction?.group, "navigation@2");
   });
 });
