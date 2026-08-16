@@ -1,6 +1,7 @@
 import * as assert from "assert";
 import {
   executeBranchCleanupPlan,
+  parseGitBranchRefs,
   planBranchCleanup,
   resolveBranchIdentity,
   type BranchCleanupOperations,
@@ -10,6 +11,24 @@ import {
 } from "../../features/pullRequests/services/branchCleanupService";
 
 suite("BranchCleanupService identity resolution", () => {
+  test("parses local and remote refs directly from git", () => {
+    const refs = parseGitBranchRefs([
+      "refs/heads/gitea/test",
+      "refs/heads/main",
+      "refs/remotes/origin/HEAD",
+      "refs/remotes/origin/gitea/test",
+      "refs/remotes/origin/main",
+      "",
+    ].join("\n"));
+
+    assert.deepStrictEqual(refs, [
+      { name: "gitea/test" },
+      { name: "main" },
+      { name: "origin/gitea/test", remote: "origin" },
+      { name: "origin/main", remote: "origin" },
+    ]);
+  });
+
   test("resolves exact local and origin remote head branches", () => {
     const refs: BranchRefSnapshot[] = [
       { name: "feature/work" },
