@@ -175,6 +175,11 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "gitea.refreshActivePR",
+        "title": "Gitea: Refresh Active Pull Request",
+        "icon": "$(refresh)"
+      },
+      {
         "command": "gitea.refreshCI",
         "title": "Gitea: Refresh CI Runs",
         "icon": "$(refresh)"
@@ -299,9 +304,14 @@
           "group": "navigation"
         },
         {
+          "command": "gitea.refreshActivePR",
+          "when": "view == gitea.prDiff && gitea.prSession.active",
+          "group": "navigation@1"
+        },
+        {
           "command": "gitea.clearActivePR",
           "when": "view == gitea.prDiff && gitea.prSession.active",
-          "group": "navigation"
+          "group": "navigation@2"
         },
         {
           "command": "gitea.refreshCI",
