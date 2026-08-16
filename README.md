@@ -105,43 +105,22 @@ The contextual **Gitea Pull Request** Activity Bar icon uses pull-request visual
 
 ## Installation
 
-### Development / local VSIX
+Development build, dependency locking, validation, packaging and local installation are centralized in the repository `Makefile`.
 
-Development build, dependency locking, validation, packaging and local installation are centralized in the repository `Makefile` so the same sequence can be reproduced consistently.
+The packaging tool is pinned to `@vscode/vsce 3.9.2`; local VSIX packaging therefore requires **Node.js 22+**.
 
-The packaging tool is pinned to `@vscode/vsce 3.9.2`; local VSIX packaging therefore requires **Node.js 22+**. The VS Code command-line launcher (`code`) is only required for the installation targets.
+After a fresh clone, or after modifying package metadata, use `make bootstrap`. Strict dependency install remains available through `make deps`; use `make lock` when package metadata intentionally changes.
 
-### Dependency manifest and lock-file workflow
-
-`package.json` is the dependency manifest. `package-lock.json` is the committed reproducibility lock and must be regenerated whenever dependency declarations or relevant package metadata in `package.json` change.
-
-After a fresh clone, or after modifying `package.json`, run:
-
-```bash
-make bootstrap
-```
-
-The strict reproducible dependency install remains available through `make deps`; use `make lock` when package metadata intentionally changes.
-
-### Release promotion
-
-Phase development stays on the last merged release version until the functional work and documentation are ready for the release gate. Promote explicitly with:
-
-```bash
-make promote RELEASE_VERSION=<target-version>
-```
-
-For Phase 5:
+Phase development stays on the last merged release version until release preparation. Promote Phase 5 explicitly with:
 
 ```bash
 make promote RELEASE_VERSION=0.6.0
 ```
 
-This keeps `package.json` and `package-lock.json` synchronized without creating a Git tag.
-
-### Clean build and VSIX
+For normal validation/package/install loops:
 
 ```bash
+make verify
 make rebuild-vsix
 make reinstall-vsix
 ```
