@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { GiteaPullRequest } from "../../../api/types";
+import { log } from "../../../debug/outputChannel";
 import {
   CheckoutState,
   idlePullRequestState,
@@ -26,6 +27,7 @@ export class PullRequestSessionService implements vscode.Disposable {
 
   async initialize(): Promise<void> {
     await this.syncContextKeys();
+    log(`[pr-session] initialized state=${this.describe(this.state)}`);
   }
 
   async startCreating(
@@ -93,6 +95,7 @@ export class PullRequestSessionService implements vscode.Disposable {
       return false;
     }
 
+    log(`[pr-session] repository unavailable key=${this.state.repository.key}; clearing session`);
     await this.clear();
     return true;
   }
@@ -106,9 +109,25 @@ export class PullRequestSessionService implements vscode.Disposable {
   }
 
   private async transition(nextState: PullRequestWorkspaceState): Promise<void> {
+    const previous = this.describe(this.state);
+    const next = this.describe(nextState);
     this.state = nextState;
     await this.syncContextKeys();
+    log(`[pr-session] ${previous} -> ${next}`);
     this.stateEmitter.fire(this.state);
+  }
+
+  private describe(state: PullRequestWorkspaceState): string {
+    switch (state.kind) {
+      case "idle":
+        return "idle";
+      case "creating":
+        return `creating repo=${state.repository.fullName} ${state.headBranch}->${state.baseBranch}`;
+      case "active":
+        return `active repo=${state.repository.fullName} pr=#${state.pullRequest.number} head=${state.pullRequest.head.sha.slice(0, 8)} checkout=${state.checkoutState.kind}`;
+      case "merged":
+        return `merged repo=${state.repository.fullName} pr=#${state.pullRequest.number} local=${state.localBranchExists} remote=${state.remoteBranchExists}`;
+    }
   }
 
   private async syncContextKeys(): Promise<void> {

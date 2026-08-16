@@ -1,9 +1,7 @@
 import * as vscode from "vscode";
 import { AuthManager } from "./auth/authManager";
-import { GiteaApiClient } from "./api/giteaApiClient";
 import { PullRequestMetadataApi } from "./api/pullRequestMetadataApi";
 import { RepoManager } from "./context/repoManager";
-import { PullRequestProvider } from "./views/pullRequestProvider";
 import { CIRunsProvider } from "./views/ciRunsProvider";
 import { IssuesProvider } from "./views/issuesProvider";
 import { StatusBarManager } from "./ui/statusBar";
@@ -15,7 +13,11 @@ import { initOutputChannel } from "./debug/outputChannel";
 import { registerPullRequestSessionCommands } from "./features/pullRequests/commands/sessionCommands";
 import { PullRequestSessionCoordinator } from "./features/pullRequests/services/pullRequestSessionCoordinator";
 import { PullRequestSessionService } from "./features/pullRequests/services/pullRequestSessionService";
+import { PullRequestReviewApi } from "./features/pullRequests/services/pullRequestReviewApi";
+import { ResilientGiteaApiClient } from "./features/pullRequests/services/resilientGiteaApiClient";
 import { CreatePullRequestViewProvider } from "./features/pullRequests/views/createPullRequestView";
+import { ReviewPullRequestViewProvider } from "./features/pullRequests/views/reviewPullRequestView";
+import { SidebarPullRequestProvider } from "./features/pullRequests/views/sidebarPullRequestProvider";
 
 export async function activate(
   context: vscode.ExtensionContext,
@@ -25,8 +27,9 @@ export async function activate(
 
   const auth = new AuthManager(context);
   const repoManager = new RepoManager(() => auth.getServerUrls());
-  const api = new GiteaApiClient(auth);
+  const api = new ResilientGiteaApiClient(auth);
   const metadataApi = new PullRequestMetadataApi(auth);
+  const reviewApi = new PullRequestReviewApi(auth);
   const prSession = new PullRequestSessionService();
   const prSessionCoordinator = new PullRequestSessionCoordinator(
     api,
@@ -34,13 +37,21 @@ export async function activate(
     prSession,
   );
 
-  const prProvider = new PullRequestProvider(api, repoManager, auth);
+  const prProvider = new SidebarPullRequestProvider(api, repoManager, auth);
   const createPullRequestView = new CreatePullRequestViewProvider(
     api,
     metadataApi,
     repoManager,
     prSession,
     prProvider,
+  );
+  const reviewPullRequestView = new ReviewPullRequestViewProvider(
+    api,
+    reviewApi,
+    repoManager,
+    prSession,
+    prProvider,
+    context.workspaceState,
   );
   const ciProvider = new CIRunsProvider(api, repoManager, auth);
   const issuesProvider = new IssuesProvider(api, repoManager, auth);
@@ -52,6 +63,10 @@ export async function activate(
       CreatePullRequestViewProvider.viewType,
       createPullRequestView,
     ),
+    vscode.window.registerWebviewViewProvider(
+      ReviewPullRequestViewProvider.viewType,
+      reviewPullRequestView,
+    ),
     vscode.window.registerTreeDataProvider("gitea.ciRuns", ciProvider),
     vscode.window.registerTreeDataProvider("gitea.issues", issuesProvider),
     vscode.commands.registerCommand("gitea.createPRSidebar", () =>
@@ -61,6 +76,7 @@ export async function activate(
       void repoManager.detect();
     }),
     createPullRequestView,
+    reviewPullRequestView,
     prSessionCoordinator,
     prSession,
     ciProvider,

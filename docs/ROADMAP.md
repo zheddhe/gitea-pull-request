@@ -2,11 +2,13 @@
 
 ## Product direction
 
-The extension is evolving from a fork-oriented "Gitea for VS Code — Enhanced" project into an independent product named **Gitea Pull Request**, published by **zheddhe**.
+The extension is evolving from an earlier Gitea VS Code codebase into an independent product named **Gitea Pull Request**, published by **zheddhe**.
 
 The target user experience is sidebar-first and inspired by the workflow ergonomics of GitHub Pull Requests for VS Code, while remaining implemented specifically for Gitea and its REST API.
 
 The existing codebase remains the technical foundation where it is already healthy: authentication, Gitea API access, repository context, pull request listing, diff tree, issues, CI/actions and native VS Code integration.
+
+The standalone product/version line begins at `0.1.0`. Predecessor/fork releases are historical implementation context rather than part of this roadmap's release sequence; inherited MIT attribution remains preserved by the repository license/history.
 
 ## Design principles
 
@@ -75,18 +77,15 @@ idle
 
 Establish **Gitea Pull Request** as the canonical product and prepare the codebase for state-driven migration without changing the working PR workflow yet.
 
-### Work
+### Completed
 
-- Rename extension package/display branding to Gitea Pull Request.
-- Reset product versioning to a standalone semantic version line (`0.1.0`).
-- Replace fork-oriented documentation and metadata.
-- Preserve MIT attribution/licensing requirements.
-- Keep stable internal command/view IDs under `gitea.*` unless a rename has a concrete technical benefit.
-- Introduce the feature-oriented pull-request directory structure progressively rather than through a big-bang move.
-- Define initial session state/context keys without wiring destructive workflow behavior.
-- Add baseline tests around session transitions before UI migration.
-- Add a reproducible Make-based developer workflow for clean dependency installation, compile/lint/test gates, VSIX packaging and local VS Code installation.
-- Keep disposable local packages under `.artifacts/vsix/` and align CI packaging with the same Make workflow.
+- Renamed package/display branding to Gitea Pull Request.
+- Reset product versioning to the standalone semantic version line.
+- Reworked fork-oriented documentation/metadata around the independent product.
+- Preserved MIT attribution/licensing requirements.
+- Kept stable internal command/view IDs under `gitea.*` where useful.
+- Introduced session state/context-key foundations and baseline tests.
+- Added reproducible Make-based build/test/package/install workflows and `.artifacts/vsix/` output.
 
 ---
 
@@ -100,7 +99,7 @@ Make one explicit pull request the active workspace context and drive contextual
 
 ### Completed
 
-- Implement `PullRequestSessionService` and state/context-key synchronization.
+- Implemented `PullRequestSessionService` and state/context-key synchronization.
 - Activate/clear PR context explicitly.
 - Drive `Changes in Pull Request` from the active PR session.
 - Preserve the full-detail panel as the secondary workflow.
@@ -112,63 +111,28 @@ Make one explicit pull request the active workspace context and drive contextual
 
 ## Phase 2 — Sidebar-first PR creation
 
-**Release target:** `0.3.0`
+**Release:** `0.3.0`
 
 ### Goal
 
 Implement the GitHub-like PR creation workflow inside the sidebar, prioritizing workflow correctness and feature parity before detailed visual/ergonomic polish.
 
-### Target composition
+### Completed
 
-```text
-Create Pull Request
-  BASE <branch>
-  MERGE <branch>
-  TITLE
-  DESCRIPTION
-  reviewers / assignees / labels / milestone / projects
-  Files Changed
-  Cancel
-  Create v
-    Create
-    Create Draft
-```
-
-### Implemented so far
-
-- Dedicated `gitea.createPullRequest` `WebviewView` in the Gitea Pull Request Activity Bar.
-- Primary `gitea.createPRSidebar` create path while retaining `gitea.createPR` as a temporary legacy fallback.
+- Dedicated `gitea.createPullRequest` WebviewView in the Gitea Pull Request Activity Bar.
+- Primary sidebar create path while retaining the legacy create flow as a compatibility fallback.
 - Explicit repository selection in multi-repository workspaces.
 - BASE/head branch loading and selection with protection against identical branches.
-- Editable title and description.
-- Session-driven `idle -> creating -> active` lifecycle.
-- Cancel clears the creating state.
+- Editable title/description with branch-based prefill.
+- Files Changed for the selected source/target pair.
+- QuickPick metadata flows for reviewers, assignees, labels and milestone where supported.
+- Normal and draft/WIP creation.
+- Session-driven `idle -> creating -> active` lifecycle with safe Cancel behavior.
 - Successful creation refreshes the PR tree and activates the created PR.
 - The Create action remains available even when no PR is currently listed.
-- Re-invoking Create during an existing creation session focuses the current creation view instead of creating competing state.
-- Guarded Make release promotion (`make promote RELEASE_VERSION=0.3.0`) is available for the final release gate.
-
-### Remaining functional work before Phase 2 completion
-
-- Show Files Changed for the selected base/head pair.
-- Add native QuickPick flows for reviewers, assignees, labels, milestone and projects where supported by the Gitea API.
-- Detect draft-PR capability and expose Create Draft only when supported, with clean degradation otherwise.
-- Improve title/body prefill where useful without making generated content mandatory.
-- Add create-view orchestration tests at the appropriate stable layer.
-
-### UX scope
-
-The current WebviewView validates the product/workflow architecture. Fine-grained layout, spacing, visual styling and broader ergonomic refinement are **not release blockers for the current implementation increments** unless they prevent use of the workflow. Those concerns are explicitly revisited in **Phase 5 — Secondary workflows and polish**, alongside accessibility and keyboarding review.
-
-### Acceptance criteria
-
-- PR creation can be initiated from the sidebar even with an empty PR list.
-- Repository/base/head selection is explicit and coherent.
-- Title/description can be edited before creation.
-- Create/cancel transitions leave a coherent session state.
-- Successful creation refreshes/activates the created PR.
-- Files Changed, metadata and supported draft creation reach feature parity before the Phase 2 release gate.
-- Documentation/version metadata and local VSIX validation agree at `0.3.0` before merge.
+- Projects are intentionally not exposed while reliable PR ↔ Project read/write support is unavailable through the supported API surface.
+- Create-flow/domain tests cover branch validation, prefill and draft behavior.
+- Detailed visual/ergonomic refinement remains deferred to Phase 5 unless it blocks workflow use.
 
 ---
 
@@ -180,32 +144,34 @@ The current WebviewView validates the product/workflow architecture. Fine-graine
 
 Make the normal review/merge loop usable directly from the sidebar.
 
-### Target composition
+### Completed implementation / interactive validation
 
-```text
-Changes In Pull Request #N
-  Files ...
+- Contextual `Review Pull Request #N` WebviewView follows the same active PR as `Changes in Pull Request`.
+- Top-level comments, Approve and Request Changes work from the sidebar, including expected Gitea permission restrictions such as self-approval prevention.
+- Individual PR icons reflect pending/request-changes/approved review states.
+- **Waiting for my review** is expanded by default and uses neutral folder semantics at category level.
+- Merge readiness combines observable PR state, reviews, target-branch policy and combined CI/check status.
+- Pending/failing/successful checks gate merge as expected.
+- Repository-supported merge commit/squash/rebase methods are exposed and the last supported selection is persisted.
+- Merge is disabled for WIP, blocked review/check states, insufficient approvals/permissions and PRs with no changes left to merge.
+- A real PR containing changes has been merged successfully through the sidebar.
+- Successful merge transitions the session from `active` to `merged` and captures local/remote head-branch presence for Phase 4.
+- `Checkout '<base>'` is scoped to the active Gitea repository.
+- Empty diff is a stable terminal state in `PRDiffProvider`, eliminating the observed endless Changes refresh loop.
+- `RepoManager` no longer emits semantically unchanged repository-change events, eliminating cascaded Pull Requests/readiness refresh loops.
+- Readiness/review API paths use bounded/normalized handling and diagnostic logs.
+- The legacy expandable PR summary omits unavailable diff statistics rather than fabricating `+0 / -0 · 0 file(s) changed`.
 
-Review Pull Request #N
-  comment editor
-  Comment
-  checks/conflict summary
-  Merge method split button
-    Create Merge Commit
-    Squash and Merge
-    Rebase and Merge
-  Checkout '<base>'
-```
+### Release gate remaining
 
-### Work
+- Promote package/lock metadata to `0.4.0` with `make promote RELEASE_VERSION=0.4.0`.
+- Run `make verify` after promotion.
+- Run `make reinstall-vsix` and perform the final smoke validation.
+- Mark the Phase 3 PR ready only once version metadata, docs and local validation agree.
 
-- Keep `prDiffProvider` as the basis of the changes tree.
-- Add a `WebviewView` for review controls.
-- Integrate comments/reviews and mergeability/conflict state.
-- Add merge methods: merge commit, squash, rebase when enabled/supported.
-- Persist the user's last merge-method preference.
-- Surface CI/check state relevant to merge readiness.
-- Keep full PR details/history/commits available as an alternative panel.
+### Phase boundary
+
+After successful merge, `Changes in Pull Request` and `Review Pull Request` disappear because the session has left `active` and entered `merged`. That is the expected Phase 3 boundary; Phase 4 owns the post-merge experience.
 
 ---
 
@@ -269,7 +235,7 @@ Complete the product around the PR-centric workflow and perform the dedicated UX
 | `src/auth/` | Keep |
 | `src/context/` | Keep; integrate PR session state |
 | `src/views/pullRequestProvider.ts` | Keep and evolve |
-| `src/views/prDiffProvider.ts` | Keep largely intact; make active-PR driven |
+| `src/views/prDiffProvider.ts` | Keep largely intact; active-PR driven |
 | `src/views/prDetailPanel.ts` | Retain as secondary full-details view; progressively reduce orchestration responsibility |
 | `src/views/issuesProvider.ts` | Keep |
 | `src/views/ciRunsProvider.ts` | Keep; later make CI more PR-contextual |

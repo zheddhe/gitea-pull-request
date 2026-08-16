@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { GiteaApiClient } from "../api/giteaApiClient";
 import { RepoInfo } from "../context/repoManager";
+import { log } from "../debug/outputChannel";
 import type { GiteaPullRequest, GiteaFileDiff, GiteaCommit, GiteaReview } from "../api/types";
 
 // ── Directory tree builder ────────────────────────────────────────────────────
@@ -53,7 +54,6 @@ class PRDiffRootItem extends vscode.TreeItem {
     super(`#${pr.number} ${pr.title}`, vscode.TreeItemCollapsibleState.Expanded);
     this.id = "prDiffRoot";
     this.contextValue = "prDiffRoot";
-    // Yellow icon until approved, green once approved
     const color = hasApproved
       ? new vscode.ThemeColor("charts.green")
       : new vscode.ThemeColor("charts.yellow");
@@ -75,6 +75,15 @@ class PRDiffStatsItem extends vscode.TreeItem {
     this.id = "prDiffStats";
     this.description = `${files} file(s) changed`;
     this.iconPath = new vscode.ThemeIcon("diff-multiple");
+  }
+}
+
+class PRDiffEmptyItem extends vscode.TreeItem {
+  constructor() {
+    super("No changes", vscode.TreeItemCollapsibleState.None);
+    this.id = "prDiffEmpty";
+    this.description = "Head branch is already contained in the target branch";
+    this.iconPath = new vscode.ThemeIcon("info");
   }
 }
 
@@ -128,7 +137,6 @@ export class PRDiffFileItem extends vscode.TreeItem {
     this.id = `file:${filename}`;
     this.contextValue = viewed ? "prDiffFileViewed" : "prDiffFile";
     this.description = `+${additions} / -${deletions}`;
-    // Use resourceUri so VS Code picks the icon (and color) from the active icon theme
     this.resourceUri = vscode.Uri.file(filename);
     this.tooltip = new vscode.MarkdownString(
       `**${filename}**\nStatus: ${fileStatus}\n+${additions} / -${deletions}`,
@@ -185,6 +193,7 @@ export class PRDiffProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
   private reviews: GiteaReview[] = [];
   private dirTree: DirNode | null = null;
   private loading = false;
+  private loaded = false;
   private error: string | null = null;
   private disposable: vscode.Disposable | null = null;
   private viewedFiles = new Set<string>();
@@ -207,7 +216,6 @@ export class PRDiffProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
     const key = `${repoInfo.key}:${pr.number}`;
     let provider = PRDiffProvider.instances.get(key);
 
-    // If a different provider is active, dispose it first
     for (const [k, p] of PRDiffProvider.instances.entries()) {
       if (k !== key) {
         p.dispose();
@@ -216,19 +224,16 @@ export class PRDiffProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
     }
 
     if (provider) {
-      // Same PR already loaded — just focus, preserve checkbox state
       await vscode.commands.executeCommand("gitea.prDiff.focus");
       return;
     }
 
-    // Set context to show the view
     await vscode.commands.executeCommand("setContext", "gitea.prDiffVisible", true);
 
     provider = new PRDiffProvider(api, repoInfo, pr);
     provider.disposable = vscode.window.registerTreeDataProvider("gitea.prDiff", provider);
     PRDiffProvider.instances.set(key, provider);
 
-    // Focus the view
     await vscode.commands.executeCommand("gitea.prDiff.focus");
   }
 
@@ -299,7 +304,6 @@ export class PRDiffProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
     const viewedCount = filenames.filter(f => this.viewedFiles.has(f)).length;
     if (viewedCount === 0) return vscode.TreeItemCheckboxState.Unchecked;
     if (viewedCount === filenames.length) return vscode.TreeItemCheckboxState.Checked;
-    // Indeterminate = 2 (not in @types/vscode 1.85 enum but supported at runtime)
     return 2 as unknown as vscode.TreeItemCheckboxState;
   }
 
@@ -308,7 +312,6 @@ export class PRDiffProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
     const viewedCount = this.files.filter(f => this.viewedFiles.has(f.filename)).length;
     if (viewedCount === 0) return vscode.TreeItemCheckboxState.Unchecked;
     if (viewedCount === this.files.length) return vscode.TreeItemCheckboxState.Checked;
-    // Indeterminate = 2 (not in @types/vscode 1.85 enum but supported at runtime)
     return 2 as unknown as vscode.TreeItemCheckboxState;
   }
 
@@ -318,7 +321,6 @@ export class PRDiffProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
 
   async getChildren(element?: vscode.TreeItem): Promise<vscode.TreeItem[]> {
     if (!element) {
-      // Root level
       if (this.error) {
         const item = new vscode.TreeItem(this.error, vscode.TreeItemCollapsibleState.None);
         item.iconPath = new vscode.ThemeIcon("warning");
@@ -329,22 +331,27 @@ export class PRDiffProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
         item.iconPath = new vscode.ThemeIcon("loading~spin");
         return [item];
       }
-      if (this.files.length === 0) {
-        // First load — fetch data
+      if (!this.loaded) {
         this.loading = true;
         this._onDidChangeTreeData.fire(null);
+        log(`[pr-diff] loading repo=${this.repoInfo.label} pr=#${this.pr.number}`);
         try {
           const [files, commits, reviews] = await Promise.all([
             this._api.listPRFiles(this.repoInfo, this.pr.number),
             this._api.listPRCommits(this.repoInfo, this.pr.number),
             this._api.listReviews(this.repoInfo, this.pr.number),
           ]);
-          this.files = files;
-          this.commits = commits;
-          this.reviews = reviews;
-          this.dirTree = buildDirTree(files);
+          this.files = files ?? [];
+          this.commits = commits ?? [];
+          this.reviews = reviews ?? [];
+          this.dirTree = buildDirTree(this.files);
+          this.loaded = true;
+          log(
+            `[pr-diff] loaded repo=${this.repoInfo.label} pr=#${this.pr.number} files=${this.files.length} commits=${this.commits.length} reviews=${this.reviews.length}`,
+          );
         } catch (err) {
           this.error = `Failed to load PR diff: ${(err as Error).message}`;
+          log(`[pr-diff] load failed repo=${this.repoInfo.label} pr=#${this.pr.number}: ${(err as Error).message}`);
         } finally {
           this.loading = false;
           this._onDidChangeTreeData.fire(null);
@@ -354,8 +361,19 @@ export class PRDiffProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
 
       const additions = this.files.reduce((sum, f) => sum + f.additions, 0);
       const deletions = this.files.reduce((sum, f) => sum + f.deletions, 0);
-
       const hasApproved = this.reviews.some((r) => r.state === "APPROVED" && !r.stale);
+
+      if (this.files.length === 0) {
+        return [
+          new PRDiffRootItem(this.pr, hasApproved),
+          new PRDiffBranchItem(this.pr),
+          new PRDiffStatsItem(0, 0, 0),
+          new PRDiffEmptyItem(),
+          new PRDiffSectionItem("Commits", "commits", this.commits.length, new vscode.ThemeIcon("git-commit")),
+          new PRDiffSectionItem("Reviews", "reviews", this.reviews.length, new vscode.ThemeIcon("comment-discussion")),
+        ];
+      }
+
       const filesSection = new PRDiffSectionItem("Files", "files", this.files.length, new vscode.ThemeIcon("file-directory"), false);
       const sectionState = this.getSectionCheckboxState();
       filesSection.checkboxState = sectionState;
@@ -397,7 +415,6 @@ export class PRDiffProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
 
   private dirNodeToTreeItems(node: DirNode, viewedFiles: Set<string>): vscode.TreeItem[] {
     const items: vscode.TreeItem[] = [];
-    // Files first
     for (const file of node.files) {
       const viewed = viewedFiles.has(file.filename);
       items.push(new PRDiffFileItem(
@@ -410,7 +427,6 @@ export class PRDiffProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
         viewed,
       ));
     }
-    // Then directories (sorted)
     for (const child of Array.from(node.children.values()).sort((a, b) => a.name.localeCompare(b.name))) {
       const checkboxState = this.getDirCheckboxState(child.path);
       items.push(new PRDiffDirItem(child.path, child.name, checkboxState));

@@ -1,42 +1,77 @@
 # Changelog
 
-All notable changes to **Gitea Pull Request** will be documented in this file.
+All notable changes to **Gitea Pull Request** are documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and the standalone product line follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.3.0] - Unreleased
+## [0.4.0] - Unreleased
+
+### Added
+
+- Contextual **Review Pull Request #N** sidebar WebviewView bound to the active pull-request session.
+- Top-level PR comments directly from the review sidebar.
+- Approve and Request Changes review actions with Gitea permission/errors left authoritative.
+- Merge-readiness summary combining PR state, current reviews, target-branch policy and combined CI/check status.
+- Repository-supported merge method selection for merge commit, squash and rebase, with persisted workspace preference.
+- Safe **Checkout '<base>'** action scoped to the active Gitea repository.
+- Explicit `active -> merged` session transition after successful merge, including local/remote head-branch presence for the Phase 4 cleanup flow.
+- Diagnostic logging for PR session/coordinator, review-readiness API calls and merge attempts.
+
+### Changed
+
+- **Waiting for my review** is expanded by default and uses a neutral folder presentation; status coloring remains on individual PR items where it is meaningful.
+- Pull-request readiness now treats a loaded zero-diff PR as a terminal state and blocks merge when the head is already contained in the target branch.
+- Repository detection emits change events only when the detected repository set or relevant repository state actually changes, avoiding cascaded sidebar/readiness refreshes.
+- The legacy PR-list child no longer fabricates `+0 / -0 · 0 file(s) changed` when Gitea's list response does not provide diff statistics; the statistics row is omitted instead.
+- After a successful merge, active Changes/Review views leave the active workflow as the session enters `merged`; the post-merge experience is owned by Phase 4.
+
+### Fixed
+
+- Endless reload of **Changes in Pull Request** when a valid PR diff is empty (`files = []`).
+- Repeated merge-readiness API bursts caused by semantically unchanged Git/repository detection events.
+- Review view hangs caused by unbounded/unnormalized readiness and review API paths.
+- Merge attempts are no longer offered for PRs with no content left to merge.
+- Transient Gitea mergeability `405 Please try again later` responses are handled defensively while preserving non-transient server rejections.
+
+### Validation
+
+Interactive Phase 3 validation covers:
+
+- pending/failing/successful CI checks;
+- pending, approved and request-changes review states, including Gitea's self-approval restriction;
+- no-diff/already-contained PR blocking;
+- real merge of a PR containing changes;
+- transition from active review state to merged session state;
+- elimination of the observed diff/repository refresh loops.
+
+## [0.3.0] - 2026-08-16
 
 ### Added
 
 - Dedicated sidebar-first **Create Pull Request** WebviewView in the Gitea Pull Request Activity Bar.
 - Explicit repository selection for PR creation in multi-repository workspaces.
 - BASE and MERGE/head branch selection with validation preventing identical source/target branches.
-- Editable pull-request title and description in the sidebar creation workflow.
+- Editable pull-request title and description with branch-based title prefill.
 - Creation-session orchestration through `PullRequestSessionService` (`idle -> creating -> active`).
 - Automatic PR-tree refresh and activation of the newly created PR after successful creation.
+- Files Changed for the selected base/head pair.
+- QuickPick metadata flows for reviewers, assignees, labels and milestone where supported by Gitea APIs.
+- Create Draft support using Gitea's WIP convention.
+- Create-flow/domain tests for branch validation, prefill and draft behavior.
 - Guarded `make promote RELEASE_VERSION=x.y.z` workflow for explicit phase/release version promotion.
 
 ### Changed
 
-- The primary **Create Pull Request** action now opens the sidebar creation workflow instead of the legacy prompt sequence.
+- The primary **Create Pull Request** action opens the sidebar creation workflow instead of the legacy prompt sequence.
 - The create action remains available when the Pull Requests tree contains no open PRs.
 - Re-invoking Create while a creation session is already active refocuses the existing creation view rather than creating another draft state.
-- The previous create flow remains available as **Gitea: Create Pull Request (Legacy)** during Phase 2 migration.
+- Projects are intentionally not exposed as PR metadata while the extension cannot reliably read and persist PR ↔ Project assignment through the supported Gitea API surface.
+- Detailed visual/ergonomic refinement is deferred to the dedicated product-polish phase unless it blocks workflow use.
 
 ### Fixed
 
 - Creating a PR is no longer accidentally unavailable when the Pull Requests list is empty.
 - Cancel clears the `creating` session state so the sidebar cannot retain a stale creation context.
-
-### In progress for Phase 2
-
-- Files Changed for the selected base/head pair.
-- Reviewers, assignees, labels, milestone and projects metadata flows.
-- Draft pull-request capability detection and Create Draft action.
-- Additional create-view orchestration tests and prefill behavior.
-
-Visual and ergonomic refinement is intentionally deferred to the later product-polish phase; the `0.3.0` Phase 2 gate focuses first on workflow correctness and creation feature parity.
 
 ## [0.2.0] - 2026-08-16
 
@@ -51,10 +86,10 @@ Visual and ergonomic refinement is intentionally deferred to the later product-p
 
 ### Changed
 
-- `Changes in Pull Request` is now driven by the active PR session during the Phase 1 migration.
+- `Changes in Pull Request` is driven by the active PR session during the incremental migration.
 - Repository detection is scoped to Gitea-compatible/authenticated hosts so GitHub, GitLab, Bitbucket and Azure DevOps repositories can coexist in the same VS Code workspace without being surfaced as Gitea repositories.
 - The Activity Bar container uses a standalone Gitea Pull Request identity instead of reusing the legacy container state.
-- The Activity Bar icon now represents a pull-request workflow.
+- The Activity Bar icon represents a pull-request workflow.
 
 ### Compatibility
 
@@ -76,132 +111,8 @@ Visual and ergonomic refinement is intentionally deferred to the later product-p
 - CI uses the same Make-based clean build/test/package path as local development.
 - CI build runtime moves to Node.js 22 to match the pinned `@vscode/vsce` packaging tool.
 
-## Historical fork releases
+## Project origin
 
-The entries below describe the history inherited from the earlier Gitea VS Code extension/fork before the standalone `0.1.0` product line.
+**Gitea Pull Request** started from an earlier Gitea VS Code extension codebase and a short-lived enhanced fork maintained by zheddhe. The standalone product line begins at `0.1.0`; releases from the predecessor/fork are intentionally not reproduced in this changelog because they belong to a different product/version history and their old release links are not canonical for this repository.
 
-## [7.0.0-fork1.0.0] - 2026-08-10
-
-### Added
-
-- **PR diff tree view** — dedicated `Changes in Pull Request` sidebar panel with directory tree, native file icons, checkbox tracking, and `vscode.diff` editor on click
-- **`getFileContents()` API method** — fetch file content from a specific branch
-- Clickable diff stats in the PR list — opens the PR Diff panel
-- **Unified PR/Issue detail panels** — full-width tabbed layout (Details, Reviews, Commits for PR; Details, History for Issue)
-- **Inline edit form** — global overlay above tabs to edit title, body, and base branch (PR) / title + body (Issue)
-- **Merge status icon** — colored icon (green/yellow/red) in the title row showing latest review status
-- **PR category folders** — sidebar sub-folders: All Open, Waiting for my review, Created by me
-- **`updateIssue()` API method** — PATCH `/repos/{owner}/{repo}/issues/{number}`
-- **Output channel** — debug logging for webview troubleshooting
-
-### Changed
-
-- Rebranded as `gitea-vscode-pullrequest-enhanced` with publisher `zheddhe`
-- **PR sidebar icons** — colored by review status: yellow (pending), green (approved/merged), red (changes requested/closed)
-- **Edit form** — moved above tabs, visible from any tab, auto-hides after Save
-- **PR diff tree** — native file icons via `resourceUri`, full expand support, approval coloring
-- **Consistent button colors**: blue (edit/open/refresh), green (approve/merge/reopen), red (close/request-changes)
-- Dev dependencies upgraded: eslint 8→9 (flat config), @typescript-eslint 6→8, mocha 10→11, removed unused `node-fetch`
-
-### Fixed
-
-- Progress notifications dismiss immediately after API response (create, merge, review, comment)
-- PR review submission shows full authentication error messages
-- `gitea.openPRDiff` accepts `PullRequestItem` from context menus
-- Checkbox state persists across re-opens; provider refreshes on PR switch
-- Diff stats show real values instead of `+? / -?`
-- Webview script safety — nested renderer helpers, string concatenation for script injection
-- Removed non-existent `view-mode` reference in issue edit form
-- Tidy issue detail labels and aligned PR icon colors with sidebar
-
-## [0.6.0] - 2026-03-12
-
-### Added
-
-- **Manual refresh controls**: inline refresh buttons on repository groups and individual CI jobs in the tree view
-- **New API method**: `getWorkflowJob` to fetch single job details from Gitea Actions API
-- **Enhanced CI detail panel**: animated spinner for running steps, `⚡ EXECUTING` labels, colored status badges (green/yellow/red)
-
-### Changed
-
-- **Auto-polling disabled** in the CI tree view — replaced by manual refresh commands (`gitea.refreshRepo`, `gitea.refreshJob`)
-- **Jobs are no longer expandable** in the tree view since Gitea API does not expose step-level details
-- Added support for additional Gitea workflow status values: `in_progress`, `completed`, `failed`
-- `steps` field on `GiteaWorkflowJob` is now optional to match real API responses
-- Silent refresh mode for background updates without loading indicators
-
-### Fixed
-
-- Step rendering in the CI detail panel now correctly handles `in_progress` and `completed` statuses
-- Status icons and badges now cover all Gitea status variants (`in_progress`, `completed`, `failed`)
-- Job tooltips clarify that step-level details are not available via the Gitea API
-
-## [0.5.0] - 2026-03-12
-
-### Added
-
-#### 🎉 Live CI/Actions Updates
-
-- **Live status polling**: Tree view automatically refreshes every 5 seconds when workflows are running
-- **Live indicators**: Running jobs show 🔴 indicator in descriptions and tooltips
-- **Smart polling**: Only refreshes repositories with active/running workflows to minimize API calls
-
-#### 📊 Live Log Streaming
-
-- **New live log viewer**: Dedicated webview panel that streams job logs in real-time
-- **Auto-scroll to bottom**: Automatically scrolls to end as new logs arrive
-- **Smart scroll behavior**: Pauses auto-scroll if user scrolls up manually, resumes when scrolling to bottom
-- **Live status updates**: Job status changes reflected in real-time with emoji indicators (⏳ → ✅/❌)
-- **Streaming indicator**: Shows pulsing green "Live streaming" badge while logs are active
-- **2-second refresh**: Polls for new log content every 2 seconds while job is running
-
-#### ⏱️ Duration & Timing Information
-
-- **Run duration**: Shows total elapsed time for workflow runs
-- **Job duration**: Each job displays execution time in ⏱️ format
-- **Step duration**: Individual steps show execution time
-- **Live updates**: Duration updates automatically for running jobs
-
-#### 🔄 Enhanced CI Detail Panel
-
-- **Auto-refresh**: Detail panel polls every 3 seconds while workflows are running
-- **Live status badge**: Shows pulsing "Live" indicator when workflow is in progress
-- **Better log access**: Click "📋 Logs" on any job to open live log viewer
-- **Duration tracking**: Displays elapsed time at all levels (run, job, step)
-
-### Changed
-
-- Tree view items now start **collapsed by default** instead of expanded
-- All tree items have unique IDs to **persist expand/collapse state** across sessions
-- Tree state is remembered when switching between extensions
-- Improved resource efficiency with smart polling that stops when all jobs complete
-
-### Fixed
-
-- Tree view state now persists correctly when navigating to other extensions
-- Proper cleanup of polling timers and resources on disposal
-- Better error handling during live streaming
-
-## [0.4.0] - 2026-03-10
-
-### Added
-
-- Initial release with Pull Requests, Issues, and CI/Actions support
-- Multi-repository detection with submodules
-- Inline code review with GitHub-style diff viewer
-- Merge, approve, and comment on pull requests
-- View and manage workflow runs and jobs
-- Status bar integration
-
-### Features
-
-- Pull Request management
-- Issue tracking
-- CI/Actions workflow viewing
-- Repository context detection
-- Authentication via Gitea API tokens
-
-[7.0.0-fork1.0.0]: https://github.com/zheddhe/gitea-vscode-extension/compare/v0.6.0...v7.0.0-fork1.0.0
-[0.6.0]: https://github.com/zheddhe/gitea-vscode-extension/compare/v0.5.1...v0.6.0
-[0.5.0]: https://github.com/zheddhe/gitea-vscode-extension/compare/v0.4.0...v0.5.0
-[0.4.0]: https://github.com/zheddhe/gitea-vscode-extension/releases/tag/v0.4.0
+The inherited MIT-licensed code remains attributed through the repository license/copyright history. Any contribution back to the predecessor project should be prepared independently from the historical fork baseline rather than from the standalone `0.x` product line.
