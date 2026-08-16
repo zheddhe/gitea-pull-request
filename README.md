@@ -46,6 +46,7 @@ The migration is incremental. Existing working functionality is preserved while 
 | **Sidebar PR review** | Comment, approve or request changes directly from a contextual Review Pull Request view |
 | **Merge readiness** | Surface available CI/check, review, branch-policy and mergeability signals before enabling merge |
 | **Merge methods** | Use repository-supported merge commit, squash or rebase methods from the sidebar |
+| **Post-merge state** | After merge, show the exact merged PR and resolve local/remote branch identities independently before cleanup |
 | **PR Diff Tree** | Sidebar directory tree with file status, viewed-state checkboxes and `vscode.diff` integration |
 | **PR Detail** | Full alternative detail panel for description, reviews, commits and metadata |
 | **Issues** | Browse, create, close, re-open and comment on issues |
@@ -138,10 +139,10 @@ Phase development stays on the last merged release version until the functional 
 make promote RELEASE_VERSION=<target-version>
 ```
 
-For Phase 3:
+For Phase 4, once the complete post-merge lifecycle and release gate are ready:
 
 ```bash
-make promote RELEASE_VERSION=0.4.0
+make promote RELEASE_VERSION=0.5.0
 ```
 
 This performs the package/version update without creating a Git tag, keeps `package.json` and `package-lock.json` synchronized, and validates the resulting lock state. Review and commit both files together before final VSIX validation.
@@ -287,9 +288,24 @@ When a PR is active, the contextual **Review Pull Request #N** view follows the 
 - merge only when the observed readiness signals permit it;
 - **Checkout '<base>'** for the active repository.
 
+A PR reported by Gitea with `mergeable=false` is blocked explicitly. The view explains that conflicts with the target branch or another server-side mergeability blocker must be resolved first; it does not fabricate a conflicting-file list that the supported public API does not reliably provide.
+
 The Gitea server remains authoritative: permission, policy and merge errors are surfaced rather than overridden by the extension.
 
-After a successful merge, the session moves from `active` to `merged`. The active Changes/Review views therefore disappear at the Phase 3 boundary. Phase 4 owns the post-merge sidebar and branch-cleanup lifecycle.
+### After merge
+
+After a successful merge, the session moves from `active` to `merged`. The active Changes/Review views disappear and the dedicated **Pull Request #N Merged** view becomes the post-merge context.
+
+The current Phase 4 foundation:
+
+- preserves the exact merged PR, repository, head and base from the session;
+- resolves actual local and remote branch identities independently;
+- supports a differently named local branch that tracks the PR remote head;
+- prefers `origin` when the same remote branch exists on multiple remotes;
+- shows current/base branch state and allows a manual branch-state refresh;
+- computes cleanup eligibility and whether checkout of the base is required before local deletion.
+
+Destructive branch cleanup and lifecycle-completion actions remain Phase 4 work until they are implemented and validated. No branch is deleted merely because its name resembles the PR head.
 
 ### Full PR details
 
