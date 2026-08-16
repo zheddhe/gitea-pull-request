@@ -1,4 +1,3 @@
-
 // @ts-check
 const eslint = require("@eslint/js");
 const tseslint = require("@typescript-eslint/eslint-plugin");
@@ -40,14 +39,23 @@ module.exports = [
       "@typescript-eslint": tseslint,
     },
     rules: {
-      // Disable core rules that don't understand TypeScript
+      // Disable core rules that don't understand TypeScript.
       "no-unused-vars": "off",
       "no-undef": "off",
-      // Use TypeScript-aware replacements
+      // Use TypeScript-aware replacements.
       "@typescript-eslint/no-explicit-any": "warn",
       "@typescript-eslint/no-unused-vars": [
         "warn",
-        { argsIgnorePattern: "^_" },
+        {
+          argsIgnorePattern: "^(_|auth$)",
+          // Transitional Phase 0 baseline: these variables are pre-existing
+          // legacy webview/tree locals. They are intentionally isolated here
+          // so --max-warnings=0 catches every new warning introduced by the
+          // Gitea Pull Request migration. Remove entries as the legacy views
+          // are decomposed during the sidebar-first phases.
+          varsIgnorePattern:
+            "^(repoInfo|titleJson|baseJson|headJson|branchOptsJson|filesJson|reviewCommentsJson|isOpenJson)$",
+        },
       ],
       "no-console": "off",
     },
