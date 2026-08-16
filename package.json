@@ -110,7 +110,7 @@
         {
           "id": "gitea.prDiff",
           "name": "Changes in Pull Request",
-          "when": "gitea.prSession.active",
+          "when": "gitea.prSession.active || gitea.prDiffVisible",
           "icon": "resources/gitea-activity.svg"
         },
         {
