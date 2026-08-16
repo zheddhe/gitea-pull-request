@@ -35,6 +35,25 @@ interface ReadinessState {
   warning?: string;
 }
 
+interface GitRefLike {
+  name?: string;
+  remote?: string;
+}
+
+interface GitRepositoryLike {
+  rootUri: vscode.Uri;
+  fetch(options: { remote: string; ref?: string }): Promise<void>;
+  checkout(
+    treeish: string,
+    options?: { createNewBranch?: boolean; newBranchName?: string },
+  ): Promise<void>;
+  state: { refs: GitRefLike[] };
+}
+
+interface GitExtensionExportsLike {
+  getAPI(version: number): { repositories: GitRepositoryLike[] };
+}
+
 type ReviewViewMessage =
   | { type: "comment"; body: string }
   | { type: "approve"; body: string }
@@ -424,12 +443,11 @@ export class ReviewPullRequestViewProvider
       // Presence is best effort; local refs may still be useful for Phase 4.
     }
 
-    const refs = repository.state.refs as Array<{ name?: string; remote?: string }>;
     return {
-      localBranchExists: refs.some(
+      localBranchExists: repository.state.refs.some(
         (ref) => ref.name === branch && !ref.remote,
       ),
-      remoteBranchExists: refs.some(
+      remoteBranchExists: repository.state.refs.some(
         (ref) =>
           ref.name === `origin/${branch}` ||
           (ref.remote === "origin" && ref.name === branch),
@@ -440,23 +458,17 @@ export class ReviewPullRequestViewProvider
   private async gitRepository(
     repoInfo: RepoInfo,
     showErrors = true,
-  ): Promise<any | undefined> {
-    const gitExt = vscode.extensions.getExtension("vscode.git");
+  ): Promise<GitRepositoryLike | undefined> {
+    const gitExt = vscode.extensions.getExtension<GitExtensionExportsLike>("vscode.git");
     if (!gitExt) {
       if (showErrors) vscode.window.showErrorMessage("Git extension not available.");
       return undefined;
     }
 
     const git = gitExt.isActive ? gitExt.exports : await gitExt.activate();
-    const repositories = git.getAPI(1).repositories as Array<{
-      rootUri: vscode.Uri;
-      fetch: (...args: any[]) => Promise<void>;
-      checkout: (...args: any[]) => Promise<void>;
-      state: { refs: unknown[] };
-    }>;
-    const repository = repositories.find(
-      (repo) => repo.rootUri.fsPath === repoInfo.rootPath,
-    );
+    const repository = git
+      .getAPI(1)
+      .repositories.find((repo) => repo.rootUri.fsPath === repoInfo.rootPath);
     if (!repository && showErrors) {
       vscode.window.showErrorMessage(
         `No git repository found for ${repoInfo.label}.`,
