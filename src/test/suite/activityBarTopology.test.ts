@@ -150,6 +150,35 @@ suite("Activity Bar topology", () => {
     }
   });
 
+  test("uses native refresh then close for Create Pull Request", () => {
+    const commands = packageJson.contributes?.commands ?? [];
+    const refresh = commands.find(
+      (command) => command.command === "gitea.refreshCreatePR",
+    );
+    const close = commands.find(
+      (command) => command.command === "gitea.cancelCreatePR",
+    );
+    assert.strictEqual(refresh?.icon, "$(refresh)");
+    assert.strictEqual(close?.icon, "$(close)");
+
+    const titleActions = packageJson.contributes?.menus?.["view/title"] ?? [];
+    const expectedWhen =
+      "view == gitea.createPullRequest && gitea.prSession.creating";
+    const refreshAction = titleActions.find(
+      (item) =>
+        item.command === "gitea.refreshCreatePR" && item.when === expectedWhen,
+    );
+    const closeAction = titleActions.find(
+      (item) =>
+        item.command === "gitea.cancelCreatePR" && item.when === expectedWhen,
+    );
+
+    assert.ok(refreshAction);
+    assert.ok(closeAction);
+    assert.strictEqual(refreshAction.group, "navigation@1");
+    assert.strictEqual(closeAction.group, "navigation@2");
+  });
+
   test("uses native close semantics for create and post-merge views", () => {
     const commands = packageJson.contributes?.commands ?? [];
     for (const commandId of ["gitea.cancelCreatePR", "gitea.finishPostMerge"]) {
@@ -172,5 +201,21 @@ suite("Activity Bar topology", () => {
           item.when === "view == gitea.postMergePullRequest && gitea.prSession.merged",
       ),
     );
+  });
+
+  test("Create view keeps form fields synchronized before native refresh", () => {
+    const source = fs.readFileSync(
+      path.resolve(
+        __dirname,
+        "../../../src/features/pullRequests/views/createPullRequestView.ts",
+      ),
+      "utf8",
+    );
+
+    assert.match(source, /type: "updateForm"/);
+    assert.match(source, /title\.addEventListener\('input', formChanged\)/);
+    assert.match(source, /body\.addEventListener\('input', formChanged\)/);
+    assert.match(source, /async refreshBranches\(\): Promise<void>/);
+    assert.match(source, /await this\.api\.listBranches\(repoInfo\)/);
   });
 });
