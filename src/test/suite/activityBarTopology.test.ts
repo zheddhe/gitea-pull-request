@@ -98,19 +98,20 @@ suite("Activity Bar topology", () => {
 
     const titleActions = packageJson.contributes?.menus?.["view/title"] ?? [];
     for (const view of ["gitea.prDiff", "gitea.reviewPullRequest"]) {
+      const expectedWhen = `view == ${view} && gitea.prSession.active`;
       const refreshAction = titleActions.find(
         (item) =>
-          item.command === "gitea.refreshActivePR" &&
-          item.when === `view == ${view} && gitea.prSession.active`,
+          item.command === "gitea.refreshActivePR" && item.when === expectedWhen,
       );
       const closeAction = titleActions.find(
         (item) =>
-          item.command === "gitea.clearActivePR" &&
-          item.when === `view == ${view} && gitea.prSession.active`,
+          item.command === "gitea.clearActivePR" && item.when === expectedWhen,
       );
 
-      assert.strictEqual(refreshAction?.group, "navigation@1");
-      assert.strictEqual(closeAction?.group, "navigation@2");
+      assert.ok(refreshAction, `missing refresh title action for ${view}`);
+      assert.ok(closeAction, `missing close title action for ${view}`);
+      assert.strictEqual(refreshAction.group, "navigation@1");
+      assert.strictEqual(closeAction.group, "navigation@2");
     }
   });
 });
