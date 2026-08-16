@@ -3,7 +3,7 @@
   "displayName": "Gitea Pull Request",
   "description": "Pull requests, reviews, issues and CI context for self-hosted Gitea, directly in Visual Studio Code",
   "readme": "./README.md",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "zheddhe",
   "repository": {
     "type": "git",
@@ -108,6 +108,12 @@
           "icon": "resources/gitea-activity.svg"
         },
         {
+          "id": "gitea.createPullRequest",
+          "name": "Create Pull Request",
+          "type": "webview",
+          "when": "gitea.prSession.creating"
+        },
+        {
           "id": "gitea.prDiff",
           "name": "Changes in Pull Request",
           "when": "gitea.prSession.active || gitea.prDiffVisible",
@@ -125,6 +131,12 @@
         }
       ]
     },
+    "viewsWelcome": [
+      {
+        "view": "gitea.pullRequests",
+        "contents": "No pull requests are currently listed.\n[Create Pull Request](command:gitea.createPRSidebar)"
+      }
+    ],
     "commands": [
       {
         "command": "gitea.signIn",
@@ -186,8 +198,13 @@
         "title": "Gitea: Checkout Pull Request Branch"
       },
       {
+        "command": "gitea.createPRSidebar",
+        "title": "Gitea: Create Pull Request",
+        "icon": "$(git-pull-request-create)"
+      },
+      {
         "command": "gitea.createPR",
-        "title": "Gitea: Create Pull Request"
+        "title": "Gitea: Create Pull Request (Legacy)"
       },
       {
         "command": "gitea.mergePR",
@@ -258,7 +275,7 @@
           "group": "navigation"
         },
         {
-          "command": "gitea.createPR",
+          "command": "gitea.createPRSidebar",
           "when": "view == gitea.pullRequests",
           "group": "navigation"
         },

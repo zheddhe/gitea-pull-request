@@ -8,11 +8,12 @@ VSCODE_TEST_VERSION ?= 1.85.0
 
 PROJECT_NAME := $(shell node -p "require('./package.json').name")
 VERSION := $(shell node -p "require('./package.json').version")
+RELEASE_VERSION ?=
 ARTIFACT_ROOT ?= .artifacts
 VSIX_DIR ?= $(ARTIFACT_ROOT)/vsix
 VSIX_FILE := $(VSIX_DIR)/$(PROJECT_NAME)-$(VERSION).vsix
 
-.PHONY: help doctor lock bootstrap deps clean compile lint test test-latest verify vsix rebuild-vsix install-vsix reinstall-vsix ci show-vsix
+.PHONY: help doctor lock bootstrap deps promote clean compile lint test test-latest verify vsix rebuild-vsix install-vsix reinstall-vsix ci show-vsix
 
 help: ## Show the available development targets
 	@printf '%s\n' 'Gitea Pull Request development workflow'
@@ -44,6 +45,19 @@ bootstrap: lock ## Synchronize the lock file, then install the exact dependency 
 
 deps: ## Install exactly the committed dependencies; fails if package.json and package-lock.json differ
 	$(NPM) ci
+
+promote: ## Promote package.json + package-lock.json to RELEASE_VERSION without creating a git tag
+	@test -n "$(RELEASE_VERSION)" || { echo "ERROR: RELEASE_VERSION is required, e.g. 'make promote RELEASE_VERSION=0.3.0'." >&2; exit 1; }
+	@git diff --quiet && git diff --cached --quiet || { echo 'ERROR: working tree must be clean before version promotion.' >&2; exit 1; }
+	@current=$$(node -p "require('./package.json').version"); \
+		if [ "$$current" = "$(RELEASE_VERSION)" ]; then \
+			echo "ERROR: package is already at version $(RELEASE_VERSION)." >&2; \
+			exit 1; \
+		fi
+	$(NPM) version "$(RELEASE_VERSION)" --no-git-tag-version
+	$(MAKE) deps
+	@echo "Promoted $(PROJECT_NAME) to $(RELEASE_VERSION)."
+	@echo "Review package.json and package-lock.json, then run 'make verify' and 'make reinstall-vsix' before committing the release promotion."
 
 clean: ## Remove generated TypeScript output and local build artifacts (keeps cached VS Code test runtimes)
 	rm -rf out "$(ARTIFACT_ROOT)"

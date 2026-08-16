@@ -25,7 +25,7 @@ The primary workflow is intended to stay in the VS Code Activity Bar as much as 
 
 - browse pull requests grouped by repository and workflow category;
 - activate one pull request as the current workspace context;
-- create pull requests;
+- create pull requests from a dedicated sidebar form;
 - inspect changed files with the native VS Code diff editor;
 - review, comment and merge pull requests;
 - surface checks/conflict state;
@@ -42,6 +42,7 @@ The migration is incremental. Existing working functionality is preserved while 
 | --- | --- |
 | **Pull Requests** | Browse and filter Gitea PRs with repository/category grouping |
 | **Active PR session** | Activate one Gitea PR as the contextual workspace state; switching PR updates the contextual changes view |
+| **Sidebar PR creation** | Start a creation session from the Pull Requests view, choose repository/base/head, edit title/description, create or cancel without opening a full editor panel |
 | **Inline Code Review** | Review diffs, comment, approve, request changes and submit reviews |
 | **PR Diff Tree** | Sidebar directory tree with file status, viewed-state checkboxes and `vscode.diff` integration |
 | **PR Detail** | Full alternative detail panel for description, reviews, commits and metadata |
@@ -127,6 +128,22 @@ make deps       # strict reproducible install from the committed lock file
 
 `make deps` deliberately uses only `npm ci` and therefore fails when `package.json` and `package-lock.json` are out of sync. This is intentional: normal builds and CI must never silently rewrite dependency resolution. If `make lock` changes `package-lock.json`, review and commit it together with the corresponding `package.json` change.
 
+### Release promotion
+
+Phase development stays on the last merged release version until the functional work and documentation are ready for the release gate. Promote the phase version explicitly with:
+
+```bash
+make promote RELEASE_VERSION=<target-version>
+```
+
+For Phase 2:
+
+```bash
+make promote RELEASE_VERSION=0.3.0
+```
+
+This performs the package/version update without creating a Git tag, keeps `package.json` and `package-lock.json` synchronized, and validates the resulting lock state. Review and commit both files together before final VSIX validation.
+
 ### Clean build and VSIX
 
 Run a complete clean rebuild:
@@ -178,6 +195,7 @@ make doctor         # validate Node/npm/npx and report VS Code CLI availability
 make lock           # create/update package-lock.json from package.json
 make bootstrap      # sync package-lock.json, then npm ci
 make deps           # strict npm ci; fail when manifest and lock differ
+make promote RELEASE_VERSION=x.y.z # promote a phase/release version atomically
 make compile        # TypeScript only
 make lint           # ESLint only
 make test           # compile + tests on minimum supported VS Code
@@ -219,7 +237,24 @@ Existing command and configuration identifiers remain under the stable `gitea.*`
 
 ### Pull Requests
 
-The **Pull Requests** panel groups Gitea PRs by repository and categories such as **Waiting For My Review**, **Created By Me** and **All Open**. This tree remains intentionally familiar while the sidebar-first creation/review experiences are introduced incrementally.
+The **Pull Requests** panel groups Gitea PRs by repository and categories such as **Waiting For My Review**, **Created By Me** and **All Open**. The **Create Pull Request** action remains available from the view even when there are currently no open PRs.
+
+### Create Pull Request
+
+The Phase 2 creation path opens a dedicated **Create Pull Request** WebviewView in the Activity Bar rather than a full editor panel.
+
+The current workflow supports:
+
+- explicit Gitea repository selection when multiple repositories are available;
+- BASE and MERGE/head branch selection;
+- title and description editing;
+- prevention of identical base/head branch creation;
+- **Create** to submit through the Gitea API;
+- **Cancel** to leave the `creating` session without stale state;
+- automatic PR-tree refresh and activation of the newly created PR;
+- a legacy creation command as a temporary compatibility fallback during Phase 2 migration.
+
+Additional Phase 2 capabilities — Files Changed, metadata QuickPicks and draft creation — are completed incrementally before the `0.3.0` release gate. Detailed visual/ergonomic refinement is intentionally deferred to the later UX/polish phase so Phase 2 can focus on workflow correctness and feature parity.
 
 ### Activate a pull request
 
@@ -252,7 +287,7 @@ The high-level phases are:
 - **Phase 2 / 0.3.0** — sidebar-first PR creation
 - **Phase 3 / 0.4.0** — sidebar-first review and merge
 - **Phase 4 / 0.5.0** — post-merge lifecycle and branch cleanup
-- **Phase 5 / 0.6.0** — secondary workflows and polish
+- **Phase 5 / 0.6.0** — secondary workflows and polish, including broader visual/ergonomic refinement
 
 Each phase is reviewed as a coherent release increment: code/tests, package + lock metadata, changelog, user documentation, roadmap/Story, Make validation and local VSIX validation must agree before the phase PR is merged.
 
