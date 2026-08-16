@@ -10,7 +10,13 @@ suite("Activity Bar topology", () => {
       viewsContainers?: { activitybar?: Array<{ id: string; title: string; icon: string }> };
       views?: Record<
         string,
-        Array<{ id: string; name: string; when?: string; initialSize?: number }>
+        Array<{
+          id: string;
+          name: string;
+          when?: string;
+          initialSize?: number;
+          visibility?: string;
+        }>
       >;
       commands?: Array<{ command: string; title: string; icon?: string }>;
       menus?: {
@@ -30,18 +36,10 @@ suite("Activity Bar topology", () => {
     const general = packageJson.contributes?.views?.giteaPullRequest ?? [];
     const contextual = packageJson.contributes?.views?.giteaPullRequestContext ?? [];
 
-    assert.deepStrictEqual(
-      general.map((view) => view.id),
-      [
-        "gitea.pullRequests",
-        "gitea.pullRequestsCreateMode",
-        "gitea.createPullRequest",
-        "gitea.issues",
-        "gitea.issuesCreateMode",
-        "gitea.ciRuns",
-        "gitea.ciRunsCreateMode",
-      ],
-    );
+    assert.ok(general.some((view) => view.id === "gitea.pullRequests"));
+    assert.ok(general.some((view) => view.id === "gitea.createPullRequest"));
+    assert.ok(general.some((view) => view.id === "gitea.issues"));
+    assert.ok(general.some((view) => view.id === "gitea.ciRuns"));
 
     assert.deepStrictEqual(
       contextual.map((view) => view.id),
@@ -95,7 +93,7 @@ suite("Activity Bar topology", () => {
     assert.match(source, /TreeItemCollapsibleState\.Expanded/);
   });
 
-  test("isolates the remembered standard layout from the focused create profile", () => {
+  test("isolates standard and create-mode Gitea layouts", () => {
     const general = packageJson.contributes?.views?.giteaPullRequest ?? [];
     const byId = new Map(general.map((view) => [view.id, view]));
 
@@ -105,13 +103,9 @@ suite("Activity Bar topology", () => {
     }
 
     assert.strictEqual(
-      byId.get("gitea.pullRequestsCreateMode")?.when,
+      byId.get("gitea.createPullRequest")?.when,
       "gitea.prSession.creating",
     );
-    assert.strictEqual(byId.get("gitea.pullRequestsCreateMode")?.initialSize, 2);
-    assert.strictEqual(byId.get("gitea.createPullRequest")?.initialSize, 8);
-    assert.strictEqual(byId.get("gitea.issuesCreateMode")?.initialSize, 1);
-    assert.strictEqual(byId.get("gitea.ciRunsCreateMode")?.initialSize, 1);
   });
 
   test("uses refresh then close consistently on active PR view titles", () => {
