@@ -134,11 +134,11 @@
           "when": "!gitea.prSession.creating"
         },
         {
-          "id": "gitea.issuesCreateMode",
+          "id": "gitea.issuesCreateCompact",
           "name": "Issues",
           "icon": "resources/gitea-activity.svg",
           "when": "gitea.prSession.creating",
-          "initialSize": 1
+          "visibility": "collapsed"
         },
         {
           "id": "gitea.ciRuns",
@@ -147,11 +147,11 @@
           "when": "!gitea.prSession.creating"
         },
         {
-          "id": "gitea.ciRunsCreateMode",
+          "id": "gitea.ciRunsCreateCompact",
           "name": "CI / Actions",
           "icon": "resources/gitea-activity.svg",
           "when": "gitea.prSession.creating",
-          "initialSize": 1
+          "visibility": "collapsed"
         }
       ],
       "giteaPullRequestContext": [
@@ -374,17 +374,17 @@
         },
         {
           "command": "gitea.refreshCI",
-          "when": "view == gitea.ciRuns || view == gitea.ciRunsCreateMode",
+          "when": "view == gitea.ciRuns || view == gitea.ciRunsCreateCompact",
           "group": "navigation"
         },
         {
           "command": "gitea.refreshIssues",
-          "when": "view == gitea.issues || view == gitea.issuesCreateMode",
+          "when": "view == gitea.issues || view == gitea.issuesCreateCompact",
           "group": "navigation"
         },
         {
           "command": "gitea.createIssue",
-          "when": "view == gitea.issues || view == gitea.issuesCreateMode",
+          "when": "view == gitea.issues || view == gitea.issuesCreateCompact",
           "group": "navigation"
         }
       ],
