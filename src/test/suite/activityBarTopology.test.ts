@@ -34,9 +34,12 @@ suite("Activity Bar topology", () => {
       general.map((view) => view.id),
       [
         "gitea.pullRequests",
+        "gitea.pullRequestsCreateMode",
         "gitea.createPullRequest",
         "gitea.issues",
+        "gitea.issuesCreateMode",
         "gitea.ciRuns",
+        "gitea.ciRunsCreateMode",
       ],
     );
 
@@ -92,14 +95,23 @@ suite("Activity Bar topology", () => {
     assert.match(source, /TreeItemCollapsibleState\.Expanded/);
   });
 
-  test("gives Create Pull Request half of the general Gitea workspace when visible", () => {
+  test("isolates the remembered standard layout from the focused create profile", () => {
     const general = packageJson.contributes?.views?.giteaPullRequest ?? [];
     const byId = new Map(general.map((view) => [view.id, view]));
 
-    assert.strictEqual(byId.get("gitea.pullRequests")?.initialSize, 1);
-    assert.strictEqual(byId.get("gitea.createPullRequest")?.initialSize, 3);
-    assert.strictEqual(byId.get("gitea.issues")?.initialSize, 1);
-    assert.strictEqual(byId.get("gitea.ciRuns")?.initialSize, 1);
+    for (const id of ["gitea.pullRequests", "gitea.issues", "gitea.ciRuns"]) {
+      assert.strictEqual(byId.get(id)?.when, "!gitea.prSession.creating");
+      assert.strictEqual(byId.get(id)?.initialSize, undefined);
+    }
+
+    assert.strictEqual(
+      byId.get("gitea.pullRequestsCreateMode")?.when,
+      "gitea.prSession.creating",
+    );
+    assert.strictEqual(byId.get("gitea.pullRequestsCreateMode")?.initialSize, 2);
+    assert.strictEqual(byId.get("gitea.createPullRequest")?.initialSize, 8);
+    assert.strictEqual(byId.get("gitea.issuesCreateMode")?.initialSize, 1);
+    assert.strictEqual(byId.get("gitea.ciRunsCreateMode")?.initialSize, 1);
   });
 
   test("uses refresh then close consistently on active PR view titles", () => {
