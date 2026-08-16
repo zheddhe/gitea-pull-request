@@ -146,7 +146,7 @@ The general container retains the existing `giteaPullRequest` contribution ident
 - Validate `active -> merged` inside the new contextual container and post-merge visibility there.
 - Validate create remains cleanly associated with the general Gitea workspace.
 - Perform mixed GitHub/Gitea smoke validation with official GitHub Pull Requests installed.
-- Review README / CHANGELOG / Story / PR for the new topology.
+- Final review of README / CHANGELOG / Story / PR for the new topology.
 - Promote to `0.6.0`, run `make verify`, reinstall VSIX and perform final smoke validation.
 
 ---
