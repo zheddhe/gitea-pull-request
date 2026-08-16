@@ -15,10 +15,15 @@ suite("Activity Bar topology", () => {
   test("separates general Gitea and contextual pull request containers", () => {
     const containers = packageJson.contributes?.viewsContainers?.activitybar ?? [];
 
-    assert.ok(containers.some((container) => container.id === "giteaPullRequest"));
-    assert.ok(
-      containers.some((container) => container.id === "giteaPullRequestContext"),
+    const generalContainer = containers.find(
+      (container) => container.id === "giteaPullRequest",
     );
+    const contextualContainer = containers.find(
+      (container) => container.id === "giteaPullRequestContext",
+    );
+
+    assert.strictEqual(generalContainer?.title, "Gitea");
+    assert.strictEqual(contextualContainer?.title, "Gitea Pull Request");
 
     const general = packageJson.contributes?.views?.giteaPullRequest ?? [];
     const contextual = packageJson.contributes?.views?.giteaPullRequestContext ?? [];
