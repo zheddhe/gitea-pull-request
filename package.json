@@ -94,14 +94,14 @@
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "gitea",
+          "id": "giteaPullRequest",
           "title": "Gitea Pull Request",
           "icon": "resources/gitea-activity.svg"
         }
       ]
     },
     "views": {
-      "gitea": [
+      "giteaPullRequest": [
         {
           "id": "gitea.pullRequests",
           "name": "Pull Requests",
