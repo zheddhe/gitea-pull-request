@@ -97,3 +97,55 @@ The entries below describe the history inherited from the earlier Gitea VS Code 
 - **Smart scroll behavior**: Pauses auto-scroll if user scrolls up manually, resumes when scrolling to bottom
 - **Live status updates**: Job status changes reflected in real-time with emoji indicators (⏳ → ✅/❌)
 - **Streaming indicator**: Shows pulsing green "Live streaming" badge while logs are active
+- **2-second refresh**: Polls for new log content every 2 seconds while job is running
+
+#### ⏱️ Duration & Timing Information
+
+- **Run duration**: Shows total elapsed time for workflow runs
+- **Job duration**: Each job displays execution time in ⏱️ format
+- **Step duration**: Individual steps show their execution time
+- **Live updates**: Duration updates automatically for running jobs
+
+#### 🔄 Enhanced CI Detail Panel
+
+- **Auto-refresh**: Detail panel polls every 3 seconds while workflows are running
+- **Live status badge**: Shows pulsing "Live" indicator when workflow is in progress
+- **Better log access**: Click "📋 Logs" on any job to open live log viewer
+- **Duration tracking**: Displays elapsed time at all levels (run, job, step)
+
+### Changed
+
+- Tree view items now start **collapsed by default** instead of expanded
+- All tree items have unique IDs to **persist expand/collapse state** across sessions
+- Tree state is remembered when switching between extensions
+- Improved resource efficiency with smart polling that stops when all jobs complete
+
+### Fixed
+
+- Tree view state now persists correctly when navigating to other extensions
+- Proper cleanup of polling timers and resources on disposal
+- Better error handling during live streaming
+
+## [0.4.0] - 2026-03-10
+
+### Added
+
+- Initial release with Pull Requests, Issues, and CI/Actions support
+- Multi-repository detection with submodules
+- Inline code review with GitHub-style diff viewer
+- Merge, approve, and comment on pull requests
+- View and manage workflow runs and jobs
+- Status bar integration
+
+### Features
+
+- Pull Request management
+- Issue tracking
+- CI/Actions workflow viewing
+- Repository context detection
+- Authentication via Gitea API tokens
+
+[7.0.0-fork1.0.0]: https://github.com/zheddhe/gitea-vscode-extension/compare/v0.6.0...v7.0.0-fork1.0.0
+[0.6.0]: https://github.com/zheddhe/gitea-vscode-extension/compare/v0.5.1...v0.6.0
+[0.5.0]: https://github.com/zheddhe/gitea-vscode-extension/compare/v0.4.0...v0.5.0
+[0.4.0]: https://github.com/zheddhe/gitea-vscode-extension/releases/tag/v0.4.0
