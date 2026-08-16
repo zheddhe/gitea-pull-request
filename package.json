@@ -314,6 +314,16 @@
           "group": "navigation@2"
         },
         {
+          "command": "gitea.refreshActivePR",
+          "when": "view == gitea.reviewPullRequest && gitea.prSession.active",
+          "group": "navigation@1"
+        },
+        {
+          "command": "gitea.clearActivePR",
+          "when": "view == gitea.reviewPullRequest && gitea.prSession.active",
+          "group": "navigation@2"
+        },
+        {
           "command": "gitea.refreshCI",
           "when": "view == gitea.ciRuns",
           "group": "navigation"
