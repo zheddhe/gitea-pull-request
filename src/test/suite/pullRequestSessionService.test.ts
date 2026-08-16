@@ -1,5 +1,6 @@
 import * as assert from "assert";
 import { GiteaPullRequest, GiteaRepository, GiteaUser } from "../../api/types";
+import { RepositoryRef } from "../../features/pullRequests/domain/pullRequestState";
 import { PullRequestSessionService } from "../../features/pullRequests/services/pullRequestSessionService";
 
 const user: GiteaUser = {
@@ -19,6 +20,13 @@ const repository: GiteaRepository = {
   default_branch: "main",
   private: false,
   fork: false,
+};
+
+const repositoryRef: RepositoryRef = {
+  key: "https://gitea.example|tester/repo",
+  owner: "tester",
+  name: "repo",
+  fullName: "tester/repo",
 };
 
 const pullRequest: GiteaPullRequest = {
@@ -62,6 +70,8 @@ suite("PullRequestSessionService", () => {
     assert.strictEqual(context.get("gitea.prSession.creating"), false);
     assert.strictEqual(context.get("gitea.prSession.merged"), false);
     assert.strictEqual(context.get("gitea.prSession.checkedOut"), false);
+    assert.strictEqual(context.get("gitea.prSession.repositoryKey"), undefined);
+    assert.strictEqual(context.get("gitea.prSession.pullRequestNumber"), undefined);
 
     service.dispose();
   });
@@ -72,20 +82,25 @@ suite("PullRequestSessionService", () => {
       context.set(key, value);
     });
 
-    await service.startCreating(
-      { owner: "tester", name: "repo", fullName: "tester/repo" },
-      "main",
-      "feature/test",
-    );
+    await service.startCreating(repositoryRef, "main", "feature/test");
     const creatingState = service.current;
     assert.strictEqual(creatingState.kind, "creating");
     assert.strictEqual(context.get("gitea.prSession.creating"), true);
+    assert.strictEqual(
+      context.get("gitea.prSession.repositoryKey"),
+      repositoryRef.key,
+    );
 
-    await service.activate(pullRequest);
+    await service.activate(repositoryRef, pullRequest);
     const activeState = service.current;
     assert.strictEqual(activeState.kind, "active");
+    if (activeState.kind === "active") {
+      assert.deepStrictEqual(activeState.repository, repositoryRef);
+      assert.strictEqual(activeState.pullRequest.number, 42);
+    }
     assert.strictEqual(context.get("gitea.prSession.active"), true);
     assert.strictEqual(context.get("gitea.prSession.checkedOut"), false);
+    assert.strictEqual(context.get("gitea.prSession.pullRequestNumber"), 42);
 
     await service.setCheckoutState({
       kind: "checkedOut",
@@ -102,6 +117,7 @@ suite("PullRequestSessionService", () => {
     assert.strictEqual(context.get("gitea.prSession.checkedOut"), true);
 
     await service.markMerged(
+      repositoryRef,
       { ...pullRequest, merged: true, state: "closed" },
       { localBranchExists: true, remoteBranchExists: true },
     );
@@ -114,6 +130,28 @@ suite("PullRequestSessionService", () => {
     const idleState = service.current;
     assert.deepStrictEqual(idleState, { kind: "idle" });
     assert.strictEqual(context.get("gitea.prSession.merged"), false);
+    assert.strictEqual(context.get("gitea.prSession.repositoryKey"), undefined);
+    assert.strictEqual(context.get("gitea.prSession.pullRequestNumber"), undefined);
+
+    service.dispose();
+  });
+
+  test("clears an active session when its repository disappears", async () => {
+    const service = new PullRequestSessionService(async () => undefined);
+    await service.activate(repositoryRef, pullRequest);
+
+    const kept = await service.invalidateIfRepositoryUnavailable([
+      repositoryRef.key,
+      "https://gitea.example|tester/other",
+    ]);
+    assert.strictEqual(kept, false);
+    assert.strictEqual(service.current.kind, "active");
+
+    const invalidated = await service.invalidateIfRepositoryUnavailable([
+      "https://gitea.example|tester/other",
+    ]);
+    assert.strictEqual(invalidated, true);
+    assert.deepStrictEqual(service.current, { kind: "idle" });
 
     service.dispose();
   });
