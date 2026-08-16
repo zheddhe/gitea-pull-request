@@ -1,9 +1,28 @@
 # Changelog
 
-All notable changes to the Gitea VS Code extension will be documented in this file.
+All notable changes to **Gitea Pull Request** will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [0.1.0] - Unreleased
+
+### Added
+
+- Standalone **Gitea Pull Request** product identity and transformation roadmap.
+- Pull-request workspace/session state foundation with VS Code context-key synchronization.
+- Baseline tests for PR session state transitions.
+- Reproducible Make-based development workflow for clean builds, validation, VSIX packaging and local installation.
+- Canonical disposable local package output under `.artifacts/vsix/`.
+
+### Changed
+
+- CI uses the same Make-based clean build/test/package path as local development.
+- CI build runtime moves to Node.js 22 to match the pinned `@vscode/vsce` packaging tool.
+
+## Historical fork releases
+
+The entries below describe the history inherited from the earlier Gitea VS Code extension/fork before the standalone `0.1.0` product line.
 
 ## [7.0.0-fork1.0.0] - 2026-08-10
 

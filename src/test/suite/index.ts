@@ -1,5 +1,4 @@
 import * as path from "path";
-// eslint-disable-next-line @typescript-eslint/no-require-imports
 const Mocha = require("mocha");
 import * as fs from "fs";
 

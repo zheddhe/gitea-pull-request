@@ -1,143 +1,229 @@
-# Gitea for VS Code
+# Gitea Pull Request
 
-A VS Code extension that brings your [Gitea](https://gitea.io) repositories directly into your editor — pull requests, issues, CI/Actions, and inline code review.
+**Gitea Pull Request** is a Visual Studio Code extension by **zheddhe** for working with pull requests, reviews, issues and CI context on self-hosted Gitea instances.
+
+The project is evolving toward a **sidebar-first** pull-request workflow inspired by the ergonomics of GitHub Pull Requests for VS Code while remaining implemented specifically for Gitea and its REST API.
+
+## Product direction
+
+The primary workflow is intended to stay in the VS Code Activity Bar as much as possible:
+
+- browse pull requests grouped by repository and workflow category;
+- create pull requests;
+- inspect changed files with the native VS Code diff editor;
+- review, comment and merge pull requests;
+- surface checks/conflict state;
+- handle post-merge branch cleanup;
+- keep the full pull-request detail panel available as a secondary view.
+
+The migration is incremental. Existing working functionality is preserved while the pull-request orchestration is progressively moved to a state-driven, sidebar-first model.
+
+See [`docs/ROADMAP.md`](docs/ROADMAP.md) for the transformation phases and architecture decisions.
 
 ---
 
-## Screenshots
-
-**Sidebar — PRs, Issues, CI/Actions with category folders**
-
-![Sidebar](./resources/screenshots/screenshot-sidebar.png)
-
-**PR detail — inline review, merge, edit form**
-
-![PR Detail](./resources/screenshots/screenshot-pr-detail.png)
-
-**Issue detail — body, comments, edit form**
-
-![Issue Detail](./resources/screenshots/screenshot-issue-detail.png)
-
----
-
-## Features
+## Current features
 
 | Feature | Description |
 | --- | --- |
-| **Pull Requests** | Browse, filter, merge, close, re-open PRs with category folders (All, Waiting for my review, Created by me) |
-| **Inline Code Review** | Diff viewer — click any line to comment, mark files as viewed, submit approve/request-changes/comment reviews |
-| **PR Diff Tree** | Dedicated sidebar panel with native file icons, directory tree, checkbox tracking, and `vscode.diff` editor |
-| **Issues** | Browse open/closed issues, create, close, re-open, add comments |
-| **CI / Actions** | Workflow runs and job statuses, live log streaming, re-run or cancel jobs |
-| **Multi-repo** | Automatically detects all git remotes and submodules in your workspace |
-| **Status Bar** | Active repo + auth state at a glance |
+| **Pull Requests** | Browse, filter, merge, close and re-open PRs with category folders |
+| **Inline Code Review** | Review diffs, comment, approve, request changes and submit reviews |
+| **PR Diff Tree** | Sidebar directory tree with file status, viewed-state checkboxes and `vscode.diff` integration |
+| **PR Detail** | Full alternative detail panel for description, reviews, commits and metadata |
+| **Issues** | Browse, create, close, re-open and comment on issues |
+| **CI / Actions** | Workflow runs, jobs, live logs, rerun and cancel operations |
+| **Multi-repo** | Detect Git repositories/remotes in the current workspace |
+| **Status Bar** | Active repository and authentication context |
+
+---
+
+## Architecture principles
+
+1. **Sidebar first** — frequent PR operations belong in the Activity Bar workflow.
+2. **Native first** — prefer TreeView, QuickPick, commands, context keys, Codicons and `vscode.diff`.
+3. **State driven** — PR UI visibility and actions derive from an explicit workspace/session state.
+4. **API/UI separation** — Gitea REST access remains isolated from UI providers and commands.
+5. **Progressive migration** — avoid a big-bang rewrite of working functionality.
+6. **Full details remain available** — detailed webviews are secondary rather than mandatory for normal PR work.
 
 ---
 
 ## Requirements
 
 - VS Code **1.85** or later
-- Gitea **v1.17+** (Actions support requires a recent version)
-- A Gitea **API token** with the correct permissions (see below)
+- Gitea **v1.17+**
+- A Gitea API token with the required permissions
+
+### Recommended Gitea token permissions
+
+| Permission | Level | Purpose |
+| --- | --- | --- |
+| **Repository** | Read & Write | Browse PRs, review and merge |
+| **Issue** | Read & Write | Browse and manage issues |
+| **Misc** | Read | Transversal API operations |
+| **User** | Read | Identity/profile lookup |
+
+`Repository: Write` is required for merge, review and other write operations. Read-only usage can use narrower permissions.
 
 ---
 
 ## Installation
 
-### From VS Code Marketplace
+### Development / local VSIX
 
-1. Press `Ctrl+Shift+X` (`Cmd+Shift+X` on Mac) to open Extensions.
-2. Search for **"Gitea"** and click **Install**.
+Development build, dependency locking, validation, packaging and local installation are centralized in the repository `Makefile` so the same sequence can be reproduced consistently.
 
-### From VSIX
+The packaging tool is pinned to `@vscode/vsce 3.9.2`; local VSIX packaging therefore requires **Node.js 22+**. The VS Code command-line launcher (`code`) is only required for the installation targets.
 
-1. Download the latest `.vsix` from the [Releases](https://github.com/zheddhe/gitea-vscode-extension/releases) page.
-2. Open the Command Palette (`Ctrl+Shift+P`) → **Extensions: Install from VSIX…**.
-3. Select the downloaded file.
+### Dependency manifest and lock-file workflow
+
+`package.json` is the dependency manifest. `package-lock.json` is the committed reproducibility lock and **must be regenerated whenever dependency declarations or relevant package metadata in `package.json` change**.
+
+After a fresh clone, or after modifying `package.json`, run:
+
+```bash
+make bootstrap
+```
+
+This first executes:
+
+```bash
+npm install --package-lock-only --ignore-scripts
+```
+
+which creates or updates `package-lock.json`, then runs `npm ci` against the synchronized lock file.
+
+The two steps are also available separately:
+
+```bash
+make lock       # create/update package-lock.json from package.json
+make deps       # strict reproducible install from the committed lock file
+```
+
+`make deps` deliberately uses only `npm ci` and therefore fails when `package.json` and `package-lock.json` are out of sync. This is intentional: normal builds and CI must never silently rewrite dependency resolution. If `make lock` changes `package-lock.json`, review and commit it together with the corresponding `package.json` change.
+
+### Clean build and VSIX
+
+Run a complete clean rebuild:
+
+```bash
+make rebuild-vsix
+```
+
+This performs, in order:
+
+1. removal of previous TypeScript/build artifacts;
+2. `npm ci` from the committed lock file;
+3. TypeScript compilation;
+4. ESLint validation;
+5. extension tests;
+6. VSIX packaging.
+
+Generated packages are kept outside the source tree under:
+
+```text
+.artifacts/vsix/gitea-pull-request-<version>.vsix
+```
+
+`.artifacts/` is ignored by Git and is the canonical location for disposable local build outputs. The directory can later host other generated developer artifacts without polluting the repository root.
+
+To force-install the package that was just built into the local VS Code installation:
+
+```bash
+make install-vsix
+```
+
+For the normal end-to-end developer loop, use:
+
+```bash
+make reinstall-vsix
+```
+
+which performs a clean rebuild and then executes the equivalent of:
+
+```bash
+code --install-extension .artifacts/vsix/gitea-pull-request-<version>.vsix --force
+```
+
+Useful targets:
+
+```bash
+make help           # list targets
+make doctor         # validate Node/npm/npx and report VS Code CLI availability
+make lock           # create/update package-lock.json from package.json
+make bootstrap      # sync package-lock.json, then npm ci
+make deps           # strict npm ci; fail when manifest and lock differ
+make compile        # TypeScript only
+make lint           # ESLint only
+make test           # compile + tests on minimum supported VS Code
+make test-latest    # tests against latest stable VS Code
+make verify         # compile + lint + tests
+make vsix           # verify + package, without reinstalling dependencies
+make rebuild-vsix   # clean + npm ci + verify + package
+make install-vsix   # install the already-built VSIX
+make reinstall-vsix # clean rebuild + local installation
+make show-vsix      # print the generated VSIX path
+make ci             # reproduce the clean CI build/package sequence
+```
+
+If a different VS Code-compatible launcher is used, override it explicitly, for example:
+
+```bash
+make install-vsix CODE=codium
+```
+
+Marketplace publication will use the standalone extension identity **Gitea Pull Request** (`publisher: zheddhe`).
 
 ---
 
 ## Configuration
 
-### Generating a Gitea API Token
-
-1. Log in to your Gitea instance → **Settings → Applications → Access Tokens**.
-2. Click **Generate Token** and choose the required scopes:
-
-| Permission | Level | Reason |
-| --- | --- | --- |
-| **Repository** | Read & Write | Browse PRs, merge, inline review |
-| **Issue** | Read & Write | Browse and manage issues |
-| **Misc** | Read | Utilitary transversal functions |
-| **User** | Read | Identity basic profile inquiry |
-
-> `Write` on Repository is needed for merge, approve, close/re-open, and inline review. Use `Read` for read-only access.
-
-3. Copy the token — it is shown **only once**.
-
-### Sign In
-
-After installation, run **`Gitea: Sign In`** from the Command Palette. You will be prompted for your server URL and API token.
-
-### Settings
+Run **`Gitea: Sign In`** from the Command Palette and provide the Gitea server URL and API token.
 
 | Setting | Default | Description |
 | --- | --- | --- |
-| `gitea.serverUrl` | `""` | Override the Gitea server URL (useful when SSH hostname differs from HTTPS) |
-| `gitea.itemsPerPage` | `30` | Number of items per page in tree views |
-| `gitea.reviewsPerPage` | `30` | Number of reviews per page |
+| `gitea.serverUrl` | `""` | Override the detected Gitea web/API hostname |
+| `gitea.itemsPerPage` | `20` | Pull request / CI items per page |
+| `gitea.reviewsPerPage` | `20` | Reviews per page |
+
+Existing internal command, configuration and view identifiers remain under the stable `gitea.*` namespace during the product split.
 
 ---
 
-## Usage
+## Pull request workflow
 
 ### Pull Requests
 
-Open the Gitea icon in the Activity Bar. The **Pull Requests** panel shows PRs grouped by repository and category.
+The **Pull Requests** panel groups PRs by repository and categories such as **Waiting For My Review**, **Created By Me** and **All Open**.
 
-- **Expand a PR** to see branch info, labels, assignees, diff stats.
-- **View Details** opens the full PR webview with:
-  - **Details tab** — description, stats, inline diff viewer, comments, and review submission form.
-  - **Commits tab** — commit list with messages and SHAs.
-  - **Activity tab** — review comments timeline.
-- **Merge** (merge commit / rebase / squash), **close**, **re-open**, or **edit** (title, body, base branch).
-- **Inline review** — click any diff line to add a comment, then submit as Approve, Request Changes, or Comment.
+### Changes in Pull Request
 
-### PR Diff Tree
+The **Changes in Pull Request** tree exposes changed files using native VS Code file icons, directory grouping, viewed-state checkboxes and the native diff editor.
 
-The **Changes in Pull Request** panel (toggle via `gitea.prDiffVisible` context) provides a navigable directory tree:
+### Full PR details
 
-- Native file icons from your VS Code icon theme.
-- Checkbox tracking per file (mark as viewed).
-- Expandable directories with aggregate checkbox state.
-- Click a file to open it in the `vscode.diff` editor.
-
-### Issues
-
-The **Issues** panel lists issues per repository:
-
-- Expand an issue to see labels, assignees, milestone, and comment count.
-- **View Details** opens a webview with the full body, comments, and an edit form.
-- **Close** or **re-open** issues directly.
-
-### CI / Actions
-
-The **CI / Actions** panel shows workflow runs per repository:
-
-- **Manual refresh** via toolbar button or right-click context menus.
-- Expand a run to see individual jobs with status badges and duration.
-- Click **📋 Logs** on any job to open the **live log streaming panel**.
-- Context menu: **Re-run Workflow** or **Cancel Run**.
-
-> **Note**: Job steps are not shown in the tree view due to Gitea API limitations. View the job logs for step-by-step execution details.
+The existing detailed PR webview remains available for deeper inspection while the normal workflow is progressively moved inline into the sidebar.
 
 ---
 
-## Known Limitations
+## CI / Actions
 
-- **Job steps**: Gitea API returns `"steps": null` — step-level details are only available in raw logs.
-- **Single token per server**: Multiple users per server are not supported.
-- **No GraphQL**: Gitea does not provide a GraphQL API.
+The CI view supports workflow runs, job status, live log viewing, reruns and cancellation. Gitea API limitations can prevent step-level structured data from being available; raw job logs remain usable in those cases.
+
+---
+
+## Development roadmap
+
+The current transformation is tracked in [`docs/ROADMAP.md`](docs/ROADMAP.md).
+
+The high-level phases are:
+
+- **Phase 0** — product split and foundation
+- **Phase 1** — active pull-request session model
+- **Phase 2** — sidebar-first PR creation
+- **Phase 3** — sidebar-first review and merge
+- **Phase 4** — post-merge lifecycle and branch cleanup
+- **Phase 5** — secondary workflows and polish
 
 ---
 
@@ -145,8 +231,6 @@ The **CI / Actions** panel shows workflow runs per repository:
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
 
----
-
 ## License
 
-[MIT](LICENSE)
+MIT. See [LICENSE](LICENSE). Existing copyright and license notices are preserved as required by the license.

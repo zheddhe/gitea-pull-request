@@ -11,6 +11,7 @@ import { registerCICommands } from "./commands/ciCommands";
 import { registerAuthCommands } from "./commands/authCommands";
 import { registerIssueCommands } from "./commands/issueCommands";
 import { initOutputChannel } from "./debug/outputChannel";
+import { PullRequestSessionService } from "./features/pullRequests/services/pullRequestSessionService";
 
 export async function activate(
   context: vscode.ExtensionContext,
@@ -21,6 +22,7 @@ export async function activate(
   const auth = new AuthManager(context);
   const repoManager = new RepoManager();
   const api = new GiteaApiClient(auth);
+  const prSession = new PullRequestSessionService();
 
   const prProvider = new PullRequestProvider(api, repoManager, auth);
   const ciProvider = new CIRunsProvider(api, repoManager, auth);
@@ -31,6 +33,7 @@ export async function activate(
     vscode.window.registerTreeDataProvider("gitea.pullRequests", prProvider),
     vscode.window.registerTreeDataProvider("gitea.ciRuns", ciProvider),
     vscode.window.registerTreeDataProvider("gitea.issues", issuesProvider),
+    prSession,
     ciProvider, // Register for disposal
     statusBar,
   );
@@ -50,6 +53,7 @@ export async function activate(
 
   await auth.initialize();
   await repoManager.initialize();
+  await prSession.initialize();
   statusBar.refresh();
 
   // Set the when-clause context key
