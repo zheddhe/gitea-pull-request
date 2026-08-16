@@ -110,7 +110,7 @@ export function registerIssueCommands(
 
 async function pickRepo(
   repoManager: RepoManager,
-  auth: AuthManager,
+  _auth: AuthManager,
 ): Promise<RepoInfo | undefined> {
   const repos = repoManager.getRepos();
   if (repos.length === 0) {
