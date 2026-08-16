@@ -6,8 +6,6 @@ The extension is evolving from an earlier Gitea VS Code codebase into an indepen
 
 The target user experience is sidebar-first and inspired by the workflow ergonomics of GitHub Pull Requests for VS Code, while remaining implemented specifically for Gitea and its REST API.
 
-The existing codebase remains the technical foundation where it is already healthy: authentication, Gitea API access, repository context, pull request listing, diff tree, issues, CI/actions and native VS Code integration.
-
 The standalone product/version line begins at `0.1.0`. Predecessor/fork releases are historical implementation context rather than part of this roadmap's release sequence; inherited MIT attribution remains preserved by the repository license/history.
 
 ## Design principles
@@ -16,12 +14,10 @@ The standalone product/version line begins at `0.1.0`. Predecessor/fork releases
 2. **Native first** — prefer TreeView, QuickPick, commands, context keys, Codicons and `vscode.diff`; use WebviewView only when richer form controls are required.
 3. **State driven** — UI visibility and actions are derived from an explicit pull-request workspace/session state.
 4. **API/UI separation** — Gitea REST concerns stay isolated from UI providers and commands.
-5. **Progressive migration** — preserve working functionality while replacing the current PR orchestration incrementally.
+5. **Progressive migration** — preserve working functionality while replacing PR orchestration incrementally.
 6. **Full detail remains available** — the existing PR detail experience remains an alternative/secondary view rather than the primary workflow.
 
 ## Versioning during the transformation
-
-Until the product reaches a stable `1.0.0`, each completed transformation phase advances the standalone minor version. This makes installed VSIX packages and changelog entries identify the exact migration boundary being tested.
 
 | Transformation milestone | Product version |
 |---|---:|
@@ -32,26 +28,17 @@ Until the product reaches a stable `1.0.0`, each completed transformation phase 
 | Phase 4 — Post-merge branch lifecycle | `0.5.0` |
 | Phase 5 — Secondary workflows and polish | `0.6.0` |
 
-Patch versions (`0.x.1`, `0.x.2`, …) are reserved for corrections that do not introduce the next roadmap phase. The phase-to-minor mapping is a migration convention, not a replacement for Semantic Versioning after `1.0.0`.
+Patch versions (`0.x.1`, `0.x.2`, …) are reserved for corrections that do not introduce the next roadmap phase.
 
 ### Phase completion / release gate
 
-Before a phase PR is marked ready for merge, all of the following must be reviewed together:
+Before a phase PR is marked ready for merge, review together implementation/tests, package + lock version metadata, changelog, README, roadmap/Story acceptance criteria, `make verify`, and local VSIX validation.
 
-1. implementation and tests;
-2. `package.json` version and synchronized `package-lock.json`;
-3. `CHANGELOG.md` entry for the target version;
-4. `README.md` if user-visible behavior, installation or workflow changed;
-5. this roadmap and the phase Story acceptance criteria;
-6. `make verify` and local VSIX installation/interactive validation for user-visible changes.
-
-Version promotion is intentionally a release-preparation step rather than a prerequisite for every development commit. Use:
+Promote only when the complete phase is ready:
 
 ```bash
 make promote RELEASE_VERSION=<target-version>
 ```
-
-only once the implementation/documentation is ready for final validation. The phase PR remains draft until the promotion, documentation review and local validation have all passed.
 
 ## Target workflow state model
 
@@ -65,7 +52,7 @@ idle
   -> idle
 ```
 
-`active/open` and `reviewing` may share the same underlying session state with contextual capabilities rather than being separate persisted states.
+`active/open` and `reviewing` share the same underlying active session state with contextual capabilities.
 
 ---
 
@@ -73,19 +60,7 @@ idle
 
 **Release:** `0.1.0`
 
-### Goal
-
-Establish **Gitea Pull Request** as the canonical product and prepare the codebase for state-driven migration without changing the working PR workflow yet.
-
-### Completed
-
-- Renamed package/display branding to Gitea Pull Request.
-- Reset product versioning to the standalone semantic version line.
-- Reworked fork-oriented documentation/metadata around the independent product.
-- Preserved MIT attribution/licensing requirements.
-- Kept stable internal command/view IDs under `gitea.*` where useful.
-- Introduced session state/context-key foundations and baseline tests.
-- Added reproducible Make-based build/test/package/install workflows and `.artifacts/vsix/` output.
+Completed: standalone product/version line, licensing preservation, state foundations, stable identifiers, reproducible Make-based build/test/package/install workflow.
 
 ---
 
@@ -93,19 +68,7 @@ Establish **Gitea Pull Request** as the canonical product and prepare the codeba
 
 **Release:** `0.2.0`
 
-### Goal
-
-Make one explicit pull request the active workspace context and drive contextual sidebar views from that state.
-
-### Completed
-
-- Implemented `PullRequestSessionService` and state/context-key synchronization.
-- Activate/clear PR context explicitly.
-- Drive `Changes in Pull Request` from the active PR session.
-- Preserve the full-detail panel as the secondary workflow.
-- Invalidate stale sessions when the repository disappears.
-- Isolate Gitea repository discovery from GitHub/GitLab/Bitbucket/Azure DevOps repositories in mixed-VCS workspaces.
-- Give the standalone product its own Activity Bar identity/icon.
+Completed: active PR session, contextual Changes view, explicit activation/clear, repository invalidation, mixed-forge isolation, standalone Activity Bar identity.
 
 ---
 
@@ -113,65 +76,24 @@ Make one explicit pull request the active workspace context and drive contextual
 
 **Release:** `0.3.0`
 
-### Goal
-
-Implement the GitHub-like PR creation workflow inside the sidebar, prioritizing workflow correctness and feature parity before detailed visual/ergonomic polish.
-
-### Completed
-
-- Dedicated `gitea.createPullRequest` WebviewView in the Gitea Pull Request Activity Bar.
-- Primary sidebar create path while retaining the legacy create flow as a compatibility fallback.
-- Explicit repository selection in multi-repository workspaces.
-- BASE/head branch loading and selection with protection against identical branches.
-- Editable title/description with branch-based prefill.
-- Files Changed for the selected source/target pair.
-- QuickPick metadata flows for reviewers, assignees, labels and milestone where supported.
-- Normal and draft/WIP creation.
-- Session-driven `idle -> creating -> active` lifecycle with safe Cancel behavior.
-- Successful creation refreshes the PR tree and activates the created PR.
-- The Create action remains available even when no PR is currently listed.
-- Projects are intentionally not exposed while reliable PR ↔ Project read/write support is unavailable through the supported API surface.
-- Create-flow/domain tests cover branch validation, prefill and draft behavior.
-- Detailed visual/ergonomic refinement remains deferred to Phase 5 unless it blocks workflow use.
+Completed: dedicated sidebar creation, repo/base/head selection, title/body, Files Changed, supported metadata, normal + WIP/draft creation, safe create lifecycle and tests. Projects remain intentionally omitted while reliable API read/write support is unavailable.
 
 ---
 
 ## Phase 3 — Sidebar-first review and merge
 
-**Release target:** `0.4.0`
+**Release:** `0.4.0`
 
-### Goal
+Completed: contextual review view, comment/approve/request-changes, review-state presentation, readiness from CI/reviews/policy/mergeability, merge-method selection, checkout base, real merge, stable zero-diff handling, refresh-loop fixes and merged-session transition.
 
-Make the normal review/merge loop usable directly from the sidebar.
+### Follow-up robustness carried into Phase 4
 
-### Completed implementation / interactive validation
+Phase 4 development exposed additional Phase 3 edge cases and completed them without creating a separate patch release:
 
-- Contextual `Review Pull Request #N` WebviewView follows the same active PR as `Changes in Pull Request`.
-- Top-level comments, Approve and Request Changes work from the sidebar, including expected Gitea permission restrictions such as self-approval prevention.
-- Individual PR icons reflect pending/request-changes/approved review states.
-- **Waiting for my review** is expanded by default and uses neutral folder semantics at category level.
-- Merge readiness combines observable PR state, reviews, target-branch policy and combined CI/check status.
-- Pending/failing/successful checks gate merge as expected.
-- Repository-supported merge commit/squash/rebase methods are exposed and the last supported selection is persisted.
-- Merge is disabled for WIP, blocked review/check states, insufficient approvals/permissions and PRs with no changes left to merge.
-- A real PR containing changes has been merged successfully through the sidebar.
-- Successful merge transitions the session from `active` to `merged` and captures local/remote head-branch presence for Phase 4.
-- `Checkout '<base>'` is scoped to the active Gitea repository.
-- Empty diff is a stable terminal state in `PRDiffProvider`, eliminating the observed endless Changes refresh loop.
-- `RepoManager` no longer emits semantically unchanged repository-change events, eliminating cascaded Pull Requests/readiness refresh loops.
-- Readiness/review API paths use bounded/normalized handling and diagnostic logs.
-- The legacy expandable PR summary omits unavailable diff statistics rather than fabricating `+0 / -0 · 0 file(s) changed`.
-
-### Release gate remaining
-
-- Promote package/lock metadata to `0.4.0` with `make promote RELEASE_VERSION=0.4.0`.
-- Run `make verify` after promotion.
-- Run `make reinstall-vsix` and perform the final smoke validation.
-- Mark the Phase 3 PR ready only once version metadata, docs and local validation agree.
-
-### Phase boundary
-
-After successful merge, `Changes in Pull Request` and `Review Pull Request` disappear because the session has left `active` and entered `merged`. That is the expected Phase 3 boundary; Phase 4 owns the post-merge experience.
+- `mergeable=false` from Gitea is shown as a server-side blocker only when WIP/no-delta does not already explain the blocked state;
+- WIP/draft PRs are shown explicitly as **Draft / WIP** and can be switched to **Ready for Review** from the sidebar by removing Gitea's WIP title marker;
+- the active PR Refresh path now rebinds/reloads the contextual diff when the head SHA changes, so additional pushed commits replace stale cached diff state;
+- exact conflicting-file details are still not fabricated when the supported Gitea API does not expose them reliably.
 
 ---
 
@@ -181,27 +103,56 @@ After successful merge, `Changes in Pull Request` and `Review Pull Request` disa
 
 ### Goal
 
-Provide explicit, safe cleanup after a successful merge.
+Provide an explicit, safe post-merge lifecycle comparable to the common GitHub Pull Requests cleanup flow.
 
-### Target composition
+### Implemented
 
-```text
-Pull request successfully merged.
+- Dedicated `gitea.postMergePullRequest` WebviewView bound to the merged session and focused after merge.
+- Exact merged PR/repository/head/base preserved from the session.
+- `BranchCleanupService` scoped to the exact VS Code Git repository root.
+- Local and remote identities resolved independently; local aliases and differently named remote PR heads are supported.
+- Remote refs are discovered from Git refs directly so `origin/<branch>` identities are not lost through VS Code Git API representation differences.
+- **Delete Branch...** opens independent local/remote multi-selection; both eligible choices are preselected by default.
+- Checked-out local PR head requires successful checkout of the base before deletion; checkout failure prevents local deletion.
+- Remote cleanup remains independent from local cleanup; partial failure preserves the merged context and reports the failed operation.
+- **Checkout '<base>' without deleting branch**.
+- **Keep branches and finish**.
+- **Create New Pull Request...** clears the merged state and starts a clean creation workflow; recreation as WIP/draft has been interactively validated.
+- Successful cleanup/completion returns the session coherently to `idle` or to the new creation workflow.
+- Safety tests cover identity resolution, cleanup planning, checkout-before-delete ordering, checkout failure, remote-only cleanup and partial remote failure.
 
-Create New Pull Request...
-Delete Branch...
-Checkout '<base>' without deleting branch
+### Interactive validation already completed
+
+- dedicated post-merge state and exact PR context;
+- local + remote branch cleanup with both selected by default;
+- actual deletion of both local and `origin/gitea/test` remote branches;
+- independent local/remote cleanup selection behavior;
+- Create New Pull Request transition, including WIP/draft recreation;
+- inherited no-diff/WIP/conflict readiness behavior.
+
+The Story remains the detailed checklist for the remaining manually testable cases.
+
+### Release gate remaining
+
+- review final README / CHANGELOG / ROADMAP / Story / PR;
+- run `make verify` with the final code;
+- promote atomically with:
+
+```bash
+make promote RELEASE_VERSION=0.5.0
 ```
 
-`Delete Branch...` opens a multi-select flow for local and remote branch deletion.
+- run `make verify` again after promotion;
+- run `make reinstall-vsix` and final smoke validation;
+- mark PR ready and merge only when docs, version metadata and interactive validation agree.
 
-### Work
+### Safety invariants
 
-- Add `BranchCleanupService`.
-- Resolve actual local checkout/ref names independently from PR head names.
-- Offer local and remote branch deletion separately.
-- Checkout base safely before local branch deletion when required.
 - Never infer that remote head and local checkout names are identical.
+- Never offer deletion for a branch identity that was not actually resolved.
+- Never delete the currently checked-out local head without first checking out a safe base/target branch.
+- A checkout failure aborts local deletion.
+- Local and remote cleanup are independent operations; partial cleanup does not corrupt the session state.
 
 ---
 
@@ -220,10 +171,9 @@ Complete the product around the PR-centric workflow and perform the dedicated UX
 - PR-centric CI/check presentation.
 - Advanced filtering/search/saved queries if useful.
 - Markdown rendering.
-- Visual/ergonomic refinement of the Phase 2/3 sidebar workflows (layout, spacing, hierarchy, button treatment and consistency with VS Code conventions).
+- Visual/ergonomic refinement of Phase 2/3/4 sidebar workflows.
 - Accessibility/keyboarding review.
-- Integration tests for command handlers and Gitea API adapters.
-- Marketplace packaging and standalone documentation.
+- Broader command/API integration tests and Marketplace packaging/documentation.
 
 ---
 
@@ -235,59 +185,26 @@ Complete the product around the PR-centric workflow and perform the dedicated UX
 | `src/auth/` | Keep |
 | `src/context/` | Keep; integrate PR session state |
 | `src/views/pullRequestProvider.ts` | Keep and evolve |
-| `src/views/prDiffProvider.ts` | Keep largely intact; active-PR driven |
-| `src/views/prDetailPanel.ts` | Retain as secondary full-details view; progressively reduce orchestration responsibility |
+| `src/views/prDiffProvider.ts` | Keep and evolve; active-PR driven with explicit reload semantics |
+| `src/views/prDetailPanel.ts` | Retain as secondary full-details view |
 | `src/views/issuesProvider.ts` | Keep |
 | `src/views/ciRunsProvider.ts` | Keep; later make CI more PR-contextual |
 | `src/commands/prCommands.ts` | Split progressively by workflow responsibility |
 | `src/extension.ts` | Evolve into composition/bootstrap rather than workflow coordinator |
 
-## Target pull-request feature structure
-
-The migration should converge toward:
-
-```text
-src/features/pullRequests/
-  domain/
-    pullRequestState.ts
-  services/
-    pullRequestSessionService.ts
-    pullRequestService.ts
-    branchCleanupService.ts
-  tree/
-    pullRequestTreeProvider.ts
-    pullRequestChangesProvider.ts
-  views/
-    createPullRequestView.ts
-    reviewPullRequestView.ts
-  commands/
-    createPullRequest.ts
-    activatePullRequest.ts
-    checkoutPullRequest.ts
-    mergePullRequest.ts
-    cleanupBranch.ts
-```
-
-Files should move only when the corresponding phase is implemented; avoid a repository-wide rename/move with no behavioral value.
-
 ## Testing strategy
 
-Each phase should add tests at the lowest stable layer first:
-
-- session/domain transitions: unit tests;
-- API adapter behavior: unit/contract-style tests with mocked HTTP;
-- command orchestration: integration-style tests with mocked VS Code/API dependencies;
-- critical end-to-end workflows: VS Code extension host tests where practical.
+Each phase adds tests at the lowest stable layer first: domain/session unit tests, pure planning tests, API contract-style tests, command/Git orchestration tests, and extension-host tests where practical. Destructive cleanup safety/error-path coverage is a release requirement rather than deferred polish.
 
 Minimum regression workflows:
 
 1. authenticate and discover repository;
 2. list PRs;
-3. activate PR and open diff;
-4. create PR;
-5. comment/review;
-6. merge with each supported method;
-7. checkout base and branch cleanup;
+3. activate/refresh PR and open diff;
+4. create normal or WIP/draft PR;
+5. comment/review and mark WIP ready;
+6. merge with supported methods and block no-delta/WIP/server-non-mergeable states appropriately;
+7. post-merge branch identity, checkout and cleanup;
 8. switch repository while a PR is active.
 
 ## Migration rule

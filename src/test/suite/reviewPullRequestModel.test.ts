@@ -7,6 +7,7 @@ import type {
 import {
   evaluateMergeReadiness,
   preferredMergeMethod,
+  readyForReviewTitle,
   supportedMergeMethods,
 } from "../../features/pullRequests/domain/reviewPullRequestModel";
 
@@ -27,6 +28,27 @@ suite("reviewPullRequestModel", () => {
     );
   });
 
+  test("does not misreport a WIP mergeable=false signal as a server conflict", () => {
+    const readiness = evaluateMergeReadiness(
+      pullRequest({ title: "WIP: phase 3", mergeable: false }),
+      combinedStatus("success"),
+      [],
+      { user_can_merge: true },
+    );
+
+    assert.strictEqual(readiness.canMerge, false);
+    assert.ok(readiness.blockingReasons.some((reason) => reason.includes("Work In Progress")));
+    assert.ok(
+      !readiness.blockingReasons.some((reason) => reason.includes("Gitea reports")),
+    );
+  });
+
+  test("removes Gitea WIP markers when marking a pull request ready", () => {
+    assert.strictEqual(readyForReviewTitle("WIP: Rework PR"), "Rework PR");
+    assert.strictEqual(readyForReviewTitle("[WIP] Rework PR"), "Rework PR");
+    assert.strictEqual(readyForReviewTitle("Normal PR"), "Normal PR");
+  });
+
   test("blocks pull requests whose head is already contained in base", () => {
     const readiness = evaluateMergeReadiness(
       pullRequest({
@@ -44,6 +66,42 @@ suite("reviewPullRequestModel", () => {
     assert.ok(
       readiness.blockingReasons.some((reason) =>
         reason.includes("No changes to merge"),
+      ),
+    );
+  });
+
+  test("does not misreport no-delta mergeable=false as a server conflict", () => {
+    const readiness = evaluateMergeReadiness(
+      pullRequest({
+        mergeable: false,
+        changed_files: 0,
+        additions: 0,
+        deletions: 0,
+      }),
+      combinedStatus("success"),
+      [],
+      { user_can_merge: true },
+    );
+
+    assert.strictEqual(readiness.canMerge, false);
+    assert.ok(readiness.blockingReasons.some((reason) => reason.includes("No changes to merge")));
+    assert.ok(!readiness.blockingReasons.some((reason) => reason.includes("Gitea reports")));
+  });
+
+  test("blocks pull requests Gitea reports as non-mergeable", () => {
+    const readiness = evaluateMergeReadiness(
+      pullRequest({ mergeable: false }),
+      combinedStatus("success"),
+      [review("alice", "APPROVED")],
+      { user_can_merge: true, required_approvals: 1 },
+    );
+
+    assert.strictEqual(readiness.canMerge, false);
+    assert.ok(
+      readiness.blockingReasons.some(
+        (reason) =>
+          reason.includes("Gitea reports") &&
+          reason.includes("server-side mergeability blockers"),
       ),
     );
   });

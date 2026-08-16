@@ -29,7 +29,7 @@ The primary workflow is intended to stay in the VS Code Activity Bar as much as 
 - inspect changed files with the native VS Code diff editor;
 - comment, approve, request changes and merge pull requests;
 - surface CI/check and merge-readiness state;
-- handle post-merge branch cleanup;
+- handle draft/WIP readiness and post-merge branch cleanup;
 - keep the full pull-request detail panel available as a secondary view.
 
 The migration is incremental. Existing working functionality is preserved while the pull-request orchestration is progressively moved to a state-driven, sidebar-first model.
@@ -41,12 +41,13 @@ The migration is incremental. Existing working functionality is preserved while 
 | Feature | Description |
 | --- | --- |
 | **Pull Requests** | Browse and filter Gitea PRs with repository/category grouping, including a default-expanded **Waiting for my review** category |
-| **Active PR session** | Activate one Gitea PR as the contextual workspace state; switching PR updates contextual Changes/Review views |
+| **Active PR session** | Activate one Gitea PR as the contextual workspace state; switching or refreshing PR updates contextual Changes/Review views |
 | **Sidebar PR creation** | Select repository/base/head, edit title/description, inspect Files Changed, choose supported metadata and create normal or draft/WIP PRs |
-| **Sidebar PR review** | Comment, approve or request changes directly from a contextual Review Pull Request view |
-| **Merge readiness** | Surface available CI/check, review, branch-policy and mergeability signals before enabling merge |
+| **Sidebar PR review** | Comment, approve, request changes, mark WIP PRs ready for review, refresh and merge from the contextual Review Pull Request view |
+| **Merge readiness** | Distinguish WIP/no-delta/server-side non-mergeable states and surface CI/check, review and branch-policy signals before enabling merge |
 | **Merge methods** | Use repository-supported merge commit, squash or rebase methods from the sidebar |
-| **PR Diff Tree** | Sidebar directory tree with file status, viewed-state checkboxes and `vscode.diff` integration |
+| **Post-merge lifecycle** | After merge, safely choose local/remote branch cleanup, checkout the base without deletion, keep branches, or create a new PR |
+| **PR Diff Tree** | Sidebar directory tree with file status, viewed-state checkboxes, `vscode.diff` integration and reload when the active PR head changes |
 | **PR Detail** | Full alternative detail panel for description, reviews, commits and metadata |
 | **Issues** | Browse, create, close, re-open and comment on issues |
 | **CI / Actions** | Workflow runs, jobs, live logs, rerun and cancel operations |
@@ -138,10 +139,10 @@ Phase development stays on the last merged release version until the functional 
 make promote RELEASE_VERSION=<target-version>
 ```
 
-For Phase 3:
+For Phase 4, after reviewing the complete post-merge lifecycle and final smoke validation:
 
 ```bash
-make promote RELEASE_VERSION=0.4.0
+make promote RELEASE_VERSION=0.5.0
 ```
 
 This performs the package/version update without creating a Git tag, keeps `package.json` and `package-lock.json` synchronized, and validates the resulting lock state. Review and commit both files together before final VSIX validation.
@@ -192,23 +193,23 @@ code --install-extension .artifacts/vsix/gitea-pull-request-<version>.vsix --for
 Useful targets:
 
 ```bash
-make help           # list targets
-make doctor         # validate Node/npm/npx and report VS Code CLI availability
-make lock           # create/update package-lock.json from package.json
-make bootstrap      # sync package-lock.json, then npm ci
-make deps           # strict npm ci; fail when manifest and lock differ
-make promote RELEASE_VERSION=x.y.z # promote a phase/release version atomically
-make compile        # TypeScript only
-make lint           # ESLint only
-make test           # compile + tests on minimum supported VS Code
-make test-latest    # tests against latest stable VS Code
-make verify         # compile + lint + tests
-make vsix           # verify + package, without reinstalling dependencies
-make rebuild-vsix   # clean + npm ci + verify + package
-make install-vsix   # install the already-built VSIX
-make reinstall-vsix # clean rebuild + local installation
-make show-vsix      # print the generated VSIX path
-make ci             # reproduce the clean CI build/package sequence
+make help
+make doctor
+make lock
+make bootstrap
+make deps
+make promote RELEASE_VERSION=x.y.z
+make compile
+make lint
+make test
+make test-latest
+make verify
+make vsix
+make rebuild-vsix
+make install-vsix
+make reinstall-vsix
+make show-vsix
+make ci
 ```
 
 If a different VS Code-compatible launcher is used, override it explicitly, for example:
@@ -264,9 +265,11 @@ The workflow supports:
 
 Projects are intentionally not exposed as PR metadata while the extension cannot reliably read and persist PR ↔ Project assignment through the supported Gitea API surface.
 
-### Activate a pull request
+### Activate and refresh a pull request
 
 A PR can be activated from the Pull Requests tree. The active PR becomes the current Gitea PR workspace context. Activating another PR replaces that context rather than opening an independent persistent diff state.
+
+The **Refresh** action in the contextual review view reloads the PR itself and rebinds **Changes in Pull Request**. If additional commits change the PR head SHA, files/commits/reviews are reloaded instead of retaining the previous diff cache.
 
 ### Changes in Pull Request
 
@@ -280,6 +283,8 @@ When a PR is active, the contextual **Review Pull Request #N** view follows the 
 
 - top-level PR comments;
 - Approve and Request Changes actions;
+- **Mark Ready for Review** when the PR uses Gitea's WIP/draft title convention;
+- explicit **Refresh** of the PR, contextual diff and readiness state;
 - current approval/request-changes state;
 - combined CI/check status where Gitea exposes it;
 - available target-branch policy/mergeability signals;
@@ -287,9 +292,35 @@ When a PR is active, the contextual **Review Pull Request #N** view follows the 
 - merge only when the observed readiness signals permit it;
 - **Checkout '<base>'** for the active repository.
 
+Mergeability is presented with separate states where possible:
+
+- **Draft / WIP** — the PR is intentionally not ready; use **Mark Ready for Review** to remove the WIP marker.
+- **No changes to merge** — the head is already contained in the target branch.
+- **Not mergeable (Gitea)** — Gitea reports a server-side blocker such as a conflict or another mergeability condition.
+
+The extension deliberately avoids adding the generic Gitea non-mergeable reason when WIP or no-delta already explains the blocked state. It also does not fabricate a conflicting-file list that the supported public API does not reliably provide.
+
 The Gitea server remains authoritative: permission, policy and merge errors are surfaced rather than overridden by the extension.
 
-After a successful merge, the session moves from `active` to `merged`. The active Changes/Review views therefore disappear at the Phase 3 boundary. Phase 4 owns the post-merge sidebar and branch-cleanup lifecycle.
+### After merge
+
+After a successful merge, the session moves from `active` to `merged`. The active Changes/Review views disappear and the dedicated **Pull Request #N Merged** view becomes the post-merge context.
+
+The Phase 4 workflow:
+
+- preserves the exact merged PR, repository, head and base from the session;
+- resolves actual local and remote branch identities independently, including differently named local tracking branches;
+- reads Git refs directly for reliable remote discovery (`origin/<branch>` included);
+- offers **Delete Branch...** with local and remote choices independently selectable and preselected when both exist;
+- checks out the base before deleting a currently checked-out local head branch, and prevents local deletion if that checkout fails;
+- allows remote cleanup to succeed independently when local cleanup fails;
+- reports partial cleanup failures while preserving the merged session for retry;
+- offers **Checkout '<base>' without deleting branch**;
+- offers **Keep branches and finish**;
+- offers **Create New Pull Request...** to clear the merged state and start a clean creation lifecycle;
+- returns the session to `idle` when the selected post-merge lifecycle is complete.
+
+No branch is deleted merely because its name resembles the PR head; cleanup is driven by resolved repository-local Git identities.
 
 ### Full PR details
 

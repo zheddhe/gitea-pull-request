@@ -11,7 +11,10 @@ import { PullRequestProvider } from "../../../views/pullRequestProvider";
 import type { PullRequestWorkspaceState } from "../domain/pullRequestState";
 import {
   evaluateMergeReadiness,
+  hasNoChangesToMerge,
+  isWorkInProgress,
   preferredMergeMethod,
+  readyForReviewTitle,
   supportedMergeMethods,
   type BranchMergePolicy,
   type MergeMethod,
@@ -59,6 +62,7 @@ type ReviewViewMessage =
   | { type: "comment"; body: string }
   | { type: "approve"; body: string }
   | { type: "requestChanges"; body: string }
+  | { type: "readyForReview" }
   | { type: "selectMergeMethod"; method: MergeMethod }
   | { type: "merge" }
   | { type: "checkoutBase" }
@@ -169,6 +173,11 @@ export class ReviewPullRequestViewProvider
       return;
     }
 
+    if (message.type === "readyForReview") {
+      await this.markReadyForReview(active.repoInfo, active.state);
+      return;
+    }
+
     if (message.type === "selectMergeMethod") {
       const supported = supportedMergeMethods(this.readiness.mergeSettings);
       if (supported.includes(message.method)) {
@@ -240,6 +249,46 @@ export class ReviewPullRequestViewProvider
       log(`[review-view] action type=${message.type} failed: ${(error as Error).message}`);
       vscode.window.showErrorMessage(
         `Unable to update PR #${number}: ${(error as Error).message}`,
+      );
+    } finally {
+      this.busy = false;
+      this.render();
+    }
+  }
+
+  private async markReadyForReview(
+    repoInfo: RepoInfo,
+    state: ActivePullRequestState,
+  ): Promise<void> {
+    if (!isWorkInProgress(state.pullRequest)) return;
+    const title = readyForReviewTitle(state.pullRequest.title);
+    if (!title) {
+      vscode.window.showWarningMessage(
+        "The pull request title would be empty after removing the WIP marker.",
+      );
+      return;
+    }
+
+    this.busy = true;
+    this.render();
+    try {
+      log(`[review-view] marking ready pr=#${state.pullRequest.number}`);
+      const pullRequest = await this.api.updatePullRequest(
+        repoInfo,
+        state.pullRequest.number,
+        { title },
+      );
+      await this.session.activate(state.repository, pullRequest, state.checkoutState);
+      this.prProvider.refresh();
+      const refreshed = this.activeContext();
+      if (refreshed) await this.loadReadiness(refreshed.repoInfo, refreshed.state);
+      vscode.window.showInformationMessage(
+        `PR #${state.pullRequest.number} marked ready for review.`,
+      );
+    } catch (error) {
+      log(`[review-view] ready-for-review failed: ${(error as Error).message}`);
+      vscode.window.showErrorMessage(
+        `Unable to mark PR #${state.pullRequest.number} ready for review: ${(error as Error).message}`,
       );
     } finally {
       this.busy = false;
@@ -522,12 +571,17 @@ export class ReviewPullRequestViewProvider
       : pr.state === "closed"
         ? "Closed"
         : "Open";
-    const mergeable =
-      pr.mergeable === true
-        ? "Mergeable"
-        : pr.mergeable === false
-          ? "Not mergeable"
-          : "Mergeability unknown";
+    const wip = isWorkInProgress(pr);
+    const noChanges = hasNoChangesToMerge(pr);
+    const mergeable = wip
+      ? "Draft / WIP"
+      : noChanges
+        ? "No changes to merge"
+        : pr.mergeable === true
+          ? "Mergeable"
+          : pr.mergeable === false
+            ? "Not mergeable (Gitea)"
+            : "Mergeability unknown";
     const disabled = this.busy ? " disabled" : "";
     const readiness = this.currentReadiness(active.state);
     const supported = supportedMergeMethods(this.readiness.mergeSettings);
@@ -588,6 +642,7 @@ export class ReviewPullRequestViewProvider
     <button id="comment"${disabled}>Comment</button>
     <button class="secondary" id="approve"${disabled}>Approve</button>
     <button class="danger" id="requestChanges"${disabled}>Request Changes</button>
+    ${wip ? `<button class="secondary" id="readyForReview"${disabled}>Mark Ready for Review</button>` : ""}
     <button class="secondary" id="refresh"${disabled}>Refresh</button>
   </div>
 
@@ -617,6 +672,7 @@ export class ReviewPullRequestViewProvider
   document.getElementById('comment').addEventListener('click', () => vscode.postMessage({ type: 'comment', body: body.value }));
   document.getElementById('approve').addEventListener('click', () => vscode.postMessage({ type: 'approve', body: body.value }));
   document.getElementById('requestChanges').addEventListener('click', () => vscode.postMessage({ type: 'requestChanges', body: body.value }));
+  document.getElementById('readyForReview')?.addEventListener('click', () => vscode.postMessage({ type: 'readyForReview' }));
   document.getElementById('refresh').addEventListener('click', () => vscode.postMessage({ type: 'refresh' }));
   if (mergeMethod) mergeMethod.addEventListener('change', () => vscode.postMessage({ type: 'selectMergeMethod', method: mergeMethod.value }));
   document.getElementById('merge').addEventListener('click', () => vscode.postMessage({ type: 'merge' }));

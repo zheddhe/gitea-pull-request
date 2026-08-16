@@ -11,11 +11,13 @@ import { registerAuthCommands } from "./commands/authCommands";
 import { registerIssueCommands } from "./commands/issueCommands";
 import { initOutputChannel } from "./debug/outputChannel";
 import { registerPullRequestSessionCommands } from "./features/pullRequests/commands/sessionCommands";
+import { BranchCleanupService } from "./features/pullRequests/services/branchCleanupService";
 import { PullRequestSessionCoordinator } from "./features/pullRequests/services/pullRequestSessionCoordinator";
 import { PullRequestSessionService } from "./features/pullRequests/services/pullRequestSessionService";
 import { PullRequestReviewApi } from "./features/pullRequests/services/pullRequestReviewApi";
 import { ResilientGiteaApiClient } from "./features/pullRequests/services/resilientGiteaApiClient";
 import { CreatePullRequestViewProvider } from "./features/pullRequests/views/createPullRequestView";
+import { PostMergePullRequestViewProvider } from "./features/pullRequests/views/postMergePullRequestView";
 import { ReviewPullRequestViewProvider } from "./features/pullRequests/views/reviewPullRequestView";
 import { SidebarPullRequestProvider } from "./features/pullRequests/views/sidebarPullRequestProvider";
 
@@ -31,6 +33,7 @@ export async function activate(
   const metadataApi = new PullRequestMetadataApi(auth);
   const reviewApi = new PullRequestReviewApi(auth);
   const prSession = new PullRequestSessionService();
+  const branchCleanup = new BranchCleanupService();
   const prSessionCoordinator = new PullRequestSessionCoordinator(
     api,
     repoManager,
@@ -53,6 +56,11 @@ export async function activate(
     prProvider,
     context.workspaceState,
   );
+  const postMergePullRequestView = new PostMergePullRequestViewProvider(
+    repoManager,
+    prSession,
+    branchCleanup,
+  );
   const ciProvider = new CIRunsProvider(api, repoManager, auth);
   const issuesProvider = new IssuesProvider(api, repoManager, auth);
   const statusBar = new StatusBarManager(repoManager, auth);
@@ -67,6 +75,10 @@ export async function activate(
       ReviewPullRequestViewProvider.viewType,
       reviewPullRequestView,
     ),
+    vscode.window.registerWebviewViewProvider(
+      PostMergePullRequestViewProvider.viewType,
+      postMergePullRequestView,
+    ),
     vscode.window.registerTreeDataProvider("gitea.ciRuns", ciProvider),
     vscode.window.registerTreeDataProvider("gitea.issues", issuesProvider),
     vscode.commands.registerCommand("gitea.createPRSidebar", () =>
@@ -77,6 +89,7 @@ export async function activate(
     }),
     createPullRequestView,
     reviewPullRequestView,
+    postMergePullRequestView,
     prSessionCoordinator,
     prSession,
     ciProvider,
