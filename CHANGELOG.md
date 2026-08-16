@@ -4,7 +4,45 @@ All notable changes to **Gitea Pull Request** are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and the standalone product line follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.4.0] - Unreleased
+## [0.5.0] - Unreleased
+
+### Added
+
+- Dedicated **Pull Request #N Merged** post-merge sidebar WebviewView driven by the `merged` pull-request session state.
+- Automatic focus of the post-merge view after a successful sidebar merge.
+- `BranchCleanupService` foundation for resolving the actual local and remote head/base branch identities before any destructive cleanup action.
+- Independent local/remote branch identity handling, including local aliases that track a differently named remote PR branch.
+- Post-merge branch-state diagnostics and manual refresh.
+- Pure cleanup planning for upcoming local/remote deletion actions, including whether checkout of the base branch is required first.
+- Tests covering exact and aliased local branches, remote-only branches, multiple remotes, origin preference, cleanup eligibility and safe-checkout planning.
+
+### Changed
+
+- The post-merge workflow no longer ends with the Phase 3 Changes/Review views simply disappearing: the `merged` session now has an explicit sidebar successor state.
+- Merge-readiness presentation now explains `mergeable=false` as an automatic-merge blocker requiring conflict or other server-side mergeability resolution before merge. Gitea remains authoritative because its public API does not reliably expose the exact conflicting-file list for this state.
+- Phase 4 cleanup decisions are based on resolved Git identities rather than assuming the PR head name, local branch name and remote branch name are identical.
+
+### Validation
+
+Current Phase 4 foundation validation covers:
+
+- post-merge transition into the dedicated merged view;
+- exact merged PR/repository/head/base context preservation;
+- local and remote branch identity resolution;
+- local alias tracking independent from the PR remote branch name;
+- remote-only branch state and multiple-remotes/origin preference;
+- safe cleanup planning with checkout-before-delete requirements;
+- explicit merge blocking for a PR reported by Gitea as not mergeable;
+- 36 extension/domain tests passing before the Phase 4 destructive cleanup implementation.
+
+### Remaining Phase 4 work
+
+- Execute checkout-base and local branch deletion safely.
+- Execute remote branch deletion with independent local/remote selection.
+- Add **Create New Pull Request...** and coherent lifecycle completion/decline transitions.
+- Complete interactive cleanup validation, documentation review and the `0.5.0` release gate.
+
+## [0.4.0] - 2026-08-16
 
 ### Added
 
@@ -20,7 +58,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 ### Changed
 
 - **Waiting for my review** is expanded by default and uses a neutral folder presentation; status coloring remains on individual PR items where it is meaningful.
-- Pull-request readiness now treats a loaded zero-diff PR as a terminal state and blocks merge when the head is already contained in the target branch.
+- Pull-request readiness treats a loaded zero-diff PR as a terminal state and blocks merge when the head is already contained in the target branch.
 - Repository detection emits change events only when the detected repository set or relevant repository state actually changes, avoiding cascaded sidebar/readiness refreshes.
 - The legacy PR-list child no longer fabricates `+0 / -0 · 0 file(s) changed` when Gitea's list response does not provide diff statistics; the statistics row is omitted instead.
 - After a successful merge, active Changes/Review views leave the active workflow as the session enters `merged`; the post-merge experience is owned by Phase 4.
@@ -35,14 +73,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 
 ### Validation
 
-Interactive Phase 3 validation covers:
-
-- pending/failing/successful CI checks;
-- pending, approved and request-changes review states, including Gitea's self-approval restriction;
-- no-diff/already-contained PR blocking;
-- real merge of a PR containing changes;
-- transition from active review state to merged session state;
-- elimination of the observed diff/repository refresh loops.
+Interactive Phase 3 validation covered pending/failing/successful CI checks, review states including self-approval restrictions, no-diff blocking, real merge with content, the `active -> merged` transition and elimination of the observed diff/repository refresh loops.
 
 ## [0.3.0] - 2026-08-16
 
