@@ -110,7 +110,7 @@
         {
           "id": "gitea.prDiff",
           "name": "Changes in Pull Request",
-          "when": "gitea.prDiffVisible",
+          "when": "gitea.prSession.active",
           "icon": "resources/gitea-activity.svg"
         },
         {
@@ -134,6 +134,9 @@
       { "command": "gitea.refreshRepo", "title": "Gitea: Refresh Repository CI", "icon": "$(refresh)" },
       { "command": "gitea.refreshJob", "title": "Gitea: Refresh Job Status", "icon": "$(refresh)" },
       { "command": "gitea.refreshIssues", "title": "Gitea: Refresh Issues", "icon": "$(refresh)" },
+      { "command": "gitea.activatePR", "title": "Gitea: Activate Pull Request", "icon": "$(target)" },
+      { "command": "gitea.clearActivePR", "title": "Gitea: Clear Active Pull Request", "icon": "$(close)" },
+      { "command": "gitea.viewPRDetail", "title": "Gitea: Open Full Pull Request Details" },
       { "command": "gitea.openPR", "title": "Gitea: Open Pull Request in Browser" },
       { "command": "gitea.checkoutPR", "title": "Gitea: Checkout Pull Request Branch" },
       { "command": "gitea.createPR", "title": "Gitea: Create Pull Request" },
@@ -157,15 +160,18 @@
       "view/title": [
         { "command": "gitea.refreshPRs", "when": "view == gitea.pullRequests", "group": "navigation" },
         { "command": "gitea.createPR", "when": "view == gitea.pullRequests", "group": "navigation" },
+        { "command": "gitea.clearActivePR", "when": "view == gitea.prDiff && gitea.prSession.active", "group": "navigation" },
         { "command": "gitea.refreshCI", "when": "view == gitea.ciRuns", "group": "navigation" },
         { "command": "gitea.refreshIssues", "when": "view == gitea.issues", "group": "navigation" },
         { "command": "gitea.createIssue", "when": "view == gitea.issues", "group": "navigation" }
       ],
       "view/item/context": [
+        { "command": "gitea.activatePR", "when": "viewItem == pullRequest", "group": "inline@1" },
         { "command": "gitea.checkoutPR", "when": "viewItem == pullRequest", "group": "pr@1" },
-        { "command": "gitea.openPR", "when": "viewItem == pullRequest", "group": "pr@2" },
-        { "command": "gitea.approvePR", "when": "viewItem == pullRequest", "group": "pr@3" },
-        { "command": "gitea.mergePR", "when": "viewItem == pullRequest", "group": "pr@4" },
+        { "command": "gitea.viewPRDetail", "when": "viewItem == pullRequest", "group": "pr@2" },
+        { "command": "gitea.openPR", "when": "viewItem == pullRequest", "group": "pr@3" },
+        { "command": "gitea.approvePR", "when": "viewItem == pullRequest", "group": "pr@4" },
+        { "command": "gitea.mergePR", "when": "viewItem == pullRequest", "group": "pr@5" },
         { "command": "gitea.refreshRepo", "when": "viewItem == repoGroup", "group": "inline" },
         { "command": "gitea.refreshJob", "when": "viewItem == ciJob", "group": "inline" },
         { "command": "gitea.viewLogs", "when": "viewItem == ciJob", "group": "ci@1" },
