@@ -50,11 +50,12 @@ function remoteBranchName(ref: BranchRefSnapshot): string | undefined {
 }
 
 function tracksBranch(ref: BranchRefSnapshot | undefined, branch: string): boolean {
-  if (!ref?.upstream?.name) return false;
-  const upstream = ref.upstream;
-  if (upstream.name === branch) return true;
-  if (upstream.remote && upstream.name === `${upstream.remote}/${branch}`) return true;
-  return upstream.name.endsWith(`/${branch}`);
+  const upstreamName = ref?.upstream?.name;
+  if (!upstreamName) return false;
+  const upstreamRemote = ref?.upstream?.remote;
+  if (upstreamName === branch) return true;
+  if (upstreamRemote && upstreamName === `${upstreamRemote}/${branch}`) return true;
+  return upstreamName.endsWith(`/${branch}`);
 }
 
 function pickRemote(
