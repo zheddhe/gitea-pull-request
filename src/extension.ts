@@ -88,6 +88,9 @@ export async function activate(
     vscode.commands.registerCommand("gitea.createPRSidebar", () =>
       createPullRequestView.start(),
     ),
+    vscode.commands.registerCommand("gitea.refreshCreatePR", () =>
+      createPullRequestView.refreshBranches(),
+    ),
     auth.onDidChangeSession(() => {
       void repoManager.detect();
     }),
