@@ -209,6 +209,11 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "gitea.refreshCreatePR",
+        "title": "Gitea: Refresh Pull Request Branches",
+        "icon": "$(refresh)"
+      },
+      {
         "command": "gitea.refreshCI",
         "title": "Gitea: Refresh CI Runs",
         "icon": "$(refresh)"
@@ -341,6 +346,11 @@
           "command": "gitea.createPRSidebar",
           "when": "view == gitea.pullRequests && !gitea.prSession.creating",
           "group": "navigation"
+        },
+        {
+          "command": "gitea.refreshCreatePR",
+          "when": "view == gitea.createPullRequest && gitea.prSession.creating",
+          "group": "navigation@1"
         },
         {
           "command": "gitea.cancelCreatePR",
