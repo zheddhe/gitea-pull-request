@@ -18,13 +18,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 - **Changes in Pull Request**, **Review Pull Request** and **Pull Request Merged** live in the dedicated contextual pull-request workspace.
 - Activating a pull request automatically focuses the contextual Gitea Pull Request container after the active session is established.
 - The existing general-container contribution identity is retained to reduce VS Code layout-state disruption during the topology split.
+- On first entry into the Gitea workspace, repository groups plus **All Open** and **Waiting for my review** are expanded by default so the primary open/assigned review queues are immediately visible.
 - Phase 6 now owns the broader visual/ergonomic polish, Changes-view refresh title action, PR-centric CI refinement, notifications, Markdown and accessibility work.
 
 ### Validation
 
-Initial interactive Phase 5 validation confirms that the dual-container structure and both Activity Bar icons match the intended workflow and remain visually distinguishable alongside GitHub Pull Requests.
+Interactive Phase 5 validation confirms the dual-container structure, icon coexistence with GitHub Pull Requests, active PR navigation, post-merge cleanup lifecycle, and removal of the contextual merged view once cleanup completes.
 
-Remaining release validation covers active-to-merged visibility in the contextual container, create placement, mixed GitHub/Gitea smoke testing, final documentation review and the normal `0.6.0` release gate.
+Remaining release work is final documentation review and the normal `0.6.0` promotion / verification / VSIX smoke gate.
 
 ## [0.5.0] - 2026-08-16
 
@@ -146,7 +147,7 @@ Interactive Phase 3 validation covered pending/failing/successful CI checks, rev
 - Standalone **Gitea Pull Request** product identity and transformation roadmap.
 - Pull-request workspace/session state foundation with VS Code context-key synchronization.
 - Baseline tests for PR session state transitions.
-- Reproducible Make-based development workflow for clean builds, validation, VSIX packaging and local installation.
+- Reproducible Make-based development workflow for clean builds, validation, packaging and local installation.
 - Canonical disposable local package output under `.artifacts/vsix/`.
 
 ### Changed
