@@ -1,14 +1,15 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
-  <g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <!-- Pull-request branch, intentionally close to VS Code/GitHub PR visual language -->
-    <circle cx="5" cy="4" r="2.25"/>
-    <circle cx="5" cy="20" r="2.25"/>
-    <path d="M5 6.25v11.5"/>
-    <path d="M12 4h2.5A4.5 4.5 0 0 1 19 8.5v4"/>
-    <path d="M9.25 1.75 12 4 9.25 6.25"/>
+  <g fill="none" stroke="currentColor" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Two linked commits: explicit PR/history context. -->
+    <circle cx="4.75" cy="5.25" r="2.05"/>
+    <circle cx="4.75" cy="15.1" r="2.05"/>
+    <path d="M4.75 7.3v5.75"/>
 
-    <!-- Small Gitea cup badge: identity cue without relying on color -->
-    <path d="M13.25 14.25h5v3.25A2.5 2.5 0 0 1 15.75 20h0A2.5 2.5 0 0 1 13.25 17.5v-3.25Z"/>
-    <path d="M18.25 15.25h.75a1.75 1.75 0 0 1 0 3.5h-.75"/>
+    <!-- Large magnifier: review/inspection is the dominant visual cue. -->
+    <circle cx="14.45" cy="10.65" r="5.35"/>
+    <path d="M18.25 14.45 22 18.2"/>
+
+    <!-- Connect the commit graph visually into the inspected PR. -->
+    <path d="M6.8 15.1h1.35c1.05 0 1.8-.35 2.35-1.05"/>
   </g>
 </svg>
