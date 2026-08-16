@@ -111,25 +111,46 @@
           "id": "gitea.pullRequests",
           "name": "Pull Requests",
           "icon": "resources/gitea-activity.svg",
-          "initialSize": 1
+          "when": "!gitea.prSession.creating"
+        },
+        {
+          "id": "gitea.pullRequestsCreateMode",
+          "name": "Pull Requests",
+          "icon": "resources/gitea-activity.svg",
+          "when": "gitea.prSession.creating",
+          "initialSize": 2
         },
         {
           "id": "gitea.createPullRequest",
           "name": "Create Pull Request",
           "type": "webview",
           "when": "gitea.prSession.creating",
-          "initialSize": 3
+          "initialSize": 8
         },
         {
           "id": "gitea.issues",
           "name": "Issues",
           "icon": "resources/gitea-activity.svg",
+          "when": "!gitea.prSession.creating"
+        },
+        {
+          "id": "gitea.issuesCreateMode",
+          "name": "Issues",
+          "icon": "resources/gitea-activity.svg",
+          "when": "gitea.prSession.creating",
           "initialSize": 1
         },
         {
           "id": "gitea.ciRuns",
           "name": "CI / Actions",
           "icon": "resources/gitea-activity.svg",
+          "when": "!gitea.prSession.creating"
+        },
+        {
+          "id": "gitea.ciRunsCreateMode",
+          "name": "CI / Actions",
+          "icon": "resources/gitea-activity.svg",
+          "when": "gitea.prSession.creating",
           "initialSize": 1
         }
       ],
@@ -158,6 +179,10 @@
       {
         "view": "gitea.pullRequests",
         "contents": "No pull requests are currently listed.\n[Create Pull Request](command:gitea.createPRSidebar)"
+      },
+      {
+        "view": "gitea.pullRequestsCreateMode",
+        "contents": "No pull requests are currently listed."
       }
     ],
     "commands": [
@@ -309,18 +334,18 @@
       "view/title": [
         {
           "command": "gitea.refreshPRs",
-          "when": "view == gitea.pullRequests",
+          "when": "view == gitea.pullRequests || view == gitea.pullRequestsCreateMode",
           "group": "navigation"
         },
         {
           "command": "gitea.createPRSidebar",
-          "when": "view == gitea.pullRequests",
+          "when": "view == gitea.pullRequests && !gitea.prSession.creating",
           "group": "navigation"
         },
         {
           "command": "gitea.cancelCreatePR",
           "when": "view == gitea.createPullRequest && gitea.prSession.creating",
-          "group": "navigation@1"
+          "group": "navigation@2"
         },
         {
           "command": "gitea.refreshActivePR",
@@ -349,17 +374,17 @@
         },
         {
           "command": "gitea.refreshCI",
-          "when": "view == gitea.ciRuns",
+          "when": "view == gitea.ciRuns || view == gitea.ciRunsCreateMode",
           "group": "navigation"
         },
         {
           "command": "gitea.refreshIssues",
-          "when": "view == gitea.issues",
+          "when": "view == gitea.issues || view == gitea.issuesCreateMode",
           "group": "navigation"
         },
         {
           "command": "gitea.createIssue",
-          "when": "view == gitea.issues",
+          "when": "view == gitea.issues || view == gitea.issuesCreateMode",
           "group": "navigation"
         }
       ],
