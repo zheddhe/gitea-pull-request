@@ -10,12 +10,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 
 - Dedicated **Gitea Pull Request** Activity Bar container for the active pull-request lifecycle.
 - Separate monochrome Activity Bar icons for the general Gitea workspace and the contextual pull-request workspace.
-- Contribution tests covering container membership, contextual visibility conditions and distinct icon assets.
+- Contribution tests covering container membership, contextual visibility conditions, workspace labels and distinct icon assets.
 
 ### Changed
 
-- The general **Gitea** Activity Bar workspace now contains Pull Requests, Create Pull Request, Issues and CI / Actions.
-- **Changes in Pull Request**, **Review Pull Request** and **Pull Request Merged** now live in the dedicated contextual pull-request workspace.
+- The general **Gitea** Activity Bar workspace contains Pull Requests, Create Pull Request, Issues and CI / Actions.
+- **Changes in Pull Request**, **Review Pull Request** and **Pull Request Merged** live in the dedicated contextual pull-request workspace.
 - Activating a pull request automatically focuses the contextual Gitea Pull Request container after the active session is established.
 - The existing general-container contribution identity is retained to reduce VS Code layout-state disruption during the topology split.
 - Phase 6 now owns the broader visual/ergonomic polish, Changes-view refresh title action, PR-centric CI refinement, notifications, Markdown and accessibility work.
