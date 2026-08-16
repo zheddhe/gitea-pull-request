@@ -4,8 +4,6 @@ import { RepoInfo } from "../context/repoManager";
 import { log } from "../debug/outputChannel";
 import type { GiteaPullRequest, GiteaFileDiff, GiteaCommit, GiteaReview } from "../api/types";
 
-// ── Directory tree builder ────────────────────────────────────────────────────
-
 interface DirNode {
   name: string;
   path: string;
@@ -46,8 +44,6 @@ function findDirNode(root: DirNode | null, path: string): DirNode | null {
   }
   return node;
 }
-
-// ── Tree Item Types ───────────────────────────────────────────────────────────
 
 class PRDiffRootItem extends vscode.TreeItem {
   constructor(pr: GiteaPullRequest, hasApproved: boolean) {
@@ -181,8 +177,6 @@ class PRDiffReviewItem extends vscode.TreeItem {
   }
 }
 
-// ── Provider ──────────────────────────────────────────────────────────────────
-
 export class PRDiffProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
   private static instances = new Map<string, PRDiffProvider>();
   private _onDidChangeTreeData = new vscode.EventEmitter<vscode.TreeItem | null | void>();
@@ -194,6 +188,7 @@ export class PRDiffProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
   private dirTree: DirNode | null = null;
   private loading = false;
   private loaded = false;
+  private loadVersion = 0;
   private error: string | null = null;
   private disposable: vscode.Disposable | null = null;
   private viewedFiles = new Set<string>();
@@ -224,6 +219,7 @@ export class PRDiffProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
     }
 
     if (provider) {
+      provider.rebind(repoInfo, pr);
       await vscode.commands.executeCommand("gitea.prDiff.focus");
       return;
     }
@@ -235,6 +231,34 @@ export class PRDiffProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
     PRDiffProvider.instances.set(key, provider);
 
     await vscode.commands.executeCommand("gitea.prDiff.focus");
+  }
+
+  private rebind(repoInfo: RepoInfo, pr: GiteaPullRequest): void {
+    const previousHead = this.pr.head.sha;
+    const changed =
+      previousHead !== pr.head.sha ||
+      this.pr.title !== pr.title ||
+      this.pr.base.ref !== pr.base.ref ||
+      this.pr.head.ref !== pr.head.ref;
+    this.repoInfo = repoInfo;
+    this.pr = pr;
+    if (!changed) {
+      this._onDidChangeTreeData.fire(null);
+      return;
+    }
+
+    this.loadVersion += 1;
+    this.loaded = false;
+    this.error = null;
+    this.files = [];
+    this.commits = [];
+    this.reviews = [];
+    this.dirTree = null;
+    this.viewedFiles.clear();
+    log(
+      `[pr-diff] rebind repo=${repoInfo.label} pr=#${pr.number} head=${previousHead.slice(0, 7)}->${pr.head.sha.slice(0, 7)}`,
+    );
+    this._onDidChangeTreeData.fire(null);
   }
 
   static hide(key: string): void {
@@ -333,6 +357,7 @@ export class PRDiffProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
       }
       if (!this.loaded) {
         this.loading = true;
+        const loadVersion = this.loadVersion;
         this._onDidChangeTreeData.fire(null);
         log(`[pr-diff] loading repo=${this.repoInfo.label} pr=#${this.pr.number}`);
         try {
@@ -341,6 +366,10 @@ export class PRDiffProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
             this._api.listPRCommits(this.repoInfo, this.pr.number),
             this._api.listReviews(this.repoInfo, this.pr.number),
           ]);
+          if (loadVersion !== this.loadVersion) {
+            log(`[pr-diff] discarded stale load repo=${this.repoInfo.label} pr=#${this.pr.number}`);
+            return [];
+          }
           this.files = files ?? [];
           this.commits = commits ?? [];
           this.reviews = reviews ?? [];
@@ -350,8 +379,10 @@ export class PRDiffProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
             `[pr-diff] loaded repo=${this.repoInfo.label} pr=#${this.pr.number} files=${this.files.length} commits=${this.commits.length} reviews=${this.reviews.length}`,
           );
         } catch (err) {
-          this.error = `Failed to load PR diff: ${(err as Error).message}`;
-          log(`[pr-diff] load failed repo=${this.repoInfo.label} pr=#${this.pr.number}: ${(err as Error).message}`);
+          if (loadVersion === this.loadVersion) {
+            this.error = `Failed to load PR diff: ${(err as Error).message}`;
+            log(`[pr-diff] load failed repo=${this.repoInfo.label} pr=#${this.pr.number}: ${(err as Error).message}`);
+          }
         } finally {
           this.loading = false;
           this._onDidChangeTreeData.fire(null);
