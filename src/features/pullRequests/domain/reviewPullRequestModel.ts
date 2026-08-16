@@ -97,7 +97,9 @@ export function evaluateMergeReadiness(
   }
 
   if (pr.mergeable === false) {
-    blockingReasons.push("Gitea reports the pull request as not mergeable");
+    blockingReasons.push(
+      "Pull request cannot be merged automatically; resolve conflicts with the target branch or other server-side mergeability blockers first",
+    );
   } else if (pr.mergeable === undefined) {
     warnings.push("Mergeability is not reported by Gitea");
   }
