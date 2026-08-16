@@ -108,6 +108,12 @@
           "icon": "resources/gitea-activity.svg"
         },
         {
+          "id": "gitea.createPullRequest",
+          "name": "Create Pull Request",
+          "type": "webview",
+          "when": "gitea.prSession.creating"
+        },
+        {
           "id": "gitea.prDiff",
           "name": "Changes in Pull Request",
           "when": "gitea.prSession.active || gitea.prDiffVisible",
@@ -126,249 +132,64 @@
       ]
     },
     "commands": [
-      {
-        "command": "gitea.signIn",
-        "title": "Gitea: Sign In"
-      },
-      {
-        "command": "gitea.signOut",
-        "title": "Gitea: Sign Out"
-      },
-      {
-        "command": "gitea.addServer",
-        "title": "Gitea: Add Server"
-      },
-      {
-        "command": "gitea.refreshPRs",
-        "title": "Gitea: Refresh Pull Requests",
-        "icon": "$(refresh)"
-      },
-      {
-        "command": "gitea.refreshCI",
-        "title": "Gitea: Refresh CI Runs",
-        "icon": "$(refresh)"
-      },
-      {
-        "command": "gitea.refreshRepo",
-        "title": "Gitea: Refresh Repository CI",
-        "icon": "$(refresh)"
-      },
-      {
-        "command": "gitea.refreshJob",
-        "title": "Gitea: Refresh Job Status",
-        "icon": "$(refresh)"
-      },
-      {
-        "command": "gitea.refreshIssues",
-        "title": "Gitea: Refresh Issues",
-        "icon": "$(refresh)"
-      },
-      {
-        "command": "gitea.activatePR",
-        "title": "Gitea: Activate Pull Request",
-        "icon": "$(target)"
-      },
-      {
-        "command": "gitea.clearActivePR",
-        "title": "Gitea: Clear Active Pull Request",
-        "icon": "$(close)"
-      },
-      {
-        "command": "gitea.viewPRDetail",
-        "title": "Gitea: Open Full Pull Request Details"
-      },
-      {
-        "command": "gitea.openPR",
-        "title": "Gitea: Open Pull Request in Browser"
-      },
-      {
-        "command": "gitea.checkoutPR",
-        "title": "Gitea: Checkout Pull Request Branch"
-      },
-      {
-        "command": "gitea.createPR",
-        "title": "Gitea: Create Pull Request"
-      },
-      {
-        "command": "gitea.mergePR",
-        "title": "Gitea: Merge Pull Request"
-      },
-      {
-        "command": "gitea.approvePR",
-        "title": "Gitea: Approve Pull Request"
-      },
-      {
-        "command": "gitea.requestChangesPR",
-        "title": "Gitea: Request Changes on Pull Request"
-      },
-      {
-        "command": "gitea.addComment",
-        "title": "Gitea: Add Comment"
-      },
-      {
-        "command": "gitea.openRunInBrowser",
-        "title": "Gitea: Open Run in Browser"
-      },
-      {
-        "command": "gitea.rerunWorkflow",
-        "title": "Gitea: Re-run Workflow"
-      },
-      {
-        "command": "gitea.cancelRun",
-        "title": "Gitea: Cancel Run"
-      },
-      {
-        "command": "gitea.viewLogs",
-        "title": "Gitea: View Job Logs"
-      },
-      {
-        "command": "gitea.switchRepo",
-        "title": "Gitea: Switch Repository"
-      },
-      {
-        "command": "gitea.openIssue",
-        "title": "Gitea: Open Issue in Browser"
-      },
-      {
-        "command": "gitea.viewIssueDetail",
-        "title": "Gitea: View Issue Details"
-      },
-      {
-        "command": "gitea.createIssue",
-        "title": "Gitea: Create Issue"
-      },
-      {
-        "command": "gitea.closeIssue",
-        "title": "Gitea: Close Issue"
-      },
-      {
-        "command": "gitea.reopenIssue",
-        "title": "Gitea: Re-open Issue"
-      },
-      {
-        "command": "gitea.addIssueComment",
-        "title": "Gitea: Add Issue Comment"
-      }
+      { "command": "gitea.signIn", "title": "Gitea: Sign In" },
+      { "command": "gitea.signOut", "title": "Gitea: Sign Out" },
+      { "command": "gitea.addServer", "title": "Gitea: Add Server" },
+      { "command": "gitea.refreshPRs", "title": "Gitea: Refresh Pull Requests", "icon": "$(refresh)" },
+      { "command": "gitea.refreshCI", "title": "Gitea: Refresh CI Runs", "icon": "$(refresh)" },
+      { "command": "gitea.refreshRepo", "title": "Gitea: Refresh Repository CI", "icon": "$(refresh)" },
+      { "command": "gitea.refreshJob", "title": "Gitea: Refresh Job Status", "icon": "$(refresh)" },
+      { "command": "gitea.refreshIssues", "title": "Gitea: Refresh Issues", "icon": "$(refresh)" },
+      { "command": "gitea.activatePR", "title": "Gitea: Activate Pull Request", "icon": "$(target)" },
+      { "command": "gitea.clearActivePR", "title": "Gitea: Clear Active Pull Request", "icon": "$(close)" },
+      { "command": "gitea.viewPRDetail", "title": "Gitea: Open Full Pull Request Details" },
+      { "command": "gitea.openPR", "title": "Gitea: Open Pull Request in Browser" },
+      { "command": "gitea.checkoutPR", "title": "Gitea: Checkout Pull Request Branch" },
+      { "command": "gitea.createPRSidebar", "title": "Gitea: Create Pull Request", "icon": "$(git-pull-request-create)" },
+      { "command": "gitea.createPR", "title": "Gitea: Create Pull Request (Legacy)" },
+      { "command": "gitea.mergePR", "title": "Gitea: Merge Pull Request" },
+      { "command": "gitea.approvePR", "title": "Gitea: Approve Pull Request" },
+      { "command": "gitea.requestChangesPR", "title": "Gitea: Request Changes on Pull Request" },
+      { "command": "gitea.addComment", "title": "Gitea: Add Comment" },
+      { "command": "gitea.openRunInBrowser", "title": "Gitea: Open Run in Browser" },
+      { "command": "gitea.rerunWorkflow", "title": "Gitea: Re-run Workflow" },
+      { "command": "gitea.cancelRun", "title": "Gitea: Cancel Run" },
+      { "command": "gitea.viewLogs", "title": "Gitea: View Job Logs" },
+      { "command": "gitea.switchRepo", "title": "Gitea: Switch Repository" },
+      { "command": "gitea.openIssue", "title": "Gitea: Open Issue in Browser" },
+      { "command": "gitea.viewIssueDetail", "title": "Gitea: View Issue Details" },
+      { "command": "gitea.createIssue", "title": "Gitea: Create Issue" },
+      { "command": "gitea.closeIssue", "title": "Gitea: Close Issue" },
+      { "command": "gitea.reopenIssue", "title": "Gitea: Re-open Issue" },
+      { "command": "gitea.addIssueComment", "title": "Gitea: Add Issue Comment" }
     ],
     "menus": {
       "view/title": [
-        {
-          "command": "gitea.refreshPRs",
-          "when": "view == gitea.pullRequests",
-          "group": "navigation"
-        },
-        {
-          "command": "gitea.createPR",
-          "when": "view == gitea.pullRequests",
-          "group": "navigation"
-        },
-        {
-          "command": "gitea.clearActivePR",
-          "when": "view == gitea.prDiff && gitea.prSession.active",
-          "group": "navigation"
-        },
-        {
-          "command": "gitea.refreshCI",
-          "when": "view == gitea.ciRuns",
-          "group": "navigation"
-        },
-        {
-          "command": "gitea.refreshIssues",
-          "when": "view == gitea.issues",
-          "group": "navigation"
-        },
-        {
-          "command": "gitea.createIssue",
-          "when": "view == gitea.issues",
-          "group": "navigation"
-        }
+        { "command": "gitea.refreshPRs", "when": "view == gitea.pullRequests", "group": "navigation" },
+        { "command": "gitea.createPRSidebar", "when": "view == gitea.pullRequests && !gitea.prSession.creating", "group": "navigation" },
+        { "command": "gitea.clearActivePR", "when": "view == gitea.prDiff && gitea.prSession.active", "group": "navigation" },
+        { "command": "gitea.refreshCI", "when": "view == gitea.ciRuns", "group": "navigation" },
+        { "command": "gitea.refreshIssues", "when": "view == gitea.issues", "group": "navigation" },
+        { "command": "gitea.createIssue", "when": "view == gitea.issues", "group": "navigation" }
       ],
       "view/item/context": [
-        {
-          "command": "gitea.activatePR",
-          "when": "viewItem == pullRequest",
-          "group": "inline@1"
-        },
-        {
-          "command": "gitea.checkoutPR",
-          "when": "viewItem == pullRequest",
-          "group": "pr@1"
-        },
-        {
-          "command": "gitea.viewPRDetail",
-          "when": "viewItem == pullRequest",
-          "group": "pr@2"
-        },
-        {
-          "command": "gitea.openPR",
-          "when": "viewItem == pullRequest",
-          "group": "pr@3"
-        },
-        {
-          "command": "gitea.approvePR",
-          "when": "viewItem == pullRequest",
-          "group": "pr@4"
-        },
-        {
-          "command": "gitea.mergePR",
-          "when": "viewItem == pullRequest",
-          "group": "pr@5"
-        },
-        {
-          "command": "gitea.refreshRepo",
-          "when": "viewItem == repoGroup",
-          "group": "inline"
-        },
-        {
-          "command": "gitea.refreshJob",
-          "when": "viewItem == ciJob",
-          "group": "inline"
-        },
-        {
-          "command": "gitea.viewLogs",
-          "when": "viewItem == ciJob",
-          "group": "ci@1"
-        },
-        {
-          "command": "gitea.openRunInBrowser",
-          "when": "viewItem == ciRun",
-          "group": "ci@2"
-        },
-        {
-          "command": "gitea.rerunWorkflow",
-          "when": "viewItem == ciRun",
-          "group": "ci@3"
-        },
-        {
-          "command": "gitea.cancelRun",
-          "when": "viewItem == ciRun",
-          "group": "ci@4"
-        },
-        {
-          "command": "gitea.viewIssueDetail",
-          "when": "viewItem == issue_open || viewItem == issue_closed",
-          "group": "issue@1"
-        },
-        {
-          "command": "gitea.openIssue",
-          "when": "viewItem == issue_open || viewItem == issue_closed",
-          "group": "issue@2"
-        },
-        {
-          "command": "gitea.addIssueComment",
-          "when": "viewItem == issue_open || viewItem == issue_closed",
-          "group": "issue@3"
-        },
-        {
-          "command": "gitea.closeIssue",
-          "when": "viewItem == issue_open",
-          "group": "issue@4"
-        },
-        {
-          "command": "gitea.reopenIssue",
-          "when": "viewItem == issue_closed",
-          "group": "issue@4"
-        }
+        { "command": "gitea.activatePR", "when": "viewItem == pullRequest", "group": "inline@1" },
+        { "command": "gitea.checkoutPR", "when": "viewItem == pullRequest", "group": "pr@1" },
+        { "command": "gitea.viewPRDetail", "when": "viewItem == pullRequest", "group": "pr@2" },
+        { "command": "gitea.openPR", "when": "viewItem == pullRequest", "group": "pr@3" },
+        { "command": "gitea.approvePR", "when": "viewItem == pullRequest", "group": "pr@4" },
+        { "command": "gitea.mergePR", "when": "viewItem == pullRequest", "group": "pr@5" },
+        { "command": "gitea.refreshRepo", "when": "viewItem == repoGroup", "group": "inline" },
+        { "command": "gitea.refreshJob", "when": "viewItem == ciJob", "group": "inline" },
+        { "command": "gitea.viewLogs", "when": "viewItem == ciJob", "group": "ci@1" },
+        { "command": "gitea.openRunInBrowser", "when": "viewItem == ciRun", "group": "ci@2" },
+        { "command": "gitea.rerunWorkflow", "when": "viewItem == ciRun", "group": "ci@3" },
+        { "command": "gitea.cancelRun", "when": "viewItem == ciRun", "group": "ci@4" },
+        { "command": "gitea.viewIssueDetail", "when": "viewItem == issue_open || viewItem == issue_closed", "group": "issue@1" },
+        { "command": "gitea.openIssue", "when": "viewItem == issue_open || viewItem == issue_closed", "group": "issue@2" },
+        { "command": "gitea.addIssueComment", "when": "viewItem == issue_open || viewItem == issue_closed", "group": "issue@3" },
+        { "command": "gitea.closeIssue", "when": "viewItem == issue_open", "group": "issue@4" },
+        { "command": "gitea.reopenIssue", "when": "viewItem == issue_closed", "group": "issue@4" }
       ]
     }
   },
