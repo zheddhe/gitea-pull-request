@@ -60,6 +60,12 @@ export class CreatePullRequestViewProvider
   }
 
   async start(): Promise<void> {
+    if (this.draft && this.session.current.kind === "creating") {
+      this.render();
+      await vscode.commands.executeCommand(`${CreatePullRequestViewProvider.viewType}.focus`);
+      return;
+    }
+
     const repoInfo = await this.pickRepository();
     if (!repoInfo) {
       return;
