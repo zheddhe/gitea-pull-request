@@ -96,7 +96,7 @@ Generated packages are kept outside the source tree under:
 .artifacts/vsix/gitea-pull-request-<version>.vsix
 ```
 
-`.artifacts/` is ignored by Git and is the canonical location for disposable local build outputs.
+`.artifacts/` is ignored by Git and is the canonical location for disposable local build outputs. The directory can later host other generated developer artifacts without polluting the repository root.
 
 To force-install the package that was just built into the local VS Code installation:
 
