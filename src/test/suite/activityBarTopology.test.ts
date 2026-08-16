@@ -93,7 +93,7 @@ suite("Activity Bar topology", () => {
     assert.match(source, /TreeItemCollapsibleState\.Expanded/);
   });
 
-  test("isolates standard and create-mode Gitea layouts", () => {
+  test("isolates standard and focused create-mode Gitea layouts", () => {
     const general = packageJson.contributes?.views?.giteaPullRequest ?? [];
     const byId = new Map(general.map((view) => [view.id, view]));
 
@@ -104,6 +104,22 @@ suite("Activity Bar topology", () => {
 
     assert.strictEqual(
       byId.get("gitea.createPullRequest")?.when,
+      "gitea.prSession.creating",
+    );
+    assert.strictEqual(
+      byId.get("gitea.issuesCreateCompact")?.visibility,
+      "collapsed",
+    );
+    assert.strictEqual(
+      byId.get("gitea.ciRunsCreateCompact")?.visibility,
+      "collapsed",
+    );
+    assert.strictEqual(
+      byId.get("gitea.issuesCreateCompact")?.when,
+      "gitea.prSession.creating",
+    );
+    assert.strictEqual(
+      byId.get("gitea.ciRunsCreateCompact")?.when,
       "gitea.prSession.creating",
     );
   });
