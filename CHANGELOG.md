@@ -9,11 +9,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 ### Added
 
 - Native **Refresh Active Pull Request** title action in **Changes in Pull Request**, reusing the existing safe explicit refresh/rebind path.
+- Dedicated temporary Create-mode aliases for Pull Requests, Issues and CI / Actions so VS Code keeps a separate layout memory from the normal Gitea workspace.
 
 ### Changed
 
 - **Changes in Pull Request** and **Review Pull Request** now use a consistent native title-action order: Refresh first, Close active PR second.
+- **Create Pull Request** and **Pull Request Merged** expose native Close actions mapped to their non-destructive lifecycle completion semantics.
 - Phase 6 keeps PR refresh explicit and event-driven rather than reintroducing polling.
+- The normal Gitea view IDs no longer carry Create-mode `initialSize` weights. During creation, temporary view IDs are shown instead: Create is dominant, Pull Requests secondary, and Issues / CI compact. Closing Create restores the normal view IDs and therefore their remembered user layout.
 
 ## [0.6.0] - 2026-08-17
 
@@ -29,14 +32,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 - **Changes in Pull Request**, **Review Pull Request** and **Pull Request Merged** live in the dedicated contextual pull-request workspace.
 - Activating a pull request automatically focuses the contextual Gitea Pull Request container after the active session is established.
 - The existing general-container contribution identity is retained to reduce VS Code layout-state disruption during the topology split.
-- On first entry into the Gitea workspace, repository groups plus **All Open** and **Waiting for my review** are expanded by default so the primary open/assigned review queues are immediately visible.
+- Repository groups plus **All Open** and **Waiting for my review** expand by default on first entry into the Gitea workspace.
 - Phase 6 now owns the broader visual/ergonomic polish, Changes-view refresh title action, PR-centric CI refinement, notifications, Markdown and accessibility work.
 
 ### Validation
 
-Interactive Phase 5 validation confirmed the dual-container structure, icon coexistence with GitHub Pull Requests, active PR navigation, post-merge cleanup lifecycle, and removal of the contextual merged view once cleanup completes.
+Interactive Phase 5 validation confirmed that the dual-container structure and both Activity Bar icons match the intended workflow and remain visually distinguishable alongside GitHub Pull Requests.
 
-Validation also covered create placement and mixed GitHub/Gitea coexistence.
+Validation also covered active-to-merged visibility, local/remote cleanup, cleanup completion returning the contextual workspace to idle, create placement, and mixed GitHub/Gitea coexistence.
 
 ## [0.5.0] - 2026-08-16
 
@@ -74,7 +77,7 @@ Interactive Phase 4 validation covered transition to the dedicated post-merge vi
 - Top-level PR comments directly from the review sidebar.
 - Approve and Request Changes review actions with Gitea permission/errors left authoritative.
 - Merge-readiness summary combining PR state, current reviews, target-branch policy and combined CI/check status.
-- Repository-supported merge method selection for merge commit, squash or rebase, with persisted workspace preference.
+- Repository-supported merge method selection for merge commit, squash and rebase, with persisted workspace preference.
 - Safe **Checkout '<base>'** action scoped to the active Gitea repository.
 - Explicit `active -> merged` session transition after successful merge, including local/remote head-branch presence for the Phase 4 cleanup flow.
 - Diagnostic logging for PR session/coordinator, review-readiness API calls and merge attempts.
@@ -141,7 +144,7 @@ Interactive Phase 3 validation covered pending/failing/successful CI checks, rev
 
 ### Changed
 
-- `Changes in Pull Request` is driven by the active PR session during the incremental migration.
+- **Changes in Pull Request** is driven by the active PR session during the incremental migration.
 - Repository detection is scoped to Gitea-compatible/authenticated hosts so GitHub, GitLab, Bitbucket and Azure DevOps repositories can coexist in the same VS Code workspace without being surfaced as Gitea repositories.
 - The Activity Bar container uses a standalone Gitea Pull Request identity instead of reusing the legacy container state.
 - The Activity Bar icon represents a pull-request workflow.
