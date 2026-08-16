@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { AuthManager } from "./auth/authManager";
 import { GiteaApiClient } from "./api/giteaApiClient";
+import { PullRequestMetadataApi } from "./api/pullRequestMetadataApi";
 import { RepoManager } from "./context/repoManager";
 import { PullRequestProvider } from "./views/pullRequestProvider";
 import { CIRunsProvider } from "./views/ciRunsProvider";
@@ -25,6 +26,7 @@ export async function activate(
   const auth = new AuthManager(context);
   const repoManager = new RepoManager(() => auth.getServerUrls());
   const api = new GiteaApiClient(auth);
+  const metadataApi = new PullRequestMetadataApi(auth);
   const prSession = new PullRequestSessionService();
   const prSessionCoordinator = new PullRequestSessionCoordinator(
     api,
@@ -35,6 +37,7 @@ export async function activate(
   const prProvider = new PullRequestProvider(api, repoManager, auth);
   const createPullRequestView = new CreatePullRequestViewProvider(
     api,
+    metadataApi,
     repoManager,
     prSession,
     prProvider,
