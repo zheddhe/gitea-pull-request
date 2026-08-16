@@ -11,6 +11,7 @@ import { registerAuthCommands } from "./commands/authCommands";
 import { registerIssueCommands } from "./commands/issueCommands";
 import { initOutputChannel } from "./debug/outputChannel";
 import { registerPullRequestSessionCommands } from "./features/pullRequests/commands/sessionCommands";
+import { registerRefreshActivePullRequestCommand } from "./features/pullRequests/commands/refreshActivePullRequestCommand";
 import { BranchCleanupService } from "./features/pullRequests/services/branchCleanupService";
 import { PullRequestSessionCoordinator } from "./features/pullRequests/services/pullRequestSessionCoordinator";
 import { PullRequestSessionService } from "./features/pullRequests/services/pullRequestSessionService";
@@ -106,6 +107,13 @@ export async function activate(
     statusBar,
   );
   registerPullRequestSessionCommands(context, prSession);
+  registerRefreshActivePullRequestCommand(
+    context,
+    api,
+    repoManager,
+    prSession,
+    prProvider,
+  );
   registerPRCommands(context, api, repoManager, auth, prProvider);
   registerCICommands(context, api, ciProvider);
   registerIssueCommands(context, api, repoManager, auth, issuesProvider);
