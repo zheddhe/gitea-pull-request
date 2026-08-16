@@ -3,6 +3,10 @@ import { GiteaApiClient } from "../api/giteaApiClient";
 import type { RepoInfo } from "../context/repoManager";
 import type { GiteaWorkflowJob } from "../api/types";
 
+interface LiveLogMessage {
+  command: "refresh" | "openInBrowser" | "stopStreaming";
+}
+
 export class LiveLogPanel {
   private static panels = new Map<number, LiveLogPanel>();
   private readonly panel: vscode.WebviewPanel;
@@ -47,7 +51,7 @@ export class LiveLogPanel {
     this.panel = panel;
     panel.onDidDispose(() => this.dispose(), null, this.disposables);
     panel.webview.onDidReceiveMessage(
-      (msg: { command: string; data?: any }) => this.handleMessage(msg),
+      (msg: LiveLogMessage) => this.handleMessage(msg),
       null,
       this.disposables,
     );
@@ -63,10 +67,7 @@ export class LiveLogPanel {
     this.updateHtml();
   }
 
-  private async handleMessage(msg: {
-    command: string;
-    data?: any;
-  }): Promise<void> {
+  private async handleMessage(msg: LiveLogMessage): Promise<void> {
     switch (msg.command) {
       case "refresh":
         await this.fetchLogs();
@@ -146,7 +147,7 @@ export class LiveLogPanel {
         isComplete: this.isJobComplete,
         autoScroll: newLogsAdded && !this.isJobComplete,
       });
-    } catch (err) {
+    } catch {
       // Silently handle errors during streaming
     }
   }
