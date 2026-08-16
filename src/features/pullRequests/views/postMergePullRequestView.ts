@@ -22,7 +22,7 @@ type PostMergeMessage =
   | { type: "done" };
 
 interface CleanupQuickPickItem extends vscode.QuickPickItem {
-  kind: "local" | "remote";
+  cleanupKind: "local" | "remote";
 }
 
 export class PostMergePullRequestViewProvider
@@ -168,7 +168,7 @@ export class PostMergePullRequestViewProvider
     const items: CleanupQuickPickItem[] = [];
     if (plan.canDeleteLocal && plan.localBranch) {
       items.push({
-        kind: "local",
+        cleanupKind: "local",
         label: `$(git-branch) Local: ${plan.localBranch}`,
         description: plan.checkoutBaseRequired
           ? `Checkout ${plan.checkoutBase} first`
@@ -178,7 +178,7 @@ export class PostMergePullRequestViewProvider
     }
     if (plan.canDeleteRemote && plan.remoteBranch) {
       items.push({
-        kind: "remote",
+        cleanupKind: "remote",
         label: `$(cloud) Remote: ${plan.remoteBranch.remote}/${plan.remoteBranch.branch}`,
         description: "Delete branch from remote",
         picked: true,
@@ -190,15 +190,15 @@ export class PostMergePullRequestViewProvider
       return;
     }
 
-    const selected = await vscode.window.showQuickPick(items, {
+    const selected = await vscode.window.showQuickPick<CleanupQuickPickItem>(items, {
       canPickMany: true,
       placeHolder: "Select branches to delete. Local and remote cleanup are independent.",
       title: `Clean up PR #${state.pullRequest.number}`,
     });
     if (!selected || selected.length === 0) return;
 
-    const deleteLocal = selected.some((item) => item.kind === "local");
-    const deleteRemote = selected.some((item) => item.kind === "remote");
+    const deleteLocal = selected.some((item) => item.cleanupKind === "local");
+    const deleteRemote = selected.some((item) => item.cleanupKind === "remote");
     const labels = selected.map((item) => item.label.replace(/^\$\([^)]*\)\s*/, ""));
     const confirm = await vscode.window.showWarningMessage(
       `Delete ${labels.join(" and ")}?`,
