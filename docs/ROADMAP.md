@@ -17,6 +17,34 @@ The existing codebase remains the technical foundation where it is already healt
 5. **Progressive migration** — preserve working functionality while replacing the current PR orchestration incrementally.
 6. **Full detail remains available** — the existing PR detail experience remains an alternative/secondary view rather than the primary workflow.
 
+## Versioning during the transformation
+
+Until the product reaches a stable `1.0.0`, each completed transformation phase advances the standalone minor version. This makes installed VSIX packages and changelog entries identify the exact migration boundary being tested.
+
+| Transformation milestone | Product version |
+|---|---:|
+| Phase 0 — Product split and foundation | `0.1.0` |
+| Phase 1 — Active pull-request model | `0.2.0` |
+| Phase 2 — Sidebar-first PR creation | `0.3.0` |
+| Phase 3 — Sidebar-first review and merge | `0.4.0` |
+| Phase 4 — Post-merge branch lifecycle | `0.5.0` |
+| Phase 5 — Secondary workflows and polish | `0.6.0` |
+
+Patch versions (`0.x.1`, `0.x.2`, …) are reserved for corrections that do not introduce the next roadmap phase. The phase-to-minor mapping is a migration convention, not a replacement for Semantic Versioning after `1.0.0`.
+
+### Phase completion / release gate
+
+Before a phase PR is marked ready for merge, all of the following must be reviewed together:
+
+1. implementation and tests;
+2. `package.json` version and synchronized `package-lock.json`;
+3. `CHANGELOG.md` entry for the target version;
+4. `README.md` if user-visible behavior, installation or workflow changed;
+5. this roadmap and the phase Story acceptance criteria;
+6. `make verify` and local VSIX installation/interactive validation for user-visible changes.
+
+A phase PR remains draft until this documentation/release review is complete. The merge commit therefore represents a coherent product increment rather than only a code increment.
+
 ## Target workflow state model
 
 ```text
@@ -61,6 +89,8 @@ The state will be owned by a dedicated `PullRequestSessionService` exposing an `
 
 ## Phase 0 — Product split and foundation
 
+**Release:** `0.1.0`
+
 ### Goal
 
 Establish **Gitea Pull Request** as the canonical product and prepare the codebase for state-driven migration without changing the working PR workflow yet.
@@ -93,6 +123,8 @@ Establish **Gitea Pull Request** as the canonical product and prepare the codeba
 
 ## Phase 1 — Active pull-request model
 
+**Release target:** `0.2.0`
+
 ### Goal
 
 Make one explicit pull request the active workspace context and drive contextual sidebar views from that state.
@@ -109,6 +141,7 @@ Make one explicit pull request the active workspace context and drive contextual
 - Show/hide `Changes in Pull Request` and `Review Pull Request` contextually.
 - Preserve the existing full-detail panel as `Open Full Details`.
 - Ensure refresh/repository changes invalidate stale active state safely.
+- Ensure Gitea repository discovery coexists cleanly with GitHub and other VCS/forge integrations in multi-repository workspaces.
 
 ### Acceptance criteria
 
@@ -116,10 +149,13 @@ Make one explicit pull request the active workspace context and drive contextual
 - Changes view follows the active PR.
 - Review view visibility follows the active PR.
 - Closing/switching repository cannot leave an invalid active PR session.
+- GitHub/GitLab/Bitbucket/Azure DevOps repositories are not surfaced as Gitea repositories unless explicitly configured as the Gitea endpoint.
 
 ---
 
 ## Phase 2 — Sidebar-first PR creation
+
+**Release target:** `0.3.0`
 
 ### Goal
 
@@ -159,6 +195,8 @@ Create
 ---
 
 ## Phase 3 — Sidebar-first review and merge
+
+**Release target:** `0.4.0`
 
 ### Goal
 
@@ -202,6 +240,8 @@ Review Pull Request #N
 
 ## Phase 4 — Post-merge branch lifecycle
 
+**Release target:** `0.5.0`
+
 ### Goal
 
 Provide explicit, safe cleanup after a successful merge.
@@ -235,6 +275,8 @@ Checkout '<base>' without deleting branch
 ---
 
 ## Phase 5 — Secondary workflows and polish
+
+**Release target:** `0.6.0`
 
 ### Goal
 
@@ -318,4 +360,4 @@ Minimum regression workflows:
 
 ## Migration rule
 
-A phase is complete only when its new workflow is functional and the old behavior it replaces can be removed without losing a supported capability. The project should remain buildable and usable at every phase boundary.
+A phase is complete only when its new workflow is functional, its documentation/version metadata is coherent, the old behavior it replaces can be removed without losing a supported capability, and the phase release gate has passed. The project should remain buildable and usable at every phase boundary.

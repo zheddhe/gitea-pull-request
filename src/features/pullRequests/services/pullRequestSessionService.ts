@@ -42,11 +42,13 @@ export class PullRequestSessionService implements vscode.Disposable {
   }
 
   async activate(
+    repository: RepositoryRef,
     pullRequest: GiteaPullRequest,
     checkoutState: CheckoutState = { kind: "notCheckedOut" },
   ): Promise<void> {
     await this.transition({
       kind: "active",
+      repository,
       pullRequest,
       checkoutState,
     });
@@ -64,6 +66,7 @@ export class PullRequestSessionService implements vscode.Disposable {
   }
 
   async markMerged(
+    repository: RepositoryRef,
     pullRequest: GiteaPullRequest,
     options: {
       localBranchExists: boolean;
@@ -72,9 +75,26 @@ export class PullRequestSessionService implements vscode.Disposable {
   ): Promise<void> {
     await this.transition({
       kind: "merged",
+      repository,
       pullRequest,
       ...options,
     });
+  }
+
+  async invalidateIfRepositoryUnavailable(
+    availableRepositoryKeys: Iterable<string>,
+  ): Promise<boolean> {
+    if (this.state.kind === "idle") {
+      return false;
+    }
+
+    const available = new Set(availableRepositoryKeys);
+    if (available.has(this.state.repository.key)) {
+      return false;
+    }
+
+    await this.clear();
+    return true;
   }
 
   async clear(): Promise<void> {
@@ -104,6 +124,16 @@ export class PullRequestSessionService implements vscode.Disposable {
       this.setContextKey("gitea.prSession.creating", creating),
       this.setContextKey("gitea.prSession.merged", merged),
       this.setContextKey("gitea.prSession.checkedOut", checkedOut),
+      this.setContextKey(
+        "gitea.prSession.repositoryKey",
+        this.state.kind === "idle" ? undefined : this.state.repository.key,
+      ),
+      this.setContextKey(
+        "gitea.prSession.pullRequestNumber",
+        this.state.kind === "active" || this.state.kind === "merged"
+          ? this.state.pullRequest.number
+          : undefined,
+      ),
     ]);
   }
 }

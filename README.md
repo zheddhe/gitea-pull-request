@@ -4,11 +4,27 @@
 
 The project is evolving toward a **sidebar-first** pull-request workflow inspired by the ergonomics of GitHub Pull Requests for VS Code while remaining implemented specifically for Gitea and its REST API.
 
+## Current release line
+
+The standalone product line uses roadmap phases as minor-version boundaries while the extension is still pre-`1.0.0`:
+
+| Phase | Release |
+| --- | ---: |
+| Phase 0 — product split and foundation | `0.1.0` |
+| Phase 1 — active pull-request model | `0.2.0` |
+| Phase 2 — sidebar-first PR creation | `0.3.0` |
+| Phase 3 — sidebar-first review and merge | `0.4.0` |
+| Phase 4 — post-merge lifecycle | `0.5.0` |
+| Phase 5 — secondary workflows and polish | `0.6.0` |
+
+Patch releases are reserved for corrections within an existing phase boundary. See [`docs/ROADMAP.md`](docs/ROADMAP.md) for the detailed release gate.
+
 ## Product direction
 
 The primary workflow is intended to stay in the VS Code Activity Bar as much as possible:
 
 - browse pull requests grouped by repository and workflow category;
+- activate one pull request as the current workspace context;
 - create pull requests;
 - inspect changed files with the native VS Code diff editor;
 - review, comment and merge pull requests;
@@ -18,22 +34,31 @@ The primary workflow is intended to stay in the VS Code Activity Bar as much as 
 
 The migration is incremental. Existing working functionality is preserved while the pull-request orchestration is progressively moved to a state-driven, sidebar-first model.
 
-See [`docs/ROADMAP.md`](docs/ROADMAP.md) for the transformation phases and architecture decisions.
-
 ---
 
 ## Current features
 
 | Feature | Description |
 | --- | --- |
-| **Pull Requests** | Browse, filter, merge, close and re-open PRs with category folders |
+| **Pull Requests** | Browse and filter Gitea PRs with repository/category grouping |
+| **Active PR session** | Activate one Gitea PR as the contextual workspace state; switching PR updates the contextual changes view |
 | **Inline Code Review** | Review diffs, comment, approve, request changes and submit reviews |
 | **PR Diff Tree** | Sidebar directory tree with file status, viewed-state checkboxes and `vscode.diff` integration |
 | **PR Detail** | Full alternative detail panel for description, reviews, commits and metadata |
 | **Issues** | Browse, create, close, re-open and comment on issues |
 | **CI / Actions** | Workflow runs, jobs, live logs, rerun and cancel operations |
-| **Multi-repo** | Detect Git repositories/remotes in the current workspace |
+| **Multi-repo / multi-VCS** | Detect Gitea repositories while allowing GitHub and other forge repositories to coexist in the same workspace |
 | **Status Bar** | Active repository and authentication context |
+
+---
+
+## Multi-VCS coexistence
+
+Gitea Pull Request is designed to coexist with extensions such as **GitHub Pull Requests and Issues** in a workspace containing repositories from several forges.
+
+Repository discovery is scoped to Gitea endpoints known through authentication/configuration and excludes public GitHub, GitLab, Bitbucket and Azure DevOps hosts from implicit Gitea detection. A GitHub repository should therefore remain managed by the GitHub extension while Gitea repositories appear in the dedicated **Gitea Pull Request** Activity Bar container.
+
+The standalone Activity Bar container has its own identifier and layout state; it does not reuse the legacy pre-standalone container identity.
 
 ---
 
@@ -125,7 +150,7 @@ Generated packages are kept outside the source tree under:
 .artifacts/vsix/gitea-pull-request-<version>.vsix
 ```
 
-`.artifacts/` is ignored by Git and is the canonical location for disposable local build outputs. The directory can later host other generated developer artifacts without polluting the repository root.
+`.artifacts/` is ignored by Git and is the canonical location for disposable local build outputs.
 
 To force-install the package that was just built into the local VS Code installation:
 
@@ -186,7 +211,7 @@ Run **`Gitea: Sign In`** from the Command Palette and provide the Gitea server U
 | `gitea.itemsPerPage` | `20` | Pull request / CI items per page |
 | `gitea.reviewsPerPage` | `20` | Reviews per page |
 
-Existing internal command, configuration and view identifiers remain under the stable `gitea.*` namespace during the product split.
+Existing command and configuration identifiers remain under the stable `gitea.*` namespace. The standalone Activity Bar container uses its own product-specific identifier so it can coexist with the previous extension layout and other forge extensions.
 
 ---
 
@@ -194,15 +219,19 @@ Existing internal command, configuration and view identifiers remain under the s
 
 ### Pull Requests
 
-The **Pull Requests** panel groups PRs by repository and categories such as **Waiting For My Review**, **Created By Me** and **All Open**.
+The **Pull Requests** panel groups Gitea PRs by repository and categories such as **Waiting For My Review**, **Created By Me** and **All Open**. This tree remains intentionally familiar while the sidebar-first creation/review experiences are introduced incrementally.
+
+### Activate a pull request
+
+A PR can be activated from the Pull Requests tree. The active PR becomes the current Gitea PR workspace context. Activating another PR replaces that context rather than opening an independent persistent diff state.
 
 ### Changes in Pull Request
 
-The **Changes in Pull Request** tree exposes changed files using native VS Code file icons, directory grouping, viewed-state checkboxes and the native diff editor.
+The **Changes in Pull Request** tree follows the active PR session and exposes changed files using native VS Code file icons, directory grouping, viewed-state checkboxes and the native diff editor.
 
 ### Full PR details
 
-The existing detailed PR webview remains available for deeper inspection while the normal workflow is progressively moved inline into the sidebar.
+The existing detailed PR webview remains available through **Open Full Pull Request Details** for deeper inspection while the normal workflow is progressively moved inline into the sidebar.
 
 ---
 
@@ -218,12 +247,14 @@ The current transformation is tracked in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 The high-level phases are:
 
-- **Phase 0** — product split and foundation
-- **Phase 1** — active pull-request session model
-- **Phase 2** — sidebar-first PR creation
-- **Phase 3** — sidebar-first review and merge
-- **Phase 4** — post-merge lifecycle and branch cleanup
-- **Phase 5** — secondary workflows and polish
+- **Phase 0 / 0.1.0** — product split and foundation
+- **Phase 1 / 0.2.0** — active pull-request session model
+- **Phase 2 / 0.3.0** — sidebar-first PR creation
+- **Phase 3 / 0.4.0** — sidebar-first review and merge
+- **Phase 4 / 0.5.0** — post-merge lifecycle and branch cleanup
+- **Phase 5 / 0.6.0** — secondary workflows and polish
+
+Each phase is reviewed as a coherent release increment: code/tests, package + lock metadata, changelog, user documentation, roadmap/Story, Make validation and local VSIX validation must agree before the phase PR is merged.
 
 ---
 
