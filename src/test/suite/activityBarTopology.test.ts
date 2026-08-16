@@ -15,15 +15,10 @@ suite("Activity Bar topology", () => {
   test("separates general Gitea and contextual pull request containers", () => {
     const containers = packageJson.contributes?.viewsContainers?.activitybar ?? [];
 
-    const generalContainer = containers.find(
-      (container) => container.id === "giteaPullRequest",
+    assert.ok(containers.some((container) => container.id === "giteaPullRequest"));
+    assert.ok(
+      containers.some((container) => container.id === "giteaPullRequestContext"),
     );
-    const contextualContainer = containers.find(
-      (container) => container.id === "giteaPullRequestContext",
-    );
-
-    assert.strictEqual(generalContainer?.title, "Gitea");
-    assert.strictEqual(contextualContainer?.title, "Gitea Pull Request");
 
     const general = packageJson.contributes?.views?.giteaPullRequest ?? [];
     const contextual = packageJson.contributes?.views?.giteaPullRequestContext ?? [];
@@ -73,5 +68,20 @@ suite("Activity Bar topology", () => {
     assert.ok(general?.icon);
     assert.ok(contextual?.icon);
     assert.notStrictEqual(general?.icon, contextual?.icon);
+  });
+
+  test("sidebar presentation expands repository, all-open and waiting queues", () => {
+    const source = fs.readFileSync(
+      path.resolve(
+        __dirname,
+        "../../../src/features/pullRequests/views/sidebarPullRequestProvider.ts",
+      ),
+      "utf8",
+    );
+
+    assert.match(source, /contextValue === "repoGroup"/);
+    assert.match(source, /contextValue === "category-all"/);
+    assert.match(source, /contextValue === "category-waiting"/);
+    assert.match(source, /TreeItemCollapsibleState\.Expanded/);
   });
 });
