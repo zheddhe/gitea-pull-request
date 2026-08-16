@@ -70,6 +70,24 @@ suite("reviewPullRequestModel", () => {
     );
   });
 
+  test("does not misreport no-delta mergeable=false as a server conflict", () => {
+    const readiness = evaluateMergeReadiness(
+      pullRequest({
+        mergeable: false,
+        changed_files: 0,
+        additions: 0,
+        deletions: 0,
+      }),
+      combinedStatus("success"),
+      [],
+      { user_can_merge: true },
+    );
+
+    assert.strictEqual(readiness.canMerge, false);
+    assert.ok(readiness.blockingReasons.some((reason) => reason.includes("No changes to merge")));
+    assert.ok(!readiness.blockingReasons.some((reason) => reason.includes("Gitea reports")));
+  });
+
   test("blocks pull requests Gitea reports as non-mergeable", () => {
     const readiness = evaluateMergeReadiness(
       pullRequest({ mergeable: false }),
