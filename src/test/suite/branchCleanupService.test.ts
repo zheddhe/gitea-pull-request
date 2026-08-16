@@ -1,7 +1,10 @@
 import * as assert from "assert";
 import {
+  executeBranchCleanupPlan,
   planBranchCleanup,
   resolveBranchIdentity,
+  type BranchCleanupOperations,
+  type BranchCleanupPlan,
   type BranchIdentity,
   type BranchRefSnapshot,
 } from "../../features/pullRequests/services/branchCleanupService";
@@ -17,7 +20,10 @@ suite("BranchCleanupService identity resolution", () => {
 
     const result = resolveBranchIdentity(
       refs,
-      { name: "feature/work", upstream: { name: "origin/feature/work", remote: "origin" } },
+      {
+        name: "feature/work",
+        upstream: { name: "origin/feature/work", remote: "origin" },
+      },
       "feature/work",
       "main",
     );
@@ -160,5 +166,129 @@ suite("BranchCleanupService cleanup planning", () => {
 
     assert.strictEqual(plan.checkoutBaseRequired, true);
     assert.strictEqual(plan.checkoutBase, "main");
+  });
+});
+
+suite("BranchCleanupService cleanup execution", () => {
+  function plan(overrides: Partial<BranchCleanupPlan> = {}): BranchCleanupPlan {
+    return {
+      localBranch: "local-work",
+      remoteBranch: { remote: "origin", branch: "feature/work" },
+      checkoutBaseRequired: true,
+      checkoutBase: "main",
+      canDeleteLocal: true,
+      canDeleteRemote: true,
+      ...overrides,
+    };
+  }
+
+  function operations(calls: string[]): BranchCleanupOperations {
+    return {
+      checkoutBase: async (branch) => {
+        calls.push(`checkout:${branch}`);
+      },
+      deleteLocal: async (branch) => {
+        calls.push(`local:${branch}`);
+      },
+      deleteRemote: async (remote, branch) => {
+        calls.push(`remote:${remote}/${branch}`);
+      },
+    };
+  }
+
+  test("checks out base before deleting a checked-out local branch", async () => {
+    const calls: string[] = [];
+    const result = await executeBranchCleanupPlan(
+      plan(),
+      { deleteLocal: true, deleteRemote: false },
+      operations(calls),
+    );
+
+    assert.deepStrictEqual(calls, ["checkout:main", "local:local-work"]);
+    assert.strictEqual(result.checkedOutBase, true);
+    assert.strictEqual(result.localDeleted, true);
+    assert.deepStrictEqual(result.errors, []);
+  });
+
+  test("checkout failure prevents local deletion", async () => {
+    const calls: string[] = [];
+    const ops = operations(calls);
+    ops.checkoutBase = async (branch) => {
+      calls.push(`checkout:${branch}`);
+      throw new Error("dirty worktree");
+    };
+
+    const result = await executeBranchCleanupPlan(
+      plan(),
+      { deleteLocal: true, deleteRemote: false },
+      ops,
+    );
+
+    assert.deepStrictEqual(calls, ["checkout:main"]);
+    assert.strictEqual(result.localDeleted, false);
+    assert.ok(result.errors[0]?.includes("dirty worktree"));
+  });
+
+  test("remote deletion remains independent when local checkout fails", async () => {
+    const calls: string[] = [];
+    const ops = operations(calls);
+    ops.checkoutBase = async (branch) => {
+      calls.push(`checkout:${branch}`);
+      throw new Error("checkout failed");
+    };
+
+    const result = await executeBranchCleanupPlan(
+      plan(),
+      { deleteLocal: true, deleteRemote: true },
+      ops,
+    );
+
+    assert.deepStrictEqual(calls, [
+      "checkout:main",
+      "remote:origin/feature/work",
+    ]);
+    assert.strictEqual(result.localDeleted, false);
+    assert.strictEqual(result.remoteDeleted, true);
+    assert.strictEqual(result.errors.length, 1);
+  });
+
+  test("supports remote-only cleanup", async () => {
+    const calls: string[] = [];
+    const result = await executeBranchCleanupPlan(
+      plan({
+        localBranch: undefined,
+        canDeleteLocal: false,
+        checkoutBaseRequired: false,
+      }),
+      { deleteLocal: false, deleteRemote: true },
+      operations(calls),
+    );
+
+    assert.deepStrictEqual(calls, ["remote:origin/feature/work"]);
+    assert.strictEqual(result.remoteDeleted, true);
+    assert.strictEqual(result.localDeleted, false);
+  });
+
+  test("reports partial remote failure without undoing local cleanup", async () => {
+    const calls: string[] = [];
+    const ops = operations(calls);
+    ops.deleteRemote = async (remote, branch) => {
+      calls.push(`remote:${remote}/${branch}`);
+      throw new Error("remote rejected deletion");
+    };
+
+    const result = await executeBranchCleanupPlan(
+      plan({ checkoutBaseRequired: false }),
+      { deleteLocal: true, deleteRemote: true },
+      ops,
+    );
+
+    assert.deepStrictEqual(calls, [
+      "local:local-work",
+      "remote:origin/feature/work",
+    ]);
+    assert.strictEqual(result.localDeleted, true);
+    assert.strictEqual(result.remoteDeleted, false);
+    assert.ok(result.errors[0]?.includes("remote rejected deletion"));
   });
 });
