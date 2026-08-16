@@ -1,9 +1,7 @@
 import * as vscode from "vscode";
 import { AuthManager } from "./auth/authManager";
-import { GiteaApiClient } from "./api/giteaApiClient";
 import { PullRequestMetadataApi } from "./api/pullRequestMetadataApi";
 import { RepoManager } from "./context/repoManager";
-import { PullRequestProvider } from "./views/pullRequestProvider";
 import { CIRunsProvider } from "./views/ciRunsProvider";
 import { IssuesProvider } from "./views/issuesProvider";
 import { StatusBarManager } from "./ui/statusBar";
@@ -16,8 +14,10 @@ import { registerPullRequestSessionCommands } from "./features/pullRequests/comm
 import { PullRequestSessionCoordinator } from "./features/pullRequests/services/pullRequestSessionCoordinator";
 import { PullRequestSessionService } from "./features/pullRequests/services/pullRequestSessionService";
 import { PullRequestReviewApi } from "./features/pullRequests/services/pullRequestReviewApi";
+import { ResilientGiteaApiClient } from "./features/pullRequests/services/resilientGiteaApiClient";
 import { CreatePullRequestViewProvider } from "./features/pullRequests/views/createPullRequestView";
 import { ReviewPullRequestViewProvider } from "./features/pullRequests/views/reviewPullRequestView";
+import { SidebarPullRequestProvider } from "./features/pullRequests/views/sidebarPullRequestProvider";
 
 export async function activate(
   context: vscode.ExtensionContext,
@@ -27,7 +27,7 @@ export async function activate(
 
   const auth = new AuthManager(context);
   const repoManager = new RepoManager(() => auth.getServerUrls());
-  const api = new GiteaApiClient(auth);
+  const api = new ResilientGiteaApiClient(auth);
   const metadataApi = new PullRequestMetadataApi(auth);
   const reviewApi = new PullRequestReviewApi(auth);
   const prSession = new PullRequestSessionService();
@@ -37,7 +37,7 @@ export async function activate(
     prSession,
   );
 
-  const prProvider = new PullRequestProvider(api, repoManager, auth);
+  const prProvider = new SidebarPullRequestProvider(api, repoManager, auth);
   const createPullRequestView = new CreatePullRequestViewProvider(
     api,
     metadataApi,
