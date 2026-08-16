@@ -75,6 +75,8 @@ Establish **Gitea Pull Request** as the canonical product and prepare the codeba
 - Introduce the feature-oriented pull-request directory structure progressively rather than through a big-bang move.
 - Define initial session state/context keys without wiring destructive workflow behavior.
 - Add baseline tests around session transitions before UI migration.
+- Add a reproducible Make-based developer workflow for clean dependency installation, compile/lint/test gates, VSIX packaging and local VS Code installation.
+- Keep disposable local packages under `.artifacts/vsix/` and align CI packaging with the same Make workflow.
 
 ### Acceptance criteria
 
@@ -83,6 +85,9 @@ Establish **Gitea Pull Request** as the canonical product and prepare the codeba
 - No working API feature is intentionally removed.
 - New PR session state has deterministic unit tests.
 - Existing detail panel can still be opened.
+- `make rebuild-vsix` performs a clean dependency install, validation and VSIX build.
+- `make reinstall-vsix` can force-install the generated package through the VS Code CLI.
+- Local and CI packaging use the same `.artifacts/vsix/` output convention and validation sequence.
 
 ---
 
