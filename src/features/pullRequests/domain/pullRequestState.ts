@@ -1,6 +1,7 @@
 import { GiteaPullRequest } from "../../../api/types";
 
 export interface RepositoryRef {
+  key: string;
   owner: string;
   name: string;
   fullName: string;
@@ -20,11 +21,13 @@ export type PullRequestWorkspaceState =
     }
   | {
       kind: "active";
+      repository: RepositoryRef;
       pullRequest: GiteaPullRequest;
       checkoutState: CheckoutState;
     }
   | {
       kind: "merged";
+      repository: RepositoryRef;
       pullRequest: GiteaPullRequest;
       localBranchExists: boolean;
       remoteBranchExists: boolean;
