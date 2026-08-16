@@ -1,6 +1,10 @@
 import * as vscode from "vscode";
+import { execFile } from "child_process";
+import { promisify } from "util";
 import type { RepoInfo } from "../../../context/repoManager";
 import { log } from "../../../debug/outputChannel";
+
+const execFileAsync = promisify(execFile);
 
 export interface BranchRefSnapshot {
   name?: string;
@@ -42,9 +46,31 @@ export interface BranchCleanupPlan {
   canDeleteRemote: boolean;
 }
 
+export interface BranchCleanupSelection {
+  deleteLocal: boolean;
+  deleteRemote: boolean;
+}
+
+export interface BranchCleanupResult {
+  checkedOutBase: boolean;
+  localDeleted: boolean;
+  remoteDeleted: boolean;
+  errors: string[];
+}
+
+export interface BranchCleanupOperations {
+  checkoutBase(branch: string): Promise<void>;
+  deleteLocal(branch: string): Promise<void>;
+  deleteRemote(remote: string, branch: string): Promise<void>;
+}
+
 interface GitRepositoryLike {
   rootUri: vscode.Uri;
   fetch(options: { remote?: string; ref?: string }): Promise<void>;
+  checkout(
+    treeish: string,
+    options?: { createNewBranch?: boolean; newBranchName?: string },
+  ): Promise<void>;
   state: {
     HEAD?: BranchRefSnapshot;
     refs: BranchRefSnapshot[];
@@ -94,9 +120,6 @@ export function resolveBranchIdentity(
 ): BranchIdentity {
   const currentBranch = head?.name;
 
-  // A local branch may have a different name from the PR head. Prefer the
-  // checked-out branch when its upstream tracks the PR head; only then fall
-  // back to an exact local-name match.
   const trackedLocalHead = tracksBranch(head, prHead) ? head?.name : undefined;
   const exactLocalHead = refs.find((ref) => !ref.remote && ref.name === prHead)?.name;
   const localHead = trackedLocalHead ?? exactLocalHead;
@@ -133,6 +156,53 @@ export function planBranchCleanup(identity: BranchIdentity): BranchCleanupPlan {
   };
 }
 
+export async function executeBranchCleanupPlan(
+  plan: BranchCleanupPlan,
+  selection: BranchCleanupSelection,
+  operations: BranchCleanupOperations,
+): Promise<BranchCleanupResult> {
+  const result: BranchCleanupResult = {
+    checkedOutBase: false,
+    localDeleted: false,
+    remoteDeleted: false,
+    errors: [],
+  };
+
+  let localDeletionAllowed = selection.deleteLocal && plan.canDeleteLocal && !!plan.localBranch;
+
+  if (localDeletionAllowed && plan.checkoutBaseRequired) {
+    try {
+      await operations.checkoutBase(plan.checkoutBase);
+      result.checkedOutBase = true;
+    } catch (error) {
+      result.errors.push(`Unable to checkout base branch '${plan.checkoutBase}': ${(error as Error).message}`);
+      localDeletionAllowed = false;
+    }
+  }
+
+  if (localDeletionAllowed && plan.localBranch) {
+    try {
+      await operations.deleteLocal(plan.localBranch);
+      result.localDeleted = true;
+    } catch (error) {
+      result.errors.push(`Unable to delete local branch '${plan.localBranch}': ${(error as Error).message}`);
+    }
+  }
+
+  if (selection.deleteRemote && plan.canDeleteRemote && plan.remoteBranch) {
+    try {
+      await operations.deleteRemote(plan.remoteBranch.remote, plan.remoteBranch.branch);
+      result.remoteDeleted = true;
+    } catch (error) {
+      result.errors.push(
+        `Unable to delete remote branch '${plan.remoteBranch.remote}/${plan.remoteBranch.branch}': ${(error as Error).message}`,
+      );
+    }
+  }
+
+  return result;
+}
+
 export class BranchCleanupService {
   async discover(
     repoInfo: RepoInfo,
@@ -165,6 +235,62 @@ export class BranchCleanupService {
       `[branch-cleanup] discovered repo=${repoInfo.label} prHead=${prHead} localHead=${identity.localHead ?? "none"} remoteHead=${identity.remoteHead?.refName ?? "none"} base=${base} localBase=${identity.localBase ?? "none"} remoteBase=${identity.remoteBase?.refName ?? "none"} current=${identity.currentBranch ?? "detached"}`,
     );
     return identity;
+  }
+
+  async checkoutBase(repoInfo: RepoInfo, identity: BranchIdentity): Promise<void> {
+    const repository = await this.requireGitRepository(repoInfo);
+    const branch = identity.localBase ?? identity.base;
+    try {
+      await repository.checkout(branch);
+    } catch (localError) {
+      const remoteBase = identity.remoteBase;
+      if (!remoteBase) throw localError;
+      await repository.checkout(remoteBase.refName, {
+        createNewBranch: true,
+        newBranchName: identity.base,
+      });
+    }
+    log(`[branch-cleanup] checked out base repo=${repoInfo.label} branch=${identity.base}`);
+  }
+
+  async cleanup(
+    repoInfo: RepoInfo,
+    identity: BranchIdentity,
+    selection: BranchCleanupSelection,
+  ): Promise<BranchCleanupResult> {
+    const plan = planBranchCleanup(identity);
+    const result = await executeBranchCleanupPlan(plan, selection, {
+      checkoutBase: async () => this.checkoutBase(repoInfo, identity),
+      deleteLocal: async (branch) => {
+        await this.git(repoInfo, ["branch", "-D", "--", branch]);
+        log(`[branch-cleanup] deleted local branch repo=${repoInfo.label} branch=${branch}`);
+      },
+      deleteRemote: async (remote, branch) => {
+        await this.git(repoInfo, ["push", remote, "--delete", branch]);
+        log(`[branch-cleanup] deleted remote branch repo=${repoInfo.label} branch=${remote}/${branch}`);
+      },
+    });
+
+    if (result.errors.length > 0) {
+      log(`[branch-cleanup] cleanup partial failure repo=${repoInfo.label} errors=${result.errors.join(" | ")}`);
+    } else {
+      log(
+        `[branch-cleanup] cleanup complete repo=${repoInfo.label} local=${result.localDeleted} remote=${result.remoteDeleted} checkout=${result.checkedOutBase}`,
+      );
+    }
+    return result;
+  }
+
+  private async git(repoInfo: RepoInfo, args: string[]): Promise<void> {
+    await execFileAsync("git", args, { cwd: repoInfo.rootPath });
+  }
+
+  private async requireGitRepository(repoInfo: RepoInfo): Promise<GitRepositoryLike> {
+    const repository = await this.gitRepository(repoInfo);
+    if (!repository) {
+      throw new Error(`No git repository found for ${repoInfo.label}.`);
+    }
+    return repository;
   }
 
   private async gitRepository(repoInfo: RepoInfo): Promise<GitRepositoryLike | undefined> {
