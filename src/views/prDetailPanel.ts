@@ -543,6 +543,7 @@ function escHtml(value: string): string {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
+    .split(String.fromCharCode(34))
+    .join("&quot;")
     .replace(/'/g, "&#39;");
 }
