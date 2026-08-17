@@ -134,14 +134,29 @@ suite("Activity Bar topology", () => {
     assert.strictEqual(byCommand("gitea.clearActivePR")?.group, "navigation@3");
   });
 
-  test("uses browser refresh then close on Review title", () => {
+  test("uses detail browser refresh then close on Review title", () => {
     const actions = packageJson.contributes?.menus?.["view/title"] ?? [];
     const when = "view == gitea.reviewPullRequest && gitea.prSession.active";
     const byCommand = (command: string) =>
       actions.find((item) => item.command === command && item.when === when);
-    assert.strictEqual(byCommand("gitea.openActivePR")?.group, "navigation@0");
-    assert.strictEqual(byCommand("gitea.refreshActivePR")?.group, "navigation@1");
-    assert.strictEqual(byCommand("gitea.clearActivePR")?.group, "navigation@2");
+    assert.strictEqual(byCommand("gitea.viewActivePRDetail")?.group, "navigation@0");
+    assert.strictEqual(byCommand("gitea.openActivePR")?.group, "navigation@1");
+    assert.strictEqual(byCommand("gitea.refreshActivePR")?.group, "navigation@2");
+    assert.strictEqual(byCommand("gitea.clearActivePR")?.group, "navigation@3");
+  });
+
+  test("activating a PR opens contextual views and its detail panel", () => {
+    const source = fs.readFileSync(
+      path.resolve(
+        __dirname,
+        "../../../src/features/pullRequests/commands/sessionCommands.ts",
+      ),
+      "utf8",
+    );
+    const activate = source.indexOf('"gitea.activatePR"');
+    const context = source.indexOf("PULL_REQUEST_CONTEXT_CONTAINER", activate);
+    const detail = source.indexOf('"gitea.viewActivePRDetail"', context);
+    assert.ok(activate >= 0 && context > activate && detail > context);
   });
 
   test("uses native refresh then close for Create Pull Request", () => {
