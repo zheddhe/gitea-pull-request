@@ -32,8 +32,7 @@ export class PullRequestReviewApi {
           context: typeof item?.context === "string" ? item.context : "",
           description:
             typeof item?.description === "string" ? item.description : "",
-          target_url:
-            typeof item?.target_url === "string" ? item.target_url : "",
+          target_url: normalizeTargetUrl(repoInfo.serverUrl, item?.target_url),
         }))
       : [];
 
@@ -198,5 +197,18 @@ function normalizeStatusState(
       return value;
     default:
       return "pending";
+  }
+}
+
+function normalizeTargetUrl(serverUrl: string, value: unknown): string {
+  if (typeof value !== "string" || !value.trim()) {
+    return "";
+  }
+
+  try {
+    return new URL(value, `${serverUrl.replace(/\/$/, "")}/`).toString();
+  } catch {
+    log(`[review-api] ignored invalid check target_url=${value}`);
+    return "";
   }
 }
