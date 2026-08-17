@@ -15,7 +15,6 @@ type MergedPullRequestState = Extract<
 >;
 
 type PostMergeMessage =
-  | { type: "refreshBranches" }
   | { type: "deleteBranches" }
   | { type: "checkoutBase" }
   | { type: "createNew" };
@@ -74,6 +73,15 @@ export class PostMergePullRequestViewProvider
     if (state) void this.loadIdentity(state);
   }
 
+  async refreshBranchState(): Promise<void> {
+    const state = this.mergedState();
+    if (!state || this.busy) return;
+    log(
+      `[post-merge-view] refreshing branch identity repo=${state.repository.fullName} pr=#${state.pullRequest.number}`,
+    );
+    await this.loadIdentity(state, true);
+  }
+
   dispose(): void {
     for (const disposable of this.disposables) disposable.dispose();
     this.disposables.length = 0;
@@ -85,9 +93,6 @@ export class PostMergePullRequestViewProvider
     if (!state) return;
 
     switch (message.type) {
-      case "refreshBranches":
-        await this.loadIdentity(state, true);
-        return;
       case "deleteBranches":
         await this.deleteBranches(state);
         return;
@@ -319,16 +324,14 @@ export class PostMergePullRequestViewProvider
           <button id="create" ${disabled}>Create New Pull Request…</button>
           <button id="delete" ${cleanupDisabled}>Delete Branch…</button>
           <button id="checkout" class="secondary" ${disabled}>Checkout '${escapeHtml(pr.base.ref)}' without deleting branch</button>
-          <button id="refresh" class="secondary" ${disabled}>Refresh branch state</button>
         </div>
-        <p class="muted">Use the × title action to keep branches and finish.</p>
+        <p class="muted">Use the ↻ title action to refresh branch state, or × to keep branches and finish.</p>
       </div>
       <script>
         const vscode = acquireVsCodeApi();
         document.getElementById('create')?.addEventListener('click', () => vscode.postMessage({ type: 'createNew' }));
         document.getElementById('delete')?.addEventListener('click', () => vscode.postMessage({ type: 'deleteBranches' }));
         document.getElementById('checkout')?.addEventListener('click', () => vscode.postMessage({ type: 'checkoutBase' }));
-        document.getElementById('refresh')?.addEventListener('click', () => vscode.postMessage({ type: 'refreshBranches' }));
       </script>
     `);
   }
