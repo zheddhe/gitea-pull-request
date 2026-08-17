@@ -4,6 +4,10 @@ on:
   release:
     types: [published]
 
+concurrency:
+  group: release-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+
 jobs:
   release:
     runs-on: ubuntu-latest
@@ -31,11 +35,23 @@ jobs:
         run: |
           set -euo pipefail
           package_version="$(node -p "require('./package.json').version")"
+          publisher="$(node -p "require('./package.json').publisher")"
+          package_name="$(node -p "require('./package.json').name")"
           tag_version="${RELEASE_TAG#v}"
+
           if [ "$tag_version" != "$package_version" ]; then
             echo "ERROR: release tag '$RELEASE_TAG' does not match package version '$package_version'." >&2
             exit 1
           fi
+          if [ "$publisher" != "zheddhe" ]; then
+            echo "ERROR: package publisher '$publisher' does not match Marketplace publisher 'zheddhe'." >&2
+            exit 1
+          fi
+          if [ "$package_name" != "gitea-pull-request" ]; then
+            echo "ERROR: unexpected package name '$package_name'." >&2
+            exit 1
+          fi
+
           echo "version=$package_version" >> "$GITHUB_OUTPUT"
           echo "vsix=.artifacts/vsix/gitea-pull-request-$package_version.vsix" >> "$GITHUB_OUTPUT"
 
@@ -68,4 +84,4 @@ jobs:
           echo "Version: **v${{ steps.version.outputs.version }}**" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "- VSIX uploaded to the GitHub release" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Published to VS Code Marketplace through GitHub OIDC trusted publishing" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Published as **zheddhe.gitea-pull-request** through GitHub OIDC trusted publishing" >> "$GITHUB_STEP_SUMMARY"
