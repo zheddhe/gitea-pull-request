@@ -393,19 +393,24 @@
           "group": "navigation@3"
         },
         {
-          "command": "gitea.openActivePR",
+          "command": "gitea.viewActivePRDetail",
           "when": "view == gitea.reviewPullRequest && gitea.prSession.active",
           "group": "navigation@0"
         },
         {
-          "command": "gitea.refreshActivePR",
+          "command": "gitea.openActivePR",
           "when": "view == gitea.reviewPullRequest && gitea.prSession.active",
           "group": "navigation@1"
         },
         {
-          "command": "gitea.clearActivePR",
+          "command": "gitea.refreshActivePR",
           "when": "view == gitea.reviewPullRequest && gitea.prSession.active",
           "group": "navigation@2"
+        },
+        {
+          "command": "gitea.clearActivePR",
+          "when": "view == gitea.reviewPullRequest && gitea.prSession.active",
+          "group": "navigation@3"
         },
         {
           "command": "gitea.refreshPostMerge",
