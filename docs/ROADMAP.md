@@ -210,25 +210,40 @@ Phase 6 interactive validation has covered:
 - branch management/review/check/readiness/action organization;
 - mixed Gitea/GitHub coexistence.
 
+### Phase 6 compatibility baseline
+
+For the `0.7.0` release line:
+
+- **VS Code 1.133.0+** is the declared minimum and extension-host tests default to VS Code `1.133.0`;
+- **Gitea 1.26.4+** is the documented baseline; `1.26.4` is the server version used for functional validation and older releases are not claimed as supported;
+- **Node.js 24.x** is the development, dependency-installation, CI, packaging and release baseline.
+
+The published `@types/vscode` package currently lags the VS Code product release; compilation therefore uses the latest available `^1.125.0` typings while runtime tests target the actual VS Code `1.133.0` baseline.
+
 ### Phase 6 release gate remaining
 
-Documentation/Marketplace-facing review is complete on the Phase 6 branch. Keep package metadata at `0.6.0` until the explicit promotion step.
+Version metadata is already promoted to `0.7.0`. The final dependency baseline changed after promotion, so `package-lock.json` must be regenerated under Node.js 24 and committed before validation.
 
 Final gate:
 
 ```bash
-make promote RELEASE_VERSION=0.7.0
+node --version
+npm --version
+npm install --package-lock-only
+npm ci --include=dev
 make verify
 make reinstall-vsix
 ```
 
 Then:
 
-1. review the resulting `package.json` and `package-lock.json` version diff;
+1. review the regenerated `package-lock.json` and confirm package/lock remain at `0.7.0`;
 2. confirm the rebuilt artifact is `.artifacts/vsix/gitea-pull-request-0.7.0.vsix`;
 3. perform the final smoke pass on Create, active PR refresh/detail/review, Issues detail and post-merge lifecycle;
-4. mark Story #14's release-gate acceptance criterion complete;
-5. mark PR #16 ready for review/merge only after the gate is green.
+4. verify Marketplace trusted publishing;
+5. mark Story #14's release-gate acceptance criterion complete;
+6. mark PR #16 ready for review/merge only after the gate is green;
+7. after merge, tag `v0.7.0`, publish the GitHub Release and let release CI publish the exact VSIX to the Marketplace.
 
 ---
 
