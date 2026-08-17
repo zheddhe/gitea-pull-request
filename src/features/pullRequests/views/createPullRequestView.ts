@@ -40,7 +40,6 @@ type CreateViewMessage =
   | ({ type: "pickLabels" } & FormSnapshot)
   | ({ type: "pickMilestone" } & FormSnapshot)
   | ({ type: "create"; draft: boolean } & FormSnapshot)
-  | { type: "cancel" }
   | { type: "openLegacy" };
 
 export class CreatePullRequestViewProvider
@@ -240,12 +239,6 @@ export class CreatePullRequestViewProvider
   }
 
   private async handleMessage(message: CreateViewMessage): Promise<void> {
-    if (message.type === "cancel") {
-      this.draft = undefined;
-      await this.session.clear();
-      return;
-    }
-
     if (message.type === "openLegacy") {
       await this.session.clear();
       this.draft = undefined;
@@ -284,10 +277,7 @@ export class CreatePullRequestViewProvider
   }
 
   private applyForm(
-    message: Exclude<
-      CreateViewMessage,
-      { type: "cancel" } | { type: "openLegacy" }
-    >,
+    message: Exclude<CreateViewMessage, { type: "openLegacy" }>,
   ): void {
     if (!this.draft) {
       return;
@@ -537,7 +527,8 @@ export class CreatePullRequestViewProvider
   select, input, textarea { box-sizing: border-box; width: 100%; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, transparent); padding: 6px 8px; }
   textarea { min-height: 110px; resize: vertical; }
   .branches { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  .metadata { margin-top: 14px; border-top: 1px solid var(--vscode-panel-border); padding-top: 8px; }
+  .metadata { margin-top: 14px; border-top: 1px solid var(--vscode-panel-border); padding-top: 10px; }
+  .section-title { font-weight: 600; margin-bottom: 6px; }
   .metadata button { display: block; width: 100%; text-align: left; margin: 4px 0; }
   .actions { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
   button { border: 0; padding: 6px 12px; color: var(--vscode-button-foreground); background: var(--vscode-button-background); cursor: pointer; }
@@ -558,17 +549,17 @@ export class CreatePullRequestViewProvider
   <textarea id="body" placeholder="Describe the changes">${escapeHtml(body)}</textarea>
 
   <div class="metadata">
+    <div class="section-title">Metadata</div>
     <button class="secondary" data-action="pickReviewers">Reviewers · ${summary(reviewers.map((user) => user.login), "None")}</button>
     <button class="secondary" data-action="pickAssignees">Assignees · ${summary(assignees.map((user) => user.login), "None")}</button>
     <button class="secondary" data-action="pickLabels">Labels · ${summary(labels.map((label) => label.name), "None")}</button>
     <button class="secondary" data-action="pickMilestone">Milestone · ${escapeHtml(milestone?.title ?? "None")}</button>
   </div>
 
-  <div class="hint">Create Draft uses Gitea's work-in-progress convention by applying the configured-compatible <strong>WIP:</strong> title prefix.</div>
+  <div class="hint">Create Draft uses Gitea's work-in-progress convention by applying the configured-compatible <strong>WIP:</strong> title prefix. Use the × title action to cancel creation.</div>
   <div class="actions">
-    <button class="secondary" id="cancel">Cancel</button>
     <button id="create">Create</button>
-    <button id="createDraft">Create Draft</button>
+    <button class="secondary" id="createDraft">Create Draft</button>
   </div>
   <button class="link" id="legacy">Use legacy create flow</button>
 <script>
@@ -587,7 +578,6 @@ export class CreatePullRequestViewProvider
   title.addEventListener('input', formChanged);
   body.addEventListener('input', formChanged);
   document.querySelectorAll('[data-action]').forEach((button) => button.addEventListener('click', () => vscode.postMessage(snapshot(button.dataset.action))));
-  document.getElementById('cancel').addEventListener('click', () => vscode.postMessage({ type: 'cancel' }));
   document.getElementById('legacy').addEventListener('click', () => vscode.postMessage({ type: 'openLegacy' }));
   document.getElementById('create').addEventListener('click', () => vscode.postMessage(snapshot('create', { draft: false })));
   document.getElementById('createDraft').addEventListener('click', () => vscode.postMessage(snapshot('create', { draft: true })));
@@ -606,6 +596,6 @@ function escapeHtml(value: string): string {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
+    .replace(/\"/g, "&quot;")
     .replace(/'/g, "&#039;");
 }
