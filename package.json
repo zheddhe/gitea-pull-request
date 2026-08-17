@@ -209,6 +209,11 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "gitea.viewActivePRDetail",
+        "title": "Gitea: View Active Pull Request Details",
+        "icon": "$(eye)"
+      },
+      {
         "command": "gitea.openActivePR",
         "title": "Gitea: Open Active Pull Request in Browser",
         "icon": "$(link-external)"
@@ -368,14 +373,24 @@
           "group": "navigation@2"
         },
         {
-          "command": "gitea.refreshActivePR",
+          "command": "gitea.viewActivePRDetail",
+          "when": "view == gitea.prDiff && gitea.prSession.active",
+          "group": "navigation@0"
+        },
+        {
+          "command": "gitea.openActivePR",
           "when": "view == gitea.prDiff && gitea.prSession.active",
           "group": "navigation@1"
         },
         {
-          "command": "gitea.clearActivePR",
+          "command": "gitea.refreshActivePR",
           "when": "view == gitea.prDiff && gitea.prSession.active",
           "group": "navigation@2"
+        },
+        {
+          "command": "gitea.clearActivePR",
+          "when": "view == gitea.prDiff && gitea.prSession.active",
+          "group": "navigation@3"
         },
         {
           "command": "gitea.openActivePR",
