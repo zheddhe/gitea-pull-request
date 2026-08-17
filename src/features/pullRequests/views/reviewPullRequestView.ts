@@ -65,7 +65,8 @@ type ReviewViewMessage =
   | { type: "readyForReview" }
   | { type: "selectMergeMethod"; method: MergeMethod }
   | { type: "merge" }
-  | { type: "checkoutBase" };
+  | { type: "checkoutBase" }
+  | { type: "openCheck"; url: string };
 
 const MERGE_METHOD_STATE_KEY = "gitea.prReview.mergeMethod";
 
@@ -150,6 +151,17 @@ export class ReviewPullRequestViewProvider
   }
 
   private async handleMessage(message: ReviewViewMessage): Promise<void> {
+    if (message.type === "openCheck") {
+      const uri = vscode.Uri.parse(message.url);
+      if (uri.scheme !== "http" && uri.scheme !== "https") {
+        vscode.window.showWarningMessage("Unsupported check URL.");
+        return;
+      }
+      log(`[review-view] opening check url=${message.url}`);
+      await vscode.env.openExternal(uri);
+      return;
+    }
+
     if (this.busy) {
       log(`[review-view] ignored type=${message.type}; busy=true`);
       return;
@@ -608,7 +620,7 @@ export class ReviewPullRequestViewProvider
           ? `<div class="check-description">${escapeHtml(status.description)}</div>`
           : "";
         const name = status.target_url
-          ? `<a href="${escapeHtml(status.target_url)}" title="Open check in Gitea">${label}</a>`
+          ? `<a href="#" data-check-url="${escapeHtml(status.target_url)}" title="Open check in Gitea">${label}</a>`
           : label;
         return `<li class="check check-${status.state}">
           <span class="check-state">${escapeHtml(checkStateLabel(status.state))}</span>
@@ -699,6 +711,10 @@ export class ReviewPullRequestViewProvider
   document.getElementById('approve').addEventListener('click', () => vscode.postMessage({ type: 'approve', body: body.value }));
   document.getElementById('requestChanges').addEventListener('click', () => vscode.postMessage({ type: 'requestChanges', body: body.value }));
   document.getElementById('readyForReview')?.addEventListener('click', () => vscode.postMessage({ type: 'readyForReview' }));
+  document.querySelectorAll('[data-check-url]').forEach((link) => link.addEventListener('click', (event) => {
+    event.preventDefault();
+    vscode.postMessage({ type: 'openCheck', url: link.dataset.checkUrl });
+  }));
   if (mergeMethod) mergeMethod.addEventListener('change', () => vscode.postMessage({ type: 'selectMergeMethod', method: mergeMethod.value }));
   document.getElementById('merge').addEventListener('click', () => vscode.postMessage({ type: 'merge' }));
   document.getElementById('checkoutBase').addEventListener('click', () => vscode.postMessage({ type: 'checkoutBase' }));
