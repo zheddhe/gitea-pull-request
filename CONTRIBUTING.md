@@ -1,4 +1,4 @@
-# Contributing to Gitea for VS Code
+# Contributing to Gitea Pull Request
 
 Thank you for your interest in contributing! Please read this guide before opening issues or pull requests.
 
@@ -8,20 +8,20 @@ Thank you for your interest in contributing! Please read this guide before openi
 
 ### Prerequisites
 
-- **Node.js** 18+ (uses native `fetch`)
-- **npm** 9+
-- **VS Code** 1.85+
-- A running Gitea instance for testing
+- **Node.js 24.x**
+- **npm** compatible with Node.js 24
+- **VS Code 1.133.0+**
+- **Gitea 1.26.4+** for integration/functional testing
 
 ### Getting Started
 
 ```bash
 # 1. Clone the repo
-git clone https://github.com/your-org/gitea-vscode-extension
-cd gitea-vscode-extension
+git clone https://github.com/zheddhe/gitea-pull-request.git
+cd gitea-pull-request
 
-# 2. Install dependencies
-npm install
+# 2. Synchronize the lock file and install dependencies
+make bootstrap
 
 # 3. Open in VS Code
 code .
@@ -34,16 +34,26 @@ Press **F5** (or `Run → Start Debugging`) to launch the Extension Development 
 Any TypeScript changes require recompiling:
 
 ```bash
-npm run compile
+make compile
 # or keep a watcher running:
 npm run watch
 ```
 
-### Building a VSIX package
+### Validation and VSIX packaging
+
+Run the same local quality gate used before packaging:
 
 ```bash
-npx vsce package --no-dependencies --allow-missing-repository
+make verify
 ```
+
+Build and reinstall the versioned VSIX locally with:
+
+```bash
+make reinstall-vsix
+```
+
+The generated package is written under `.artifacts/vsix/`.
 
 ---
 
@@ -74,7 +84,7 @@ npx vsce package --no-dependencies --allow-missing-repository
 
 1. Fork the repository and create a branch: `git checkout -b feat/my-feature`
 2. Make your changes.
-3. Run `npm run compile` to ensure there are no TypeScript errors.
+3. Run `make verify` before opening the PR.
 4. Follow the existing code style — ESLint 9 flat config + `tsc --strict`.
 5. Keep the scope of changes small and focused — one feature/fix per PR.
 6. Update `README.md` if you add user-facing functionality.
@@ -84,13 +94,12 @@ npx vsce package --no-dependencies --allow-missing-repository
 
 1. Add the TypeScript interface to `src/api/types.ts` if needed.
 2. Add the method to `GiteaApiClient` in `src/api/giteaApiClient.ts`.
-3. Call `this.request<ReturnType>(serverUrl, '/endpoint')` for JSON responses.
-4. Call `this.requestText(serverUrl, '/endpoint')` for plain-text responses (e.g. raw diffs).
+3. Call the existing request helpers appropriate to the response type and preserve the API/UI separation used by the project.
 
 ### Adding a New Command
 
 1. Add the command `id` + `title` to `package.json` → `contributes.commands`.
-2. If it appears in menus, add to `contributes.menus`.
+2. If it appears in menus, add it to `contributes.menus`.
 3. Register it with `context.subscriptions.push(vscode.commands.registerCommand(...))` inside the relevant `src/commands/*.ts` file.
 
 ---
@@ -98,18 +107,30 @@ npx vsce package --no-dependencies --allow-missing-repository
 ## Code Style
 
 - TypeScript strict mode (`"strict": true` in `tsconfig.json`).
-- No runtime dependencies — use native VS Code APIs and Node 18 built-ins (`fetch`, etc.).
+- Prefer native VS Code and Node.js APIs before adding runtime dependencies.
 - Prefer `async/await` over `.then()` chains.
-- Keep webview HTML/CSS inline (no external files) — the CSP in the webview panel restricts external resources.
-- HTML in webviews uses `escHtml()` for all user-supplied content to prevent XSS.
+- Keep Webview CSP restrictive and escape user-controlled HTML content.
+- Preserve native VS Code interaction patterns (TreeView, QuickPick, commands, context keys and Codicons) where they are sufficient.
 
 ---
 
 ## Security
 
 - **Never** store tokens in plain text. Use `vscode.SecretStorage` (already wired in `AuthManager`).
-- All user content rendered in webviews **must** go through `escHtml()`.
-- The webview Content-Security-Policy is `default-src 'none'` — do not weaken it.
+- Treat all external/user content rendered in Webviews as untrusted.
+- Do not weaken Webview Content-Security-Policy without a specific reviewed requirement.
+
+---
+
+## Release and compatibility baseline
+
+For the `0.7.0` release line, the validated baseline is:
+
+- VS Code `1.133.0+`;
+- Gitea `1.26.4+`;
+- Node.js `24.x` for build/test/package workflows.
+
+See [`docs/RELEASING.md`](docs/RELEASING.md) for the release process.
 
 ---
 
