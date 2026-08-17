@@ -1,5 +1,6 @@
 import { AuthManager } from "../auth/authManager";
 import type { RepoInfo } from "../context/repoManager";
+import { log } from "../debug/outputChannel";
 import type {
   GiteaUser,
   GiteaPullRequest,
@@ -290,16 +291,36 @@ export class GiteaApiClient {
     const commentsByReview = await Promise.all(
       reviews.map(async (review) => {
         try {
-          return await this.request<GiteaReviewComment[]>(
+          const comments = await this.request<GiteaReviewComment[]>(
             serverUrl,
             `/repos/${owner}/${repo}/pulls/${number}/reviews/${review.id}/comments`,
           );
-        } catch {
+          log(
+            `[pr-inline-api] repo=${repoInfo.label} pr=#${number} review=${review.id} comments=${comments?.length ?? 0}`,
+          );
+          return comments ?? [];
+        } catch (error) {
+          log(
+            `[pr-inline-api] repo=${repoInfo.label} pr=#${number} review=${review.id} comments failed: ${(error as Error).message}`,
+          );
           return [];
         }
       }),
     );
-    return commentsByReview.flat();
+    const comments = commentsByReview.flat().map((comment) => ({
+      ...comment,
+      new_position: comment.position,
+      old_position: comment.original_position,
+    }));
+    log(
+      `[pr-inline-api] repo=${repoInfo.label} pr=#${number} reviews=${reviews.length} inlineComments=${comments.length}`,
+    );
+    for (const comment of comments) {
+      log(
+        `[pr-inline-api] comment=${comment.id} review=${comment.pull_request_review_id ?? "?"} path=${comment.path} position=${comment.position ?? 0} original_position=${comment.original_position ?? 0}`,
+      );
+    }
+    return comments;
   }
 
   async listPRFiles(
