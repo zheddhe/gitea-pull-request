@@ -8,15 +8,58 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 
 ### Added
 
-- Native **Refresh Active Pull Request** title action in **Changes in Pull Request**, reusing the existing safe explicit refresh/rebind path.
-- Dedicated temporary Create-mode aliases for Pull Requests, Issues and CI / Actions so VS Code keeps a separate layout memory from the normal Gitea workspace.
+- Native title actions for active PR **View Details**, **Open in Browser**, **Refresh** and contextual Close in **Changes in Pull Request** and **Review Pull Request**.
+- Native **Refresh** and **Close** title actions for **Create Pull Request** and **Pull Request Merged**.
+- Dedicated temporary Create-mode view IDs so VS Code keeps the focused creation layout separate from the user's normal Pull Requests / Issues / CI proportions.
+- Explicit Create branch refresh that reloads Gitea branches while preserving title, description, reviewers, assignees, labels, milestone and still-valid source/base selections.
+- PR-centric **Checks** section in Review Pull Request with success/pending/failure/warning summary, descriptions and safe external check links.
+- Native Open/Closed Issues filter using TreeView + QuickPick.
+- Rich Issue Detail Markdown rendering using VS Code's Markdown renderer, with safe fallback and explicit HTTP(S) link handling.
+- Inline editing for Issue title, description and comments.
+- Rich PR Detail tabs for **Inline Reviews**, **Review History**, **Discussion** and **Commits**.
+- Inline review comment reconstruction on diff lines from Gitea review-comment position data, with an `Unplaced inline comments` fallback when a referenced line is no longer present.
+- Review History aggregation of global review events and their associated inline comment messages, with Oldest/Newest ordering.
+- Inline editing for PR title, description and top-level Discussion comments.
+- Active PR Detail tab persistence across refresh renders.
+- Branch-management controls in Review Pull Request for source/base visibility, base-branch update and explicit checkout actions for both branches.
+- Structured diagnostic logging for Gitea inline-review comment retrieval/placement and normalized PR check status values.
+- Regression/source coverage for title-action ordering, create-mode layout isolation, Create draft preservation, PR checks, issue filtering, Markdown rendering/CSP, keyboard-native controls, PR detail presentation, inline comments and comment editing.
 
 ### Changed
 
-- **Changes in Pull Request** and **Review Pull Request** now use a consistent native title-action order: Refresh first, Close active PR second.
-- **Create Pull Request** and **Pull Request Merged** expose native Close actions mapped to their non-destructive lifecycle completion semantics.
-- Phase 6 keeps PR refresh explicit and event-driven rather than reintroducing polling.
-- The normal Gitea view IDs no longer carry Create-mode `initialSize` weights. During creation, temporary view IDs are shown instead: Create is dominant, Pull Requests secondary, and Issues / CI compact. Closing Create restores the normal view IDs and therefore their remembered user layout.
+- Create, Review and Post-merge Webviews now share a more consistent section hierarchy, action hierarchy, spacing, focus treatment and VS Code theme-token styling.
+- **Create Pull Request** now presents **Source branch** and **Base branch** consistently with Review Pull Request, uses a **General information** block, starts with an explicit empty PR title rather than deriving one from the branch name, and reflects selected metadata as compact chips while retaining native QuickPick selection.
+- The obsolete legacy PR creation command/flow has been removed.
+- **Review Pull Request** is now focused on branch management, review decisions, checks, merge readiness and final actions; top-level PR comments remain in PR Detail rather than being duplicated in the sidebar.
+- Review Pull Request section order follows the user workflow: Branch identification → Review → Checks → Merge readiness → Actions.
+- Merge readiness presentation is condensed into PR/mergeability state plus a secondary review/CI summary while preserving explicit blockers and warnings.
+- **Pull Request Merged** keeps destructive branch cleanup explicit in the Webview, while non-destructive branch-state refresh and finish/keep-branches lifecycle actions use native title actions.
+- Activating a PR now opens the contextual Gitea Pull Request workspace and PR Detail together.
+- **Changes in Pull Request** keeps View Details/Open Browser in native title actions and orders branch/commits/reviews/files as contextual data.
+- PR Detail focuses on inspection, discussion and inline review work; merge/checkout/close/review-decision actions are owned by the contextual Review view.
+- Issue Detail is simplified to a single detail surface without the low-value History tab; browser/refresh are title icons and close/re-open remain issue workflow commands.
+- Issue children keep **View Details** first and no longer expose the raw issue body as a tree child.
+- PR and Issue detail presentation now uses aligned status dots/badges, title typography, Markdown cards and comment styling.
+- PR refresh remains explicit and event-driven rather than reintroducing polling.
+- General CI / Actions remains in the main Gitea container; only PR-centric readiness/check context is duplicated into the Review workflow.
+- Activity feed/notifications, saved queries and broader issue search remain intentionally deferred after Phase 6 scope review because they do not currently justify additional persistent UI/state complexity.
+
+### Fixed
+
+- Relative Gitea check `target_url` values are normalized before opening instead of being rejected as unsupported URLs.
+- Gitea inline review comments are retrieved from the correct per-review endpoint and normalized from `position` / `original_position` response fields before diff placement.
+- Existing inline review comments no longer disappear after submission; they are reloaded and placed back under the corresponding diff line where possible.
+- File-status markers and readable foreground colors are restored in PR Detail diff/file lists for dark themes.
+- Removed duplicate Webview body actions that were superseded by native title actions.
+- Create-mode view sizing no longer overwrites the user's standard Gitea workspace layout memory.
+- Development dependency installation is explicit and `@typescript-eslint/eslint-plugin` is restored so clean `npm ci` / lint / VSIX rebuilds work reliably.
+- Commit-status normalization now tolerates alternate/raw status value shape and logs raw vs normalized values for CI diagnosis.
+
+### Validation
+
+Interactive Phase 6 validation covered native refresh/close actions, branch refresh with a newly published branch, preservation of Create draft metadata, exact restoration of the standard Gitea view layout, cleaned Create/Review/Post-merge actions, PR-centric checks and external links, Issue filtering, Markdown rendering, rich PR/Issue detail ergonomics, inline review comment placement/history, comment editing and mixed Gitea/GitHub coexistence.
+
+The final `0.7.0` gate remains: promote `package.json` + `package-lock.json`, run `make verify`, rebuild/reinstall the VSIX and complete the final smoke pass before marking the Phase 6 PR ready.
 
 ## [0.6.0] - 2026-08-17
 
@@ -33,7 +76,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 - Activating a pull request automatically focuses the contextual Gitea Pull Request container after the active session is established.
 - The existing general-container contribution identity is retained to reduce VS Code layout-state disruption during the topology split.
 - Repository groups plus **All Open** and **Waiting for my review** expand by default on first entry into the Gitea workspace.
-- Phase 6 now owns the broader visual/ergonomic polish, Changes-view refresh title action, PR-centric CI refinement, notifications, Markdown and accessibility work.
+- Phase 6 owns the broader visual/ergonomic polish, Changes-view refresh title action, PR-centric CI refinement, issue/Markdown secondary workflows and accessibility work.
 
 ### Validation
 
