@@ -37,6 +37,15 @@ suite("PR detail presentation", () => {
     assert.match(source, /review-changes-requested/);
     assert.match(source, /review-pending/);
     assert.match(source, /class="context-row"/);
+    assert.match(source, /const stateIcon = "●"/);
+    assert.match(source, /assigned to <strong>/);
+  });
+
+  test("makes queued inline review comments explicitly submittable", () => {
+    assert.match(source, /id="submit-inline"/);
+    assert.match(source, /Submit inline comments/);
+    assert.match(source, /submitReview\('COMMENT'\)/);
+    assert.match(source, /Inline comments are queued until you submit a review/);
   });
 
   test("uses VS Code theme tokens and nonce-scoped scripts", () => {
