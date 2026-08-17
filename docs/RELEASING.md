@@ -11,6 +11,16 @@ This document describes the release path for **Gitea Pull Request** on GitHub an
 
 The repository and Marketplace publication are maintained independently from the maintainer's employer.
 
+## Compatibility baseline for 0.7.0
+
+The release baseline is intentionally conservative and matches the environments validated for the first Marketplace publication:
+
+- **Visual Studio Code:** `1.133.0` or newer (`engines.vscode: ^1.133.0`);
+- **Gitea:** `1.26.4` or newer; `1.26.4` is the server version used for the Phase 6 functional validation, and older Gitea versions are not claimed as supported for `0.7.0`;
+- **Node.js:** `24.x` for dependency installation, CI, packaging and release publication.
+
+`@types/vscode` may lag the VS Code product release cadence. For `0.7.0`, compilation uses the latest published typings available during the release preparation (`^1.125.0`) while extension-host tests run explicitly against VS Code `1.133.0`.
+
 ## Marketplace authentication
 
 The release workflow uses **GitHub Actions OIDC trusted publishing** through `@vscode/vsce`.
@@ -32,12 +42,18 @@ Do not add a long-lived Marketplace PAT to the repository unless OIDC cannot be 
 
 A phase release is promoted only after implementation and documentation are ready.
 
-For `0.7.0`, version metadata is already promoted. The remaining local gate is:
+For `0.7.0`, version metadata is already promoted. After any dependency-baseline change, regenerate the lockfile under Node.js 24 before running the final gate:
 
 ```bash
+node --version
+npm --version
+npm install --package-lock-only
+npm ci --include=dev
 make verify
 make reinstall-vsix
 ```
+
+The expected Node major is `24`. Commit the regenerated `package-lock.json` together with the manifest dependency changes.
 
 Confirm both `package.json` and `package-lock.json` contain `0.7.0` and that the local VSIX exists at:
 
@@ -64,7 +80,9 @@ The workflow must fail rather than publish when the release identity is inconsis
 
 The release workflow intentionally uses:
 
-- Node.js 22;
+- Node.js 24;
+- VS Code 1.133.0 for extension-host tests;
+- Gitea 1.26.4 as the minimum documented/tested server baseline for `0.7.0`;
 - the project `Makefile` as the build/test/package source of truth;
 - pinned `@vscode/vsce` version `3.9.2` for publication;
 - GitHub permissions `contents: write` and `id-token: write`;
