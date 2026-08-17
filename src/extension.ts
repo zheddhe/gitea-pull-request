@@ -4,6 +4,7 @@ import { PullRequestMetadataApi } from "./api/pullRequestMetadataApi";
 import { RepoManager } from "./context/repoManager";
 import { CIRunsProvider } from "./views/ciRunsProvider";
 import { IssuesProvider } from "./views/issuesProvider";
+import { PRDetailPanel } from "./views/prDetailPanel";
 import { StatusBarManager } from "./ui/statusBar";
 import { registerPRCommands } from "./commands/prCommands";
 import { registerCICommands } from "./commands/ciCommands";
@@ -100,6 +101,24 @@ export async function activate(
         return;
       }
       await vscode.env.openExternal(vscode.Uri.parse(state.pullRequest.html_url));
+    }),
+    vscode.commands.registerCommand("gitea.viewActivePRDetail", async () => {
+      const state = prSession.current;
+      if (state.kind !== "active") {
+        return;
+      }
+      const repoInfo = repoManager
+        .getRepos()
+        .find((repo) => repo.key === state.repository.key);
+      if (!repoInfo) {
+        return;
+      }
+      await PRDetailPanel.show(
+        context.extensionUri,
+        api,
+        repoInfo,
+        state.pullRequest,
+      );
     }),
     auth.onDidChangeSession(() => {
       void repoManager.detect();
