@@ -291,12 +291,6 @@ function buildIssueChildren(item: IssueItem): vscode.TreeItem[] {
   const { issue } = item;
   const children: vscode.TreeItem[] = [];
 
-  if (issue.body?.trim()) {
-    const bodyPreview = issue.body.replace(/\r?\n/g, " ").slice(0, 80);
-    children.push(
-      new IssueChildItem(bodyPreview, undefined, new vscode.ThemeIcon("note")),
-    );
-  }
   if (issue.labels && issue.labels.length > 0) {
     children.push(
       new IssueChildItem(
@@ -351,6 +345,14 @@ function buildIssueChildren(item: IssueItem): vscode.TreeItem[] {
     undefined,
     new vscode.ThemeIcon("eye"),
   );
+  if (issue.body?.trim()) {
+    const bodyTooltip = new vscode.MarkdownString(issue.body);
+    bodyTooltip.isTrusted = false;
+    bodyTooltip.supportHtml = false;
+    detailItem.tooltip = bodyTooltip;
+  } else {
+    detailItem.tooltip = "Open full issue details.";
+  }
   detailItem.command = {
     command: "gitea.viewIssueDetail",
     title: "View Issue Details",
