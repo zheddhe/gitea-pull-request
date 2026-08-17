@@ -678,7 +678,7 @@ export class ReviewPullRequestViewProvider
   button.icon-button .section-icon{color:currentColor}
   button:disabled,select:disabled{opacity:.55;cursor:default}
   .branch-grid{display:grid;grid-template-columns:max-content minmax(0,1fr) max-content;gap:7px 8px;align-items:center}
-  .branch-grid strong{white-space:nowrap}.branch-value{min-width:0;overflow:hidden;text-overflow:ellipsis;font-family:var(--vscode-editor-font-family)}
+  .branch-grid strong{white-space:nowrap}
   ul{margin:6px 0;padding-left:20px}.blocked{color:var(--vscode-errorForeground)}.ready{color:var(--vscode-testing-iconPassed)}
   .checks{list-style:none;padding:0;margin-top:8px}.check{display:grid;grid-template-columns:max-content 1fr;gap:8px;padding:6px 0;border-top:1px solid var(--vscode-panel-border)}.check:first-child{border-top:0}.check-state{min-width:62px;font-size:.9em;font-weight:600}.check-success .check-state{color:var(--vscode-testing-iconPassed)}.check-pending .check-state,.check-warning .check-state{color:var(--vscode-editorWarning-foreground)}.check-failure .check-state,.check-error .check-state{color:var(--vscode-errorForeground)}.check-description{color:var(--vscode-descriptionForeground);margin-top:2px;overflow-wrap:anywhere}a{color:var(--vscode-textLink-foreground);text-decoration:none}
 </style>
@@ -687,7 +687,7 @@ export class ReviewPullRequestViewProvider
   <div class="section">
     <div class="section-title">${branchIcon}<span>Branch management</span></div>
     <div class="branch-grid">
-      <strong>Source branch</strong><span class="branch-value">${escapeHtml(pr.head.ref)}</span><button class="icon-button" id="checkoutSource" title="Checkout source branch" aria-label="Checkout source branch">${checkoutIcon}</button>
+      <strong>Source branch</strong><select aria-label="Source branch" disabled><option selected>${escapeHtml(pr.head.ref)}</option></select><button class="icon-button" id="checkoutSource" title="Checkout source branch" aria-label="Checkout source branch">${checkoutIcon}</button>
       <strong>Base branch</strong><select id="baseBranch" aria-label="Base branch"${this.busy ? " disabled" : ""}>${branchOptions}</select><button class="icon-button" id="checkoutBase" title="Checkout base branch" aria-label="Checkout base branch">${checkoutIcon}</button>
     </div>
   </div>
