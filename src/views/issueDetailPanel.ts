@@ -210,39 +210,39 @@ export class IssueDetailPanel {
     bodyHtml: string,
     commentBodies: string[],
   ): string {
-    const stateBg = issue.state === "open" ? "#2da44e" : "#cf222e";
     const stateLabel = issue.state === "open" ? "Open" : "Closed";
-    const stateIcon = issue.state === "open" ? "🟢" : "🟣";
+    const stateIcon = issue.state === "open" ? "●" : "●";
+    const stateClass = issue.state === "open" ? "state-open" : "state-closed";
     const nonce = getNonce();
 
     const labelsHtml =
       issue.labels
         ?.map(
           (label) =>
-            `<span class="label" style="background:#${escHtml(label.color)}">${escHtml(label.name)}</span>`,
+            `<span class="label" style="--label-color:#${escHtml(label.color)}">${escHtml(label.name)}</span>`,
         )
         .join("") ?? "";
     const assigneesHtml = issue.assignees?.length
-      ? `<span class="mi">👤 ${issue.assignees.map((user) => escHtml(user.login)).join(", ")}</span>`
+      ? `<span class="mi">$(person) ${issue.assignees.map((user) => escHtml(user.login)).join(", ")}</span>`
       : issue.assignee
-        ? `<span class="mi">👤 ${escHtml(issue.assignee.login)}</span>`
+        ? `<span class="mi">$(person) ${escHtml(issue.assignee.login)}</span>`
         : "";
     const milestoneHtml = issue.milestone
-      ? `<span class="mi">🏁 ${escHtml(issue.milestone.title)}</span>`
+      ? `<span class="mi">Milestone: ${escHtml(issue.milestone.title)}</span>`
       : "";
 
     const commentsHtml = comments.length
       ? comments
           .map((comment, index) => {
             const renderedBody = commentBodies[index] ?? "";
-            return `<div class="comment" id="comment-${comment.id}">
-              <div class="comment-hdr">
+            return `<article class="comment" id="comment-${comment.id}">
+              <header class="comment-hdr">
                 <img src="${escHtml(comment.user.avatar_url)}" class="avatar" alt="">
                 <strong>${escHtml(comment.user.login)}</strong>
                 <span class="time">${escHtml(new Date(comment.created_at).toLocaleString())}</span>
-              </div>
+              </header>
               <div class="comment-body markdown-body">${renderedBody}</div>
-            </div>`;
+            </article>`;
           })
           .join("")
       : '<p class="empty">No comments yet.</p>';
@@ -262,73 +262,97 @@ export class IssueDetailPanel {
 <title>Issue #${issue.number}</title>
 <style>
 :root {
-  --bg: var(--vscode-editor-background,#1e1e1e);
-  --fg: var(--vscode-editor-foreground,#d4d4d4);
-  --border: var(--vscode-panel-border,#3c3c3c);
-  --dim: var(--vscode-descriptionForeground,#888);
-  --input-bg: var(--vscode-input-background,#3c3c3c);
-  --input-fg: var(--vscode-input-foreground,#d4d4d4);
-  --input-border: var(--vscode-input-border,#555);
-  --btn-bg: var(--vscode-button-background,#0e639c);
-  --btn-fg: var(--vscode-button-foreground,#fff);
-  --btn-hover: var(--vscode-button-hoverBackground,#1177bb);
-  --btn2-bg: var(--vscode-button-secondaryBackground,#3a3d41);
-  --btn2-fg: var(--vscode-button-secondaryForeground,#ccc);
-  --btn2-hover: var(--vscode-button-secondaryHoverBackground,#45494e);
-  --focus: var(--vscode-focusBorder,#007fd4);
-  --block-bg: var(--vscode-textBlockQuote-background,#252526);
-  --mono: var(--vscode-editor-font-family,'Menlo','Consolas','Courier New',monospace);
+  --surface: var(--vscode-editor-background);
+  --surface-raised: var(--vscode-sideBar-background, var(--vscode-editor-background));
+  --surface-subtle: var(--vscode-textBlockQuote-background, var(--vscode-editor-inactiveSelectionBackground));
+  --fg: var(--vscode-foreground);
+  --muted: var(--vscode-descriptionForeground);
+  --border: var(--vscode-panel-border, var(--vscode-widget-border));
+  --focus: var(--vscode-focusBorder);
+  --link: var(--vscode-textLink-foreground);
+  --link-active: var(--vscode-textLink-activeForeground, var(--vscode-textLink-foreground));
+  --input-bg: var(--vscode-input-background);
+  --input-fg: var(--vscode-input-foreground);
+  --input-border: var(--vscode-input-border, transparent);
+  --button-bg: var(--vscode-button-background);
+  --button-fg: var(--vscode-button-foreground);
+  --button-hover: var(--vscode-button-hoverBackground);
+  --button-secondary-bg: var(--vscode-button-secondaryBackground);
+  --button-secondary-fg: var(--vscode-button-secondaryForeground);
+  --button-secondary-hover: var(--vscode-button-secondaryHoverBackground);
+  --success: var(--vscode-testing-iconPassed, var(--vscode-charts-green));
+  --danger: var(--vscode-testing-iconFailed, var(--vscode-errorForeground));
+  --warning: var(--vscode-editorWarning-foreground, var(--vscode-charts-yellow));
+  --mono: var(--vscode-editor-font-family);
+  --base-size: var(--vscode-font-size, 13px);
 }
 *{box-sizing:border-box}
-body{font-family:var(--vscode-font-family,-apple-system,sans-serif);font-size:13px;color:var(--fg);background:var(--bg);padding:14px 20px;margin:0}
-h1{font-size:1.18em;line-height:1.4;font-weight:600}.title-row h1{margin:0}
-h2{font-size:.92em;font-weight:600;margin:0 0 8px}
-a{color:var(--vscode-textLink-foreground)}
-code{background:var(--block-bg);padding:1px 5px;border-radius:3px;font-size:.9em;font-family:var(--mono)}
-pre{background:var(--block-bg);padding:8px 12px;border-radius:4px;overflow-x:auto;margin:.6em 0}pre code{background:none;padding:0}
-.badge{display:inline-block;padding:2px 9px;border-radius:10px;font-size:.72em;font-weight:700;color:#fff;text-transform:uppercase}
-.label{display:inline-block;padding:1px 8px;border-radius:10px;font-size:.72em;font-weight:600;color:#fff;margin-right:3px}
-.meta-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:.82em;color:var(--dim);margin:4px 0 12px}
-.mi,.dim,.time{color:var(--dim)}.time{margin-left:auto}
-.actions{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:14px;align-items:center}
-.btn{background:var(--btn-bg);color:var(--btn-fg);border:none;padding:5px 12px;border-radius:4px;cursor:pointer;font-size:.87em;font-family:inherit;white-space:nowrap}
-.btn:hover{background:var(--btn-hover)}.btn.sec{background:var(--btn2-bg);color:var(--btn2-fg)}.btn.sec:hover{background:var(--btn2-hover)}
-.btn.danger{background:#b91c1c;color:#fff}.btn.success{background:#15803d;color:#fff}.btn.sm{font-size:.75em;padding:3px 8px}
+html,body{margin:0;padding:0;background:var(--surface);color:var(--fg)}
+body{font-family:var(--vscode-font-family);font-size:var(--base-size);line-height:1.45;padding:16px 20px}
+button,input,textarea{font:inherit}
+a{color:var(--link);text-decoration:none}a:hover{color:var(--link-active);text-decoration:underline}
+.title-row{display:flex;align-items:center;gap:10px;margin-bottom:5px;min-width:0}
+.title-row h1{font-size:1.22em;line-height:1.3;font-weight:600;margin:0;min-width:0;overflow-wrap:anywhere}
+.state-dot{font-size:.85em;line-height:1}.state-open{color:var(--success)}.state-closed{color:var(--danger)}
+.meta-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px 9px;color:var(--muted);font-size:.92em;margin:0 0 12px}
+.meta-row strong{color:var(--fg);font-weight:600}
+.badge{display:inline-flex;align-items:center;border:1px solid currentColor;border-radius:999px;padding:1px 7px;font-size:.78em;font-weight:600;text-transform:uppercase;background:transparent}
+.label{display:inline-flex;align-items:center;border:1px solid var(--label-color);color:var(--fg);border-radius:999px;padding:1px 7px;font-size:.78em;font-weight:500;background:color-mix(in srgb,var(--label-color) 18%,transparent)}
+.mi,.dim,.time{color:var(--muted)}.time{margin-left:auto;font-size:.92em}
+.actions{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;align-items:center}
+.btn{border:1px solid transparent;border-radius:2px;padding:4px 10px;min-height:26px;cursor:pointer;background:var(--button-bg);color:var(--button-fg)}
+.btn:hover{background:var(--button-hover)}.btn.sec{background:var(--button-secondary-bg);color:var(--button-secondary-fg)}.btn.sec:hover{background:var(--button-secondary-hover)}
+.btn.danger{background:var(--button-secondary-bg);color:var(--danger);border-color:color-mix(in srgb,var(--danger) 55%,transparent)}
+.btn.danger:hover{background:color-mix(in srgb,var(--danger) 14%,var(--button-secondary-bg))}
+.btn.success{background:var(--button-secondary-bg);color:var(--success);border-color:color-mix(in srgb,var(--success) 55%,transparent)}
+.btn.success:hover{background:color-mix(in srgb,var(--success) 14%,var(--button-secondary-bg))}
+.btn.sm{font-size:.9em;padding:2px 8px;min-height:22px}
 .btn:focus-visible,.tab:focus-visible,textarea:focus-visible,input:focus-visible,a:focus-visible{outline:1px solid var(--focus);outline-offset:2px}
-.tabs{display:flex;gap:1px;border-bottom:1px solid var(--border);margin:0 0 14px}
-.tab{background:none;border:none;border-bottom:2px solid transparent;color:var(--dim);cursor:pointer;padding:7px 13px;font-size:.88em;font-family:inherit}
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--border);margin:0 0 14px}
+.tab{background:transparent;border:0;border-bottom:2px solid transparent;color:var(--muted);cursor:pointer;padding:6px 10px;font:inherit}
 .tab:hover{color:var(--fg)}.tab.active{color:var(--fg);border-bottom-color:var(--focus);font-weight:600}
 .tab-content{display:none}.tab-content.active{display:block}
-.desc-body{line-height:1.6;background:var(--block-bg);border:1px solid var(--border);border-radius:5px;padding:12px;margin-bottom:14px;overflow:hidden;word-break:break-word}
-.markdown-body p{margin:.5em 0}.markdown-body p:first-child{margin-top:0}.markdown-body p:last-child{margin-bottom:0}
-.markdown-body ul,.markdown-body ol{padding-left:1.6em}.markdown-body blockquote{border-left:3px solid var(--border);padding-left:12px;margin:.6em 0;color:var(--dim)}
-.markdown-body img{max-width:100%;height:auto}.markdown-body input[type="checkbox"]{width:auto;margin-right:6px}
-.comment{border:1px solid var(--border);border-radius:6px;margin-bottom:10px;overflow:hidden}
-.comment-hdr{display:flex;align-items:center;gap:8px;padding:7px 12px;background:var(--block-bg);border-bottom:1px solid var(--border);font-size:.84em}
-.comment-body{padding:10px 12px;line-height:1.5;overflow:hidden;word-break:break-word}.avatar{width:20px;height:20px;border-radius:50%}
-.empty{color:var(--dim);font-style:italic;padding:6px 0}.form-section{margin-top:14px}
-textarea,input[type="text"]{width:100%;background:var(--input-bg);color:var(--input-fg);border:1px solid var(--input-border);border-radius:4px;padding:7px;font-family:inherit;font-size:.9em;box-sizing:border-box}
-textarea{resize:vertical}.edit-form{background:var(--block-bg);border:1px solid var(--focus);border-radius:6px;padding:14px;margin-bottom:14px}.edit-form label{display:block;font-size:.82em;font-weight:600;margin-bottom:3px;color:var(--dim)}
-.field{margin-bottom:10px}.edit-actions{display:flex;gap:8px;margin-top:10px}
-.timeline{position:relative;padding-left:20px;border-left:2px solid var(--border)}.timeline-entry{position:relative;margin-bottom:14px;padding-left:16px}.timeline-entry::before{content:'';position:absolute;left:-7px;top:5px;width:10px;height:10px;border-radius:50%;background:var(--focus);border:2px solid var(--bg)}
-.tl-label{font-size:.82em;font-weight:600;color:var(--dim);text-transform:uppercase}.tl-value{font-size:.92em;margin-top:2px}
+.desc-body{background:var(--surface-subtle);border:1px solid var(--border);border-radius:3px;padding:12px 14px;margin-bottom:14px;overflow:hidden;overflow-wrap:anywhere}
+.markdown-body{font-size:1em;line-height:1.5}
+.markdown-body h1,.markdown-body h2,.markdown-body h3,.markdown-body h4,.markdown-body h5,.markdown-body h6{font-weight:600;line-height:1.3;margin:1.05em 0 .45em;color:var(--fg)}
+.markdown-body h1:first-child,.markdown-body h2:first-child,.markdown-body h3:first-child{margin-top:0}
+.markdown-body h1{font-size:1.28em;border-bottom:1px solid var(--border);padding-bottom:.25em}.markdown-body h2{font-size:1.16em}.markdown-body h3{font-size:1.06em}.markdown-body h4,.markdown-body h5,.markdown-body h6{font-size:1em}
+.markdown-body p{margin:.55em 0}.markdown-body p:first-child{margin-top:0}.markdown-body p:last-child{margin-bottom:0}
+.markdown-body ul,.markdown-body ol{margin:.55em 0;padding-left:1.65em}.markdown-body li{margin:.22em 0}.markdown-body li>p{margin:.2em 0}
+.markdown-body blockquote{border-left:3px solid var(--vscode-textBlockQuote-border,var(--border));background:var(--vscode-textBlockQuote-background,transparent);padding:.25em .8em;margin:.7em 0;color:var(--muted)}
+.markdown-body code{font-family:var(--mono);font-size:.92em;background:var(--vscode-textCodeBlock-background,var(--surface-subtle));border-radius:2px;padding:.08em .3em}
+.markdown-body pre{font-family:var(--mono);font-size:.92em;line-height:1.45;background:var(--vscode-textCodeBlock-background,var(--surface-subtle));border:1px solid var(--border);padding:9px 11px;border-radius:3px;overflow:auto;margin:.7em 0}.markdown-body pre code{background:transparent;padding:0}
+.markdown-body hr{border:0;border-top:1px solid var(--border);margin:1em 0}.markdown-body img{max-width:100%;height:auto}
+.markdown-body table{border-collapse:collapse;width:max-content;max-width:100%;display:block;overflow:auto;margin:.7em 0}.markdown-body th,.markdown-body td{border:1px solid var(--border);padding:5px 8px;text-align:left}.markdown-body th{font-weight:600;background:var(--surface-subtle)}
+.markdown-body input[type="checkbox"]{width:auto;margin:0 6px 0 0;vertical-align:middle;accent-color:var(--success)}
+.comment{border:1px solid var(--border);border-radius:3px;margin-bottom:10px;overflow:hidden;background:var(--surface)}
+.comment-hdr{display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--surface-subtle);border-bottom:1px solid var(--border)}
+.comment-hdr strong{font-weight:600}.comment-body{padding:10px 12px;overflow:hidden;overflow-wrap:anywhere}.avatar{width:20px;height:20px;border-radius:50%}
+.empty{color:var(--muted);font-style:italic;padding:6px 0}.form-section{margin-top:14px}.form-section>label{display:block;margin-bottom:5px;font-size:.92em}
+textarea,input[type="text"]{width:100%;background:var(--input-bg);color:var(--input-fg);border:1px solid var(--input-border);border-radius:2px;padding:6px 8px;box-sizing:border-box}
+textarea{resize:vertical;line-height:1.45}.edit-form{background:var(--surface-subtle);border:1px solid var(--focus);border-radius:3px;padding:12px;margin-bottom:14px}.edit-form label{display:block;font-size:.92em;font-weight:600;margin-bottom:4px;color:var(--fg)}
+.field{margin-bottom:10px}.edit-actions{display:flex;gap:6px;margin-top:10px}
+.timeline{position:relative;padding-left:18px;border-left:1px solid var(--border)}.timeline-entry{position:relative;margin-bottom:13px;padding-left:13px}.timeline-entry::before{content:'';position:absolute;left:-18px;top:5px;width:7px;height:7px;border-radius:50%;background:var(--focus);box-shadow:0 0 0 2px var(--surface)}
+.tl-label{font-size:.82em;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.03em}.tl-value{margin-top:2px}
+@media (max-width:600px){body{padding:12px}.title-row{align-items:flex-start;flex-wrap:wrap}.time{margin-left:0;width:100%}}
 </style>
 </head>
 <body>
-<div class="title-row" style="display:flex;align-items:baseline;gap:10px;margin-bottom:4px">
-  <h1 id="issue-title">${stateIcon} Issue #${issue.number}: ${escHtml(issue.title)}</h1>
-  <button id="edit" class="btn sm">✏️ Edit</button>
+<div class="title-row">
+  <span class="state-dot ${stateClass}" aria-hidden="true">${stateIcon}</span>
+  <h1 id="issue-title">Issue #${issue.number}: ${escHtml(issue.title)}</h1>
+  <button id="edit" class="btn sm">Edit</button>
 </div>
 <div class="meta-row">
-  <span class="badge" style="background:${stateBg}">${stateLabel}</span>
+  <span class="badge ${stateClass}">${stateLabel}</span>
   by <strong>${escHtml(issue.user.login)}</strong>
-  <span class="dim">${escHtml(new Date(issue.created_at).toLocaleDateString())}</span>
+  <span>${escHtml(new Date(issue.created_at).toLocaleDateString())}</span>
   ${labelsHtml}${assigneesHtml}${milestoneHtml}
 </div>
 <div class="actions">
-  <button id="open-browser" class="btn">🔗 Open in Browser</button>
-  <button id="refresh" class="btn">↺ Refresh</button>
-  ${issue.state === "open" ? '<button id="change-state" class="btn danger">✕ Close Issue</button>' : '<button id="change-state" class="btn success">↺ Re-open Issue</button>'}
+  <button id="open-browser" class="btn">Open in Browser</button>
+  <button id="refresh" class="btn sec">Refresh</button>
+  ${issue.state === "open" ? '<button id="change-state" class="btn danger">Close Issue</button>' : '<button id="change-state" class="btn success">Re-open Issue</button>'}
 </div>
 <div id="edit-form" class="edit-form" hidden>
   <div class="field"><label for="edit-title">Title</label><input type="text" id="edit-title" value="${escHtml(issue.title)}"></div>
@@ -337,11 +361,11 @@ textarea{resize:vertical}.edit-form{background:var(--block-bg);border:1px solid 
 </div>
 <div class="tabs" role="tablist" aria-label="Issue detail sections">
   <button id="details-tab" class="tab active" role="tab" aria-selected="true" data-tab="details">Details</button>
-  <button id="history-tab" class="tab" role="tab" aria-selected="false" data-tab="history">📜 History</button>
+  <button id="history-tab" class="tab" role="tab" aria-selected="false" data-tab="history">History</button>
 </div>
 <div id="tab-details" class="tab-content active" role="tabpanel" aria-labelledby="details-tab">
   ${bodyHtml ? `<div class="desc-body markdown-body">${bodyHtml}</div>` : '<div class="desc-body dim"><em>(no description)</em></div>'}
-  <div style="margin-top:14px">
+  <section>
     <h2>Comments (${comments.length})</h2>
     <div id="comments-list">${commentsHtml}</div>
     <div class="form-section">
@@ -349,7 +373,7 @@ textarea{resize:vertical}.edit-form{background:var(--block-bg);border:1px solid 
       <textarea id="commentBody" style="height:60px" placeholder="Write a comment..."></textarea>
       <div style="margin-top:8px"><button id="post-comment" class="btn">Post Comment</button></div>
     </div>
-  </div>
+  </section>
 </div>
 <div id="tab-history" class="tab-content" role="tabpanel" aria-labelledby="history-tab">
   <div class="timeline">
