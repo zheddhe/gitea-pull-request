@@ -209,6 +209,11 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "gitea.openActivePR",
+        "title": "Gitea: Open Active Pull Request in Browser",
+        "icon": "$(link-external)"
+      },
+      {
         "command": "gitea.refreshCreatePR",
         "title": "Gitea: Refresh Pull Request Branches",
         "icon": "$(refresh)"
@@ -371,6 +376,11 @@
           "command": "gitea.clearActivePR",
           "when": "view == gitea.prDiff && gitea.prSession.active",
           "group": "navigation@2"
+        },
+        {
+          "command": "gitea.openActivePR",
+          "when": "view == gitea.reviewPullRequest && gitea.prSession.active",
+          "group": "navigation@0"
         },
         {
           "command": "gitea.refreshActivePR",
