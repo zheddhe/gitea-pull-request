@@ -32,17 +32,14 @@ Do not add a long-lived Marketplace PAT to the repository unless OIDC cannot be 
 
 A phase release is promoted only after implementation and documentation are ready.
 
-For `0.7.0`:
+For `0.7.0`, version metadata is already promoted. The remaining local gate is:
 
 ```bash
-make promote RELEASE_VERSION=0.7.0
 make verify
 make reinstall-vsix
 ```
 
-Review the promotion diff and confirm both `package.json` and `package-lock.json` contain the target version.
-
-The local VSIX must exist at:
+Confirm both `package.json` and `package-lock.json` contain `0.7.0` and that the local VSIX exists at:
 
 ```text
 .artifacts/vsix/gitea-pull-request-0.7.0.vsix
@@ -78,7 +75,7 @@ The release workflow intentionally uses:
 
 Before publishing the first release, confirm in the Marketplace publisher portal that:
 
-- publisher ID is `zheddhe`;
+- publisher display name is **Rémy Canal** and publisher ID is `zheddhe`;
 - the GitHub trusted-publishing policy points to the exact repository and workflow above;
 - the extension name `gitea-pull-request` is available;
 - Marketplace-facing README, icon, repository, support and license information are correct.
