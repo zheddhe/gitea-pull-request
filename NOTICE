@@ -1,0 +1,19 @@
+Gitea Pull Request
+==================
+
+This project is independently maintained by Rémy Canal (GitHub/Marketplace publisher ID: zheddhe).
+
+Project origin
+--------------
+
+Gitea Pull Request originated from the MIT-licensed project:
+
+  dj0024javia/gitea-vscode-extension
+  https://github.com/dj0024javia/gitea-vscode-extension
+
+The project has since evolved into an independently versioned and maintained Visual Studio Code extension. The historical GitHub fork relationship may be removed in the future as a repository-management decision; that does not remove or replace the attribution and license obligations for inherited code.
+
+License
+-------
+
+The project remains distributed under the MIT License. The original copyright notice is preserved in LICENSE, together with the copyright notice for the independently maintained product line and subsequent contributions.
