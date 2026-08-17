@@ -56,12 +56,12 @@ Perform the final smoke pass before merging the release PR.
 2. Create tag `v<package-version>` on the merged release commit.
 3. Create and publish the corresponding GitHub Release.
 4. Publishing the GitHub Release triggers `.github/workflows/release.yml`.
-5. The workflow checks out the release tag and validates that the tag version matches `package.json`.
+5. The workflow checks out the release tag and validates that the tag version, package version, publisher ID and package name are coherent.
 6. `make ci` performs the clean dependency install, compile, lint, tests and VSIX packaging.
 7. The generated versioned VSIX is uploaded to the GitHub Release.
 8. The exact same VSIX is published to the Visual Studio Marketplace with `vsce publish --oidc`.
 
-The workflow must fail rather than publish when the release tag and package version differ.
+The workflow must fail rather than publish when the release identity is inconsistent.
 
 ## Workflow requirements
 
@@ -71,6 +71,7 @@ The release workflow intentionally uses:
 - the project `Makefile` as the build/test/package source of truth;
 - pinned `@vscode/vsce` version `3.9.2` for publication;
 - GitHub permissions `contents: write` and `id-token: write`;
+- one release execution per tag through GitHub Actions concurrency;
 - no stored Marketplace credential.
 
 ## First Marketplace publication
