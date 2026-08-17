@@ -7,12 +7,12 @@
   "publisher": "zheddhe",
   "repository": {
     "type": "git",
-    "url": "https://github.com/zheddhe/gitea-vscode-extension"
+    "url": "https://github.com/zheddhe/gitea-pull-request"
   },
   "bugs": {
-    "url": "https://github.com/zheddhe/gitea-vscode-extension/issues"
+    "url": "https://github.com/zheddhe/gitea-pull-request/issues"
   },
-  "homepage": "https://github.com/zheddhe/gitea-vscode-extension#readme",
+  "homepage": "https://github.com/zheddhe/gitea-pull-request#readme",
   "keywords": [
     "gitea",
     "git",
