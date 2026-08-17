@@ -209,6 +209,11 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "gitea.refreshReviewPR",
+        "title": "Gitea: Refresh Pull Request Review",
+        "icon": "$(refresh)"
+      },
+      {
         "command": "gitea.refreshCreatePR",
         "title": "Gitea: Refresh Pull Request Branches",
         "icon": "$(refresh)"
@@ -368,7 +373,7 @@
           "group": "navigation@2"
         },
         {
-          "command": "gitea.refreshActivePR",
+          "command": "gitea.refreshReviewPR",
           "when": "view == gitea.reviewPullRequest && gitea.prSession.active",
           "group": "navigation@1"
         },
