@@ -94,6 +94,13 @@ export async function activate(
     vscode.commands.registerCommand("gitea.refreshPostMerge", () =>
       postMergePullRequestView.refreshBranchState(),
     ),
+    vscode.commands.registerCommand("gitea.openActivePR", async () => {
+      const state = prSession.current;
+      if (state.kind !== "active") {
+        return;
+      }
+      await vscode.env.openExternal(vscode.Uri.parse(state.pullRequest.html_url));
+    }),
     auth.onDidChangeSession(() => {
       void repoManager.detect();
     }),
