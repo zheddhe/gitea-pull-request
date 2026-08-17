@@ -57,7 +57,13 @@ function parsePatch(patch: string): DiffLine[] {
     } else if (raw !== "") {
       oldLine += 1;
       newLine += 1;
-      result.push({ type: "ctx", content: raw.slice(1), oldLine, newLine, pos });
+      result.push({
+        type: "ctx",
+        content: raw.slice(1),
+        oldLine,
+        newLine,
+        pos,
+      });
     }
   }
   return result;
@@ -77,6 +83,7 @@ export class PRDetailPanel {
     const existing = PRDetailPanel.panels.get(pr.number);
     if (existing) {
       existing.panel.reveal(vscode.ViewColumn.One);
+      await existing.update(pr);
       return;
     }
     const panel = vscode.window.createWebviewPanel(
@@ -112,10 +119,8 @@ export class PRDetailPanel {
     [key: string]: unknown;
   }): Promise<void> {
     switch (message.command) {
-      case "submitReview":
-        await this.submitReviewWithComments(
-          message.event as "APPROVED" | "REQUEST_CHANGES" | "COMMENT",
-          (message.body as string) ?? "",
+      case "submitInlineReview":
+        await this.submitInlineComments(
           (message.comments as Array<{
             path: string;
             new_position: number;
@@ -137,12 +142,6 @@ export class PRDetailPanel {
         await this.updatePullRequest(
           { body: (message.body as string) ?? "" },
           "description updated",
-        );
-        break;
-      case "updateBase":
-        await this.updatePullRequest(
-          { base: (message.base as string) ?? this.pr.base.ref },
-          "target branch updated",
         );
         break;
       case "refresh":
@@ -174,15 +173,11 @@ export class PRDetailPanel {
   }
 
   private async updatePullRequest(
-    params: { title?: string; body?: string; base?: string },
+    params: { title?: string; body?: string },
     successLabel: string,
   ): Promise<void> {
     if (params.title !== undefined && !params.title.trim()) {
       vscode.window.showWarningMessage("Title cannot be empty.");
-      return;
-    }
-    if (params.base !== undefined && !params.base.trim()) {
-      vscode.window.showWarningMessage("Target branch cannot be empty.");
       return;
     }
     try {
@@ -201,9 +196,7 @@ export class PRDetailPanel {
     }
   }
 
-  private async submitReviewWithComments(
-    event: "APPROVED" | "REQUEST_CHANGES" | "COMMENT",
-    body: string,
+  private async submitInlineComments(
     comments: Array<{
       path: string;
       new_position: number;
@@ -211,19 +204,23 @@ export class PRDetailPanel {
       body: string;
     }>,
   ): Promise<void> {
+    if (comments.length === 0) return;
     try {
       await this.api.createReview(
         this.repoInfo,
         this.pr.number,
-        event,
-        body,
+        "COMMENT",
+        "",
         comments,
       );
       this.pr = await this.api.getPullRequest(this.repoInfo, this.pr.number);
       await this.update(this.pr);
+      vscode.window.showInformationMessage(
+        `${comments.length} inline comment(s) submitted on PR #${this.pr.number}.`,
+      );
     } catch (error) {
       vscode.window.showErrorMessage(
-        `Failed to submit review: ${(error as Error).message}`,
+        `Failed to submit inline comments: ${(error as Error).message}`,
       );
     }
   }
@@ -242,7 +239,7 @@ export class PRDetailPanel {
   async update(pr: GiteaPullRequest): Promise<void> {
     log(`PR update: #${pr.number}`);
     try {
-      const [comments, reviews, files, commits, reviewComments, rawDiff, branches] =
+      const [comments, reviews, files, commits, reviewComments, rawDiff] =
         await Promise.all([
           this.api.listPRComments(this.repoInfo, pr.number),
           this.api.listReviews(this.repoInfo, pr.number),
@@ -252,7 +249,6 @@ export class PRDetailPanel {
             .listAllPRReviewComments(this.repoInfo, pr.number)
             .catch(() => [] as GiteaReviewComment[]),
           this.api.getPRRawDiff(this.repoInfo, pr.number).catch(() => ""),
-          this.api.listBranches(this.repoInfo).catch(() => [] as string[]),
         ]);
 
       const patchMap = parseRawDiff(rawDiff);
@@ -279,7 +275,6 @@ export class PRDetailPanel {
         enrichedFiles,
         commits,
         reviewComments,
-        branches,
         bodyHtml,
         commentBodies,
         reviewBodies,
@@ -312,7 +307,7 @@ export class PRDetailPanel {
   ): string {
     const lines = parsePatch(patch);
     if (lines.length === 0) {
-      return `<tr><td colspan="3" class="empty-diff">No diff available</td></tr>`;
+      return '<tr><td colspan="3" class="empty-diff">No diff available</td></tr>';
     }
     const commentMap = new Map<string, GiteaReviewComment[]>();
     for (const comment of reviewComments.filter((item) => item.path === filename)) {
@@ -364,7 +359,6 @@ export class PRDetailPanel {
     files: (GiteaFileDiff & { patch: string })[],
     commits: GiteaCommit[],
     reviewComments: GiteaReviewComment[],
-    branches: string[],
     bodyHtml: string,
     commentBodies: string[],
     reviewBodies: string[],
@@ -417,13 +411,6 @@ export class PRDetailPanel {
     const milestoneHtml = pr.milestone
       ? `<span class="muted">Milestone: ${escHtml(pr.milestone.title)}</span>`
       : "";
-    const branchOptions = branches
-      .filter((branch) => branch !== pr.head.ref)
-      .map(
-        (branch) =>
-          `<option value="${escHtml(branch)}"${branch === pr.base.ref ? " selected" : ""}>${escHtml(branch)}</option>`,
-      )
-      .join("");
 
     const commentsHtml = comments.length
       ? comments
@@ -440,7 +427,7 @@ export class PRDetailPanel {
             const sourceIndex = reviews.indexOf(review);
             const state = review.state.toLowerCase();
             const label = review.state.replace(/_/g, " ");
-            return `<article class="review review-${state}"><header class="review-header"><strong>${escHtml(review.user.login)}</strong><span class="review-badge review-badge-${state}">${escHtml(label)}</span><span class="time">${escHtml(new Date(review.submitted_at).toLocaleString())}</span></header>${review.body?.trim() ? `<div class="review-body markdown-body">${reviewBodies[sourceIndex] ?? ""}</div>` : ""}</article>`;
+            return `<article class="submitted-review submitted-review-${state}"><header class="review-header"><strong>${escHtml(review.user.login)}</strong><span class="review-badge review-badge-${state}">${escHtml(label)}</span><span class="time">${escHtml(new Date(review.submitted_at).toLocaleString())}</span></header>${review.body?.trim() ? `<div class="review-body markdown-body">${reviewBodies[sourceIndex] ?? ""}</div>` : ""}</article>`;
           })
           .join("")
       : '<p class="empty">No reviews yet.</p>';
@@ -462,14 +449,15 @@ export class PRDetailPanel {
           file.filename,
           reviewComments,
         );
-        return `<section class="file-block"><button class="file-header" data-file-toggle="${fileIndex}" aria-expanded="false"><span class="file-path">${escHtml(file.filename)}</span><span class="file-stats"><span class="additions">+${file.additions}</span> <span class="deletions">-${file.deletions}</span></span><span class="chevron">›</span></button><div class="file-diff" id="file-diff-${fileIndex}" hidden><table class="diff-table"><tbody>${diffRows}</tbody></table></div></section>`;
+        const statusClass = `file-status-${file.status}`;
+        return `<section class="file-block"><button class="file-header" data-file-toggle="${fileIndex}" aria-expanded="false"><span class="file-status ${statusClass}">${escHtml(file.status.slice(0, 1).toUpperCase())}</span><span class="file-path">${escHtml(file.filename)}</span><span class="file-stats"><span class="additions">+${file.additions}</span> <span class="deletions">-${file.deletions}</span></span><span class="chevron">›</span></button><div class="file-diff" id="file-diff-${fileIndex}" hidden><table class="diff-table"><tbody>${diffRows}</tbody></table></div></section>`;
       })
       .join("");
 
     const discussionIcon = `<svg class="tab-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M2 2h12v9H7.2L4 13.7V11H2V2zm1 1v7h2v1.55L6.8 10H13V3H3z"/></svg>`;
     const editIcon = `<svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M11.3 1.7a1 1 0 0 1 1.4 0l1.6 1.6a1 1 0 0 1 0 1.4l-8.6 8.6-3.2.7.7-3.2 8.1-9.1zm.7 1.1-7.9 8.8-.3 1.1 1.1-.3 8.3-8.3L12 2.8z"/></svg>`;
-    const externalIcon = `<svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M9 2h5v5h-1V3.7L7.4 9.3l-.7-.7L12.3 3H9V2zM3 4h4v1H4v7h7V9h1v4H3V4z"/></svg>`;
     const refreshIcon = `<svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M13.2 3.8A6 6 0 1 0 14 9h-1.2a4.8 4.8 0 1 1-.7-4.3L10 6h5V1l-1.8 2.8z"/></svg>`;
+    const externalIcon = `<svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M9 2h5v5h-1V3.7L7.35 9.35l-.7-.7L12.3 3H9V2zM3 4h4v1H4v7h7V8h1v5H3V4z"/></svg>`;
 
     return `<!DOCTYPE html>
 <html lang="en">
@@ -480,21 +468,22 @@ export class PRDetailPanel {
 <title>PR #${pr.number}</title>
 <style>
 :root{--surface:var(--vscode-editor-background);--subtle:var(--vscode-textBlockQuote-background,var(--vscode-editor-inactiveSelectionBackground));--fg:var(--vscode-foreground);--muted:var(--vscode-descriptionForeground);--border:var(--vscode-panel-border,var(--vscode-widget-border));--focus:var(--vscode-focusBorder);--input-bg:var(--vscode-input-background);--input-fg:var(--vscode-input-foreground);--input-border:var(--vscode-input-border,transparent);--button-bg:var(--vscode-button-background);--button-fg:var(--vscode-button-foreground);--button-secondary-bg:var(--vscode-button-secondaryBackground);--button-secondary-fg:var(--vscode-button-secondaryForeground);--success:var(--vscode-testing-iconPassed,var(--vscode-charts-green));--danger:var(--vscode-testing-iconFailed,var(--vscode-errorForeground));--warning:var(--vscode-editorWarning-foreground,var(--vscode-charts-yellow));--info:var(--vscode-textLink-foreground);--merged:var(--vscode-charts-purple);--mono:var(--vscode-editor-font-family)}
-*{box-sizing:border-box}html,body{margin:0;background:var(--surface);color:var(--fg)}body{font-family:var(--vscode-font-family);font-size:var(--vscode-font-size,13px);line-height:1.45;padding:16px 20px}button,input,textarea,select{font:inherit}
-.title-row{display:flex;align-items:center;gap:7px;min-width:0;margin-bottom:5px;white-space:nowrap}.title-prefix{font-size:1.22em;font-weight:600;flex:0 0 auto}.title-text{font-size:1.22em;font-weight:600;overflow:hidden;text-overflow:ellipsis}.title-input{display:none;min-width:180px;width:min(520px,45vw);font-size:1.22em;font-weight:600;padding:1px 5px}.title-row.editing .title-text{display:none}.title-row.editing .title-input{display:inline-block}.state-dot{width:8px;height:8px;border-radius:50%;flex:0 0 8px;background:currentColor}.state-open{color:var(--success)}.state-closed{color:var(--danger)}.state-merged{color:var(--merged)}
-.icon-btn{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;padding:2px;border:0;border-radius:3px;background:transparent;color:var(--muted);cursor:pointer;flex:0 0 auto}.icon-btn:hover{background:var(--vscode-toolbar-hoverBackground,var(--subtle));color:var(--fg)}.icon-btn svg{width:14px;height:14px}.meta-row,.review-row,.branch-row{display:flex;align-items:center;flex-wrap:wrap;gap:6px 9px;color:var(--muted);font-size:.92em}.meta-row{margin-bottom:5px}.review-row{margin-bottom:4px}.branch-row{margin-bottom:12px}.meta-row strong,.context-label{color:var(--fg);font-weight:600}.badge,.review-state{display:inline-flex;align-items:center;border:1px solid currentColor;border-radius:999px;padding:1px 7px;font-size:.82em;font-weight:600}.badge{text-transform:uppercase}.review-approved{color:var(--success)}.review-changes-requested{color:var(--danger)}.review-pending{color:var(--warning)}.label{border:1px solid var(--label-color);border-radius:999px;padding:1px 7px;font-size:.78em}.branch-tag{font-family:var(--mono);background:var(--subtle);border:1px solid var(--border);border-radius:2px;padding:1px 6px;color:var(--fg)}.branch-select{font-family:var(--mono);min-height:24px;padding:1px 24px 1px 6px;background:var(--subtle);color:var(--fg);border:1px solid var(--border);border-radius:2px}
-.btn,.editor-actions,.review-actions,.review-batch-actions{display:flex;gap:6px;flex-wrap:wrap}.btn{display:inline-flex;border:1px solid transparent;border-radius:2px;padding:4px 10px;min-height:26px;cursor:pointer;background:var(--button-bg);color:var(--button-fg)}.btn.sec{background:var(--button-secondary-bg);color:var(--button-secondary-fg)}.btn.success{background:var(--button-secondary-bg);color:var(--success);border-color:var(--success)}.btn.danger{background:var(--button-secondary-bg);color:var(--danger);border-color:var(--danger)}.btn:focus-visible,.icon-btn:focus-visible,.tab:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,.file-header:focus-visible{outline:1px solid var(--focus);outline-offset:2px}
+*{box-sizing:border-box}html,body{margin:0;background:var(--surface);color:var(--fg)}body{font-family:var(--vscode-font-family);font-size:var(--vscode-font-size,13px);line-height:1.45;padding:16px 20px}button,input,textarea{font:inherit}
+.title-row{display:flex;align-items:center;gap:7px;min-width:0;margin-bottom:5px;white-space:nowrap}.title-prefix{font-size:1.22em;font-weight:600;flex:0 0 auto}.title-text{font-size:1.22em;font-weight:600;overflow:hidden;text-overflow:ellipsis}.title-input{display:none;min-width:180px;width:min(520px,45vw);font-size:1.22em;font-weight:600;padding:1px 5px}.title-row.editing .title-text{display:none}.title-row.editing .title-input{display:inline-block}.state-dot{width:8px;height:8px;border-radius:50%;flex:0 0 8px;background:currentColor}.state-open{color:var(--success)}.state-closed{color:var(--danger)}.state-merged{color:var(--merged)}.review-state{display:inline-flex;align-items:center;border:1px solid currentColor;border-radius:999px;padding:1px 7px;font-size:.82em;font-weight:600}.review-approved{color:var(--success)}.review-changes-requested{color:var(--danger)}.review-pending{color:var(--warning)}
+.icon-btn{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;padding:2px;border:0;border-radius:3px;background:transparent;color:var(--muted);cursor:pointer}.icon-btn:hover{background:var(--vscode-toolbar-hoverBackground,var(--subtle));color:var(--fg)}.icon-btn svg{width:14px;height:14px}.meta-row{display:flex;align-items:center;flex-wrap:wrap;gap:6px 9px;color:var(--muted);font-size:.92em;margin-bottom:12px}.meta-row strong{color:var(--fg)}.badge{display:inline-flex;border:1px solid currentColor;border-radius:999px;padding:1px 7px;font-size:.82em;font-weight:600;text-transform:uppercase}.label{border:1px solid var(--label-color);border-radius:999px;padding:1px 7px;font-size:.78em}
+.btn{border:1px solid transparent;border-radius:2px;padding:4px 10px;min-height:26px;cursor:pointer;background:var(--button-bg);color:var(--button-fg)}.btn.sec{background:var(--button-secondary-bg);color:var(--button-secondary-fg)}.btn:focus-visible,.icon-btn:focus-visible,.tab:focus-visible,input:focus-visible,textarea:focus-visible,.file-header:focus-visible{outline:1px solid var(--focus);outline-offset:2px}
 .tabs{display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:14px}.tab{display:inline-flex;align-items:center;gap:6px;background:transparent;border:0;border-bottom:2px solid transparent;color:var(--muted);cursor:pointer;padding:6px 10px}.tab.active{color:var(--fg);border-bottom-color:var(--focus);font-weight:600}.tab-icon{width:15px;height:15px}.tab-content{display:none}.tab-content.active{display:block}
-.section-card,.review-submit,.comment,.review,.file-block{border:1px solid var(--border);border-radius:3px;margin-bottom:10px;overflow:hidden}.section-card{margin-bottom:14px}.section-bar,.comment-header,.review-header{display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--subtle);border-bottom:1px solid var(--border)}.section-bar{justify-content:space-between;font-weight:600}.section-content,.comment-body,.review-body{padding:10px 12px}.description-editor,.review-submit,.inline-comment-form{padding:10px 12px;background:var(--subtle)}.description-editor textarea{min-height:140px}.editor-actions,.review-actions{margin-top:8px}.review-batch-actions{align-items:center;margin-top:8px;padding-top:8px;border-top:1px solid var(--border)}.pending-label{color:var(--muted);font-size:.9em}.submit-inline{display:none}.submit-inline.visible{display:inline-flex}
-textarea,input[type="text"],select{background:var(--input-bg);color:var(--input-fg);border:1px solid var(--input-border);border-radius:2px;padding:6px 8px}textarea,input[type="text"]{width:100%}textarea{resize:vertical;line-height:1.45}.markdown-body{line-height:1.5;overflow-wrap:anywhere}.markdown-body h1,.markdown-body h2,.markdown-body h3{font-weight:600;line-height:1.3}.markdown-body h1{font-size:1.28em}.markdown-body h2{font-size:1.16em}.markdown-body h3{font-size:1.06em}.markdown-body code,.sha,.file-path,.diff-table{font-family:var(--mono)}.markdown-body pre{overflow:auto}.avatar{width:20px;height:20px;border-radius:50%}.time{margin-left:auto;color:var(--muted);font-size:.92em}.empty,.muted{color:var(--muted)}
-.review{border-left-width:3px}.review-approved{border-left-color:var(--success)}.review-request_changes{border-left-color:var(--danger)}.review-comment,.review-commented{border-left-color:var(--info)}.review-badge{font-size:.78em;border:1px solid currentColor;border-radius:999px;padding:1px 6px}.review-badge-approved{color:var(--success)}.review-badge-request_changes{color:var(--danger)}.review-badge-comment,.review-badge-commented{color:var(--info)}.section-heading{font-size:1em;font-weight:600;margin:14px 0 8px}
-.commit-entry{display:grid;grid-template-columns:max-content minmax(0,1fr) max-content;gap:10px;padding:7px 4px;border-bottom:1px solid var(--border)}.commit-author{color:var(--muted)}.file-header{width:100%;display:flex;align-items:center;gap:8px;border:0;background:var(--subtle);padding:7px 10px;cursor:pointer;text-align:left}.file-path{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.additions{color:var(--success)}.deletions{color:var(--danger)}.chevron{color:var(--muted)}.file-diff{overflow:auto;border-top:1px solid var(--border)}.diff-table{width:100%;border-collapse:collapse;font-size:.9em;table-layout:fixed}.ln{width:44px;text-align:right;padding:0 6px;color:var(--muted);background:var(--subtle);border-right:1px solid var(--border)}.lc{padding:0 8px;white-space:pre}.lc pre{margin:0;font:inherit}.diff-add .lc{background:color-mix(in srgb,var(--success) 12%,transparent)}.diff-del .lc{background:color-mix(in srgb,var(--danger) 12%,transparent)}.diff-hunk td{background:color-mix(in srgb,var(--info) 10%,transparent);color:var(--info)}.clickable-line{cursor:pointer}.inline-actions{display:flex;gap:6px;margin-top:6px}.review-comment-card,.pending-review-comment{padding:8px 12px;background:var(--subtle)}.review-comment-card{border-left:3px solid var(--info)}.pending-review-comment{border-left:3px dashed var(--warning);display:flex;gap:8px}.pending-body{flex:1}.remove-pending{background:none;border:0;color:var(--muted);cursor:pointer}
+.section-card,.comment,.submitted-review,.file-block,.inline-review-toolbar{border:1px solid var(--border);border-radius:3px;margin-bottom:10px;overflow:hidden}.section-card{margin-bottom:14px}.section-bar,.comment-header,.review-header{display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--subtle);border-bottom:1px solid var(--border)}.section-bar{justify-content:space-between;font-weight:600}.section-content,.comment-body,.review-body{padding:10px 12px}.description-editor,.inline-comment-form{padding:10px 12px;background:var(--subtle)}.description-editor textarea{min-height:140px}.editor-actions,.inline-actions,.review-batch-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.inline-review-toolbar{padding:9px 10px;background:var(--subtle);display:flex;align-items:center;gap:8px}.pending-label{color:var(--muted);font-size:.9em}.submit-inline{display:none}.submit-inline.visible{display:inline-flex}
+textarea,input[type="text"]{background:var(--input-bg);color:var(--input-fg);border:1px solid var(--input-border);border-radius:2px;padding:6px 8px;width:100%;resize:vertical}.markdown-body{line-height:1.5;overflow-wrap:anywhere}.markdown-body h1{font-size:1.28em}.markdown-body h2{font-size:1.16em}.markdown-body h3{font-size:1.06em}.markdown-body code,.sha,.file-path,.diff-table{font-family:var(--mono)}.markdown-body pre{overflow:auto}.avatar{width:20px;height:20px;border-radius:50%}.time{margin-left:auto;color:var(--muted);font-size:.92em}.empty,.muted{color:var(--muted)}
+.submitted-review{border-left-width:3px}.submitted-review-approved{border-left-color:var(--success)}.submitted-review-request_changes{border-left-color:var(--danger)}.submitted-review-comment,.submitted-review-commented{border-left-color:var(--info)}.review-badge{font-size:.78em;border:1px solid currentColor;border-radius:999px;padding:1px 6px}.review-badge-approved{color:var(--success)}.review-badge-request_changes{color:var(--danger)}.review-badge-comment,.review-badge-commented{color:var(--info)}.section-heading{font-size:1em;font-weight:600;margin:14px 0 8px}
+.commit-entry{display:grid;grid-template-columns:max-content minmax(0,1fr) max-content;gap:10px;padding:7px 4px;border-bottom:1px solid var(--border)}.commit-author{color:var(--muted)}.file-header{width:100%;display:flex;align-items:center;gap:8px;border:0;background:var(--subtle);padding:7px 10px;cursor:pointer;text-align:left}.file-status{display:inline-flex;width:17px;height:17px;align-items:center;justify-content:center;border:1px solid currentColor;border-radius:2px;font-size:.72em;font-weight:600}.file-status-added{color:var(--success)}.file-status-deleted{color:var(--danger)}.file-status-modified,.file-status-changed{color:var(--warning)}.file-status-renamed{color:var(--info)}.file-path{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.additions{color:var(--success)}.deletions{color:var(--danger)}.chevron{color:var(--muted)}.file-diff{overflow:auto;border-top:1px solid var(--border)}.diff-table{width:100%;border-collapse:collapse;font-size:.9em;table-layout:fixed}.ln{width:44px;text-align:right;padding:0 6px;color:var(--muted);background:var(--subtle);border-right:1px solid var(--border)}.lc{padding:0 8px;white-space:pre}.lc pre{margin:0;font:inherit}.diff-add .lc{background:color-mix(in srgb,var(--success) 12%,transparent)}.diff-del .lc{background:color-mix(in srgb,var(--danger) 12%,transparent)}.diff-hunk td{background:color-mix(in srgb,var(--info) 10%,transparent);color:var(--info)}.clickable-line{cursor:pointer}.review-comment-card,.pending-review-comment{padding:8px 12px;background:var(--subtle)}.review-comment-card{border-left:3px solid var(--info)}.pending-review-comment{border-left:3px dashed var(--warning);display:flex;gap:8px}.pending-body{flex:1}.remove-pending{background:none;border:0;color:var(--muted);cursor:pointer}
 </style>
 </head>
 <body>
 <header>
   <div id="title-row" class="title-row">
     <span class="state-dot ${stateClass}" aria-hidden="true"></span>
+    <span class="review-state review-${reviewStatus}">${reviewLabel}</span>
     <span class="title-prefix">Pull Request #${pr.number}</span>
     <span id="title-text" class="title-text">${escHtml(pr.title)}</span>
     <input id="title-input" class="title-input" type="text" aria-label="Pull request title" value="${escHtml(pr.title)}">
@@ -503,16 +492,14 @@ textarea,input[type="text"],select{background:var(--input-bg);color:var(--input-
     <button id="refresh" class="icon-btn" title="Refresh pull request" aria-label="Refresh pull request">${refreshIcon}</button>
   </div>
   <div class="meta-row"><span class="badge ${stateClass}">${stateLabel}</span><span>by <strong>${escHtml(pr.user.login)}</strong></span><span>${escHtml(new Date(pr.created_at).toLocaleDateString())}</span>${labelsHtml}${assigneesHtml}${milestoneHtml}</div>
-  <div class="review-row"><span class="context-label">Review</span><span class="review-state review-${reviewStatus}">${reviewLabel}</span></div>
-  <div class="branch-row"><span class="context-label">Source branch</span><span class="branch-tag">${escHtml(pr.head.ref)}</span><span>→</span><span class="context-label">Base branch</span>${isOpen ? `<select id="base-select" class="branch-select" aria-label="Base branch">${branchOptions}</select>` : `<span class="branch-tag">${escHtml(pr.base.ref)}</span>`}</div>
 </header>
 <nav class="tabs" role="tablist" aria-label="Pull request detail sections"><button class="tab" id="discussion-tab" data-tab="discussion" role="tab" aria-selected="false">${discussionIcon}<span>Discussion (${comments.length})</span></button><button class="tab active" id="reviews-tab" data-tab="reviews" role="tab" aria-selected="true">Reviews (${activeReviews.length})</button><button class="tab" id="commits-tab" data-tab="commits" role="tab" aria-selected="false">Commits (${commits.length})</button></nav>
 <section id="tab-discussion" class="tab-content" role="tabpanel" aria-labelledby="discussion-tab">
   <section class="section-card"><div class="section-bar"><span>Description</span><button id="edit-body" class="icon-btn" title="Edit description" aria-label="Edit pull request description">${editIcon}</button></div><div id="body-view" class="section-content">${bodyHtml ? `<div class="markdown-body">${bodyHtml}</div>` : '<div class="empty">(no description)</div>'}</div><div id="body-editor" class="description-editor" hidden><textarea id="body-input">${escHtml(pr.body || "")}</textarea><div class="editor-actions"><button id="save-body" class="btn">Save</button><button id="cancel-body" class="btn sec">Cancel</button></div></div></section>
-  <div class="section-bar"><span>Comments (${comments.length})</span></div><div>${commentsHtml}</div><div><textarea id="comment-body" aria-label="Add a comment" style="height:70px;width:100%" placeholder="Write a comment..."></textarea><div class="editor-actions"><button id="post-comment" class="btn">Post Comment</button></div></div>
+  <div class="section-bar"><span>Comments (${comments.length})</span></div><div>${commentsHtml}</div><div><textarea id="comment-body" aria-label="Add a comment" style="height:70px" placeholder="Write a comment..."></textarea><div class="editor-actions"><button id="post-comment" class="btn">Post Comment</button></div></div>
 </section>
 <section id="tab-reviews" class="tab-content active" role="tabpanel" aria-labelledby="reviews-tab">
-  <div class="review-submit"><strong>Review</strong><textarea id="review-body" style="height:70px;margin-top:8px" placeholder="Overall review comment (optional)..."></textarea><div class="review-actions"><button class="btn" data-review-event="COMMENT">Comment</button>${isOpen ? '<button class="btn success" data-review-event="APPROVED">Approve</button><button class="btn danger" data-review-event="REQUEST_CHANGES">Request Changes</button>' : ""}</div><div class="review-batch-actions"><button id="submit-inline" class="btn sec submit-inline">Submit inline comments</button><span id="pending-inline-label" class="pending-label">Pending inline comments: 0</span></div></div>
+  <div class="inline-review-toolbar"><button id="submit-inline" class="btn submit-inline">Submit inline comments</button><span id="pending-inline-label" class="pending-label">Pending inline comments: 0</span></div>
   ${filesHtml}
   <h2 class="section-heading">Submitted Reviews</h2>${reviewsHtml}
 </section>
@@ -524,11 +511,10 @@ function showTab(name,button){document.querySelectorAll('.tab-content').forEach(
 function setTitleEditing(editing){document.getElementById('title-row').classList.toggle('editing',editing);if(editing){titleCancelled=false;const input=document.getElementById('title-input');input.focus();input.select();}}
 function saveTitle(){if(titleCancelled)return;const input=document.getElementById('title-input');const title=(input.value||'').trim();if(!title){input.value=originalTitle;setTitleEditing(false);return;}if(title===originalTitle){setTitleEditing(false);return;}post('editTitle',{title});}
 function setBodyEditing(editing){document.getElementById('body-view').hidden=editing;document.getElementById('body-editor').hidden=!editing;if(editing)document.getElementById('body-input')?.focus();}
-function submitReview(event){post('submitReview',{event,body:document.getElementById('review-body').value||'',comments:pendingComments.filter(Boolean)});}
 function updatePendingCount(){const count=pendingComments.filter(Boolean).length;const submit=document.getElementById('submit-inline');const label=document.getElementById('pending-inline-label');if(submit)submit.classList.toggle('visible',count>0);if(label)label.textContent='Pending inline comments: '+count;}
 document.getElementById('edit-title')?.addEventListener('click',()=>setTitleEditing(true));document.getElementById('title-input')?.addEventListener('blur',saveTitle);document.getElementById('title-input')?.addEventListener('keydown',(event)=>{if(event.key==='Escape'){titleCancelled=true;event.currentTarget.value=originalTitle;setTitleEditing(false);}else if(event.key==='Enter'){event.preventDefault();saveTitle();}});
-document.getElementById('open-browser')?.addEventListener('click',()=>post('openInBrowser'));document.getElementById('refresh')?.addEventListener('click',()=>post('refresh'));document.getElementById('edit-body')?.addEventListener('click',()=>setBodyEditing(true));document.getElementById('cancel-body')?.addEventListener('click',()=>setBodyEditing(false));document.getElementById('save-body')?.addEventListener('click',()=>post('editBody',{body:document.getElementById('body-input').value||''}));document.getElementById('base-select')?.addEventListener('change',(event)=>{const base=event.target.value;if(base)post('updateBase',{base});});
-document.getElementById('post-comment')?.addEventListener('click',()=>{const input=document.getElementById('comment-body');const body=(input.value||'').trim();if(!body)return;post('addComment',{body});input.value='';});document.querySelectorAll('[data-tab]').forEach((button)=>button.addEventListener('click',()=>showTab(button.dataset.tab,button)));document.querySelectorAll('[data-review-event]').forEach((button)=>button.addEventListener('click',()=>submitReview(button.dataset.reviewEvent)));document.getElementById('submit-inline')?.addEventListener('click',()=>submitReview('COMMENT'));
+document.getElementById('open-browser')?.addEventListener('click',()=>post('openInBrowser'));document.getElementById('refresh')?.addEventListener('click',()=>post('refresh'));document.getElementById('edit-body')?.addEventListener('click',()=>setBodyEditing(true));document.getElementById('cancel-body')?.addEventListener('click',()=>setBodyEditing(false));document.getElementById('save-body')?.addEventListener('click',()=>post('editBody',{body:document.getElementById('body-input').value||''}));
+document.getElementById('post-comment')?.addEventListener('click',()=>{const input=document.getElementById('comment-body');const body=(input.value||'').trim();if(!body)return;post('addComment',{body});input.value='';});document.querySelectorAll('[data-tab]').forEach((button)=>button.addEventListener('click',()=>showTab(button.dataset.tab,button)));document.getElementById('submit-inline')?.addEventListener('click',()=>post('submitInlineReview',{comments:pendingComments.filter(Boolean)}));
 document.querySelectorAll('[data-file-toggle]').forEach((button)=>button.addEventListener('click',()=>{const index=button.dataset.fileToggle;const diff=document.getElementById('file-diff-'+index);const expanded=button.getAttribute('aria-expanded')==='true';button.setAttribute('aria-expanded',String(!expanded));if(diff)diff.hidden=expanded;}));document.querySelectorAll('.clickable-line').forEach((row)=>row.addEventListener('click',()=>{const key=row.dataset.fileIndex+'-'+row.dataset.pos;const form=document.getElementById('comment-form-'+key);if(!form)return;if(openFormKey&&openFormKey!==key){const previous=document.getElementById('comment-form-'+openFormKey);if(previous)previous.hidden=true;}form.hidden=!form.hidden;openFormKey=form.hidden?null:key;if(!form.hidden)form.querySelector('textarea')?.focus();}));document.querySelectorAll('.cancel-inline').forEach((button)=>button.addEventListener('click',(event)=>{event.stopPropagation();button.closest('tr').hidden=true;openFormKey=null;}));document.querySelectorAll('.add-inline').forEach((button)=>button.addEventListener('click',(event)=>{event.stopPropagation();const row=button.closest('tr');const input=row.querySelector('textarea');const body=(input.value||'').trim();if(!body)return;const index=pendingComments.length;pendingComments.push({path:row.dataset.path,new_position:parseInt(row.dataset.newLine||'0',10),old_position:parseInt(row.dataset.oldLine||'0',10),body});const pending=document.createElement('tr');pending.innerHTML='<td colspan="3"><div class="pending-review-comment"><span class="pending-body"></span><button class="remove-pending" title="Remove">×</button></div></td>';pending.querySelector('.pending-body').textContent=body;pending.querySelector('.remove-pending').addEventListener('click',()=>{pendingComments[index]=null;pending.remove();updatePendingCount();});row.after(pending);row.hidden=true;input.value='';openFormKey=null;updatePendingCount();}));document.querySelectorAll('.markdown-body a[href]').forEach((link)=>link.addEventListener('click',(event)=>{event.preventDefault();post('openExternal',{url:link.getAttribute('href')});}));updatePendingCount();
 </script>
 </body>
