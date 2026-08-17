@@ -148,6 +148,16 @@ suite("PR detail presentation", () => {
     assert.match(source, /placeholder="Write a comment\.\.\."/);
   });
 
+  test("edits PR discussion comments locally without changing inline reviews", () => {
+    assert.match(source, /case "editComment"/);
+    assert.match(source, /this\.api\.updateComment\(this\.repoInfo, commentId, body\.trim\(\)\)/);
+    assert.match(source, /class="icon-btn edit-comment"/);
+    assert.match(source, /class="comment-editor"/);
+    assert.match(source, /class="btn save-comment"/);
+    assert.match(source, /class="btn sec cancel-comment"/);
+    assert.match(source, /function setCommentEditing\(id,editing\)/);
+  });
+
   test("removes View Details from Changes tree while keeping data section order", () => {
     assert.doesNotMatch(changesSource, /class PRDiffDetailItem/);
     assert.doesNotMatch(changesSource, /new PRDiffDetailItem/);
@@ -174,7 +184,8 @@ suite("PR detail presentation", () => {
       reviewSource,
       /<select aria-label="Source branch" disabled><option selected>/,
     );
-    assert.match(reviewSource, /class="branch-arrow" aria-hidden="true">↓<\/span>/);
+    assert.doesNotMatch(reviewSource, /branch-arrow/);
+    assert.doesNotMatch(reviewSource, />↓</);
     assert.match(reviewSource, /id="baseBranch"/);
     assert.match(reviewSource, /type: "updateBase"/);
     assert.match(reviewSource, /message\.type === "updateBase"/);
