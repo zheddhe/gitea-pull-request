@@ -91,6 +91,9 @@ export async function activate(
     vscode.commands.registerCommand("gitea.refreshCreatePR", () =>
       createPullRequestView.refreshBranches(),
     ),
+    vscode.commands.registerCommand("gitea.refreshReviewPR", () =>
+      vscode.commands.executeCommand("gitea.refreshActivePR"),
+    ),
     auth.onDidChangeSession(() => {
       void repoManager.detect();
     }),
