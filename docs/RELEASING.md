@@ -24,20 +24,20 @@ The release baseline is intentionally conservative and matches the environments 
 
 ## Marketplace authentication
 
-The release workflow uses **GitHub Actions OIDC trusted publishing** through `@vscode/vsce`.
+Automated Visual Studio Marketplace publication is **temporarily paused**.
 
-No Azure DevOps Personal Access Token is required or expected by `.github/workflows/release.yml`.
+The current Marketplace publisher portal does not expose a trusted-publishing policy configuration for the repository/workflow, so `.github/workflows/release.yml` does not currently request an OIDC token and does not attempt `vsce publish --oidc`.
 
-Configure the Visual Studio Marketplace publisher to trust this GitHub workflow:
+Marketplace releases are published manually by uploading the exact VSIX produced and attached by the GitHub Release workflow.
+
+The intended future trusted-publishing identity remains:
 
 - GitHub owner: `zheddhe`
 - Repository: `gitea-pull-request`
 - Workflow: `.github/workflows/release.yml`
 - Marketplace publisher: `zheddhe`
 
-The workflow requests `id-token: write`, and `vsce publish --oidc` exchanges the GitHub OIDC identity for a short-lived Marketplace credential.
-
-Do not add a long-lived Marketplace PAT to the repository unless OIDC cannot be enabled for an exceptional bootstrap case. If a PAT is ever used temporarily, store it only as a GitHub Actions secret and remove it once trusted publishing is available.
+When the Marketplace publisher can be configured with that trusted-publishing policy, automated OIDC publication may be re-enabled. Do not add a long-lived Marketplace PAT to the repository merely to bypass the missing policy configuration.
 
 ## Release gate
 
@@ -71,9 +71,9 @@ Perform the final smoke pass before merging the release PR.
 3. Create and publish the corresponding GitHub Release.
 4. Publishing the GitHub Release triggers `.github/workflows/release.yml`.
 5. The workflow checks out the release tag and validates that the tag version, package version, publisher ID and package name are coherent.
-6. `make ci` performs the clean dependency install, compile, lint, tests and VSIX packaging.
+6. `make ci` performs the clean dependency install, compile, lint, tests and VSIX packaging under Xvfb on the Linux runner.
 7. The generated versioned VSIX is uploaded to the GitHub Release.
-8. The exact same VSIX is published to the Visual Studio Marketplace with `vsce publish --oidc`.
+8. While trusted publishing is paused, upload that exact GitHub Release VSIX manually to the Visual Studio Marketplace.
 
 The workflow must fail rather than publish when the release identity is inconsistent.
 
@@ -85,21 +85,17 @@ The release workflow intentionally uses:
 - VS Code 1.133.0 for extension-host tests;
 - Gitea 1.26.4 as the minimum documented/tested server baseline for `0.7.0`;
 - the project `Makefile` as the build/test/package source of truth;
-- pinned `@vscode/vsce` version `3.9.2` for publication;
-- GitHub permissions `contents: write` and `id-token: write`;
+- Xvfb for VS Code/Electron extension-host tests on the Linux GitHub runner;
+- GitHub permission `contents: write` for attaching the VSIX to the GitHub Release;
+- immutable SHA-pinned GitHub Actions with their semantic versions retained as comments;
 - one release execution per tag through GitHub Actions concurrency;
-- no stored Marketplace credential.
+- no stored Marketplace credential while automated publication is paused.
 
 ## First Marketplace publication
 
-Before publishing the first release, confirm in the Marketplace publisher portal that:
+The first Marketplace publication (`0.7.0`) was bootstrapped manually from the VSIX produced by the GitHub Release workflow.
 
-- publisher display name is **Rémy Canal** and publisher ID is `zheddhe`;
-- the GitHub trusted-publishing policy points to the exact repository and workflow above;
-- the extension name `gitea-pull-request` is available;
-- Marketplace-facing README, icon, repository, support and license information are correct.
-
-If trusted publishing is not available in the publisher portal, do not silently modify the workflow to use a token. Decide explicitly whether to perform a temporary PAT-based bootstrap publication or contact Marketplace support.
+Before re-enabling automated Marketplace publication, confirm that the Marketplace publisher portal can define a trusted-publishing policy for the exact repository/workflow identity above. If that capability remains unavailable, keep Marketplace publication manual or contact Marketplace support rather than silently introducing a long-lived token.
 
 ## License and origin
 
