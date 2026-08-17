@@ -21,6 +21,7 @@ export class IssueDetailPanel {
       existing.panel.reveal(vscode.ViewColumn.One);
       return;
     }
+
     const panel = vscode.window.createWebviewPanel(
       "giteaIssueDetail",
       `Issue #${issue.number}: ${issue.title}`,
@@ -48,6 +49,7 @@ export class IssueDetailPanel {
     private readonly key: string,
   ) {
     this.panel = panel;
+    void this.extensionUri;
 
     panel.onDidDispose(() => this.dispose(), null, this.disposables);
     panel.webview.onDidReceiveMessage(
@@ -82,7 +84,10 @@ export class IssueDetailPanel {
         await this.update(this.issue);
         break;
       case "openInBrowser":
-        vscode.env.openExternal(vscode.Uri.parse(this.issue.html_url));
+        await vscode.env.openExternal(vscode.Uri.parse(this.issue.html_url));
+        break;
+      case "openExternal":
+        await this.openExternal((msg.url as string) ?? "");
         break;
       case "debug":
         log("Issue webview: " + (msg.body as string));
@@ -90,6 +95,19 @@ export class IssueDetailPanel {
       default:
         log("Issue unknown message: " + msg.command);
         break;
+    }
+  }
+
+  private async openExternal(rawUrl: string): Promise<void> {
+    try {
+      const resolved = new URL(rawUrl, this.issue.html_url);
+      if (resolved.protocol !== "http:" && resolved.protocol !== "https:") {
+        throw new Error("Unsupported URL scheme");
+      }
+      await vscode.env.openExternal(vscode.Uri.parse(resolved.toString()));
+    } catch (error) {
+      log(`Issue link rejected: ${rawUrl} (${(error as Error).message})`);
+      vscode.window.showWarningMessage("Unsupported issue link.");
     }
   }
 
@@ -152,33 +170,82 @@ export class IssueDetailPanel {
         this.repoInfo,
         issue.number,
       );
-      this.panel.webview.html = this.renderHtml(issue, comments);
+      const [bodyHtml, ...commentBodies] = await Promise.all([
+        this.renderMarkdown(issue.body ?? ""),
+        ...comments.map((comment) => this.renderMarkdown(comment.body ?? "")),
+      ]);
+      this.panel.webview.html = this.renderHtml(
+        issue,
+        comments,
+        bodyHtml,
+        commentBodies,
+      );
     } catch (err) {
       this.panel.webview.html = `<!DOCTYPE html><html><body><h2>Error</h2><p>${escHtml((err as Error).message)}</p></body></html>`;
     }
   }
 
-  private renderHtml(issue: GiteaIssue, comments: GiteaComment[]): string {
+  private async renderMarkdown(markdown: string): Promise<string> {
+    if (!markdown.trim()) {
+      return "";
+    }
+    try {
+      const rendered = await vscode.commands.executeCommand<string>(
+        "markdown.api.render",
+        markdown,
+      );
+      if (typeof rendered === "string") {
+        return rendered;
+      }
+      throw new Error("VS Code Markdown renderer returned no HTML");
+    } catch (error) {
+      log(`Issue Markdown renderer fallback: ${(error as Error).message}`);
+      return `<pre>${escHtml(markdown)}</pre>`;
+    }
+  }
+
+  private renderHtml(
+    issue: GiteaIssue,
+    comments: GiteaComment[],
+    bodyHtml: string,
+    commentBodies: string[],
+  ): string {
     const stateBg = issue.state === "open" ? "#2da44e" : "#cf222e";
     const stateLabel = issue.state === "open" ? "Open" : "Closed";
     const stateIcon = issue.state === "open" ? "🟢" : "🟣";
+    const nonce = getNonce();
 
     const labelsHtml =
       issue.labels
         ?.map(
-          (l) =>
-            `<span class="label" style="background:#${l.color}">${escHtml(l.name)}</span>`,
+          (label) =>
+            `<span class="label" style="background:#${escHtml(label.color)}">${escHtml(label.name)}</span>`,
         )
         .join("") ?? "";
-    const assigneesHtml =
-      issue.assignees?.length
-        ? `<span class="mi">👤 ${issue.assignees.map((a) => escHtml(a.login)).join(", ")}</span>`
-        : issue.assignee
-          ? `<span class="mi">👤 ${escHtml(issue.assignee.login)}</span>`
-          : "";
+    const assigneesHtml = issue.assignees?.length
+      ? `<span class="mi">👤 ${issue.assignees.map((user) => escHtml(user.login)).join(", ")}</span>`
+      : issue.assignee
+        ? `<span class="mi">👤 ${escHtml(issue.assignee.login)}</span>`
+        : "";
     const milestoneHtml = issue.milestone
       ? `<span class="mi">🏁 ${escHtml(issue.milestone.title)}</span>`
       : "";
+
+    const commentsHtml = comments.length
+      ? comments
+          .map((comment, index) => {
+            const renderedBody = commentBodies[index] ?? "";
+            return `<div class="comment" id="comment-${comment.id}">
+              <div class="comment-hdr">
+                <img src="${escHtml(comment.user.avatar_url)}" class="avatar" alt="">
+                <strong>${escHtml(comment.user.login)}</strong>
+                <span class="time">${escHtml(new Date(comment.created_at).toLocaleString())}</span>
+              </div>
+              <div class="comment-body markdown-body">${renderedBody}</div>
+            </div>`;
+          })
+          .join("")
+      : '<p class="empty">No comments yet.</p>';
 
     const createdDate = new Date(issue.created_at).toLocaleString();
     const updatedDate = new Date(issue.updated_at).toLocaleString();
@@ -186,15 +253,11 @@ export class IssueDetailPanel {
       ? new Date(issue.closed_at).toLocaleString()
       : "—";
 
-    const commentsJson = JSON.stringify(comments).replace(/</g, "\\u003c").replace(/>/g, "\\u003e");
-    const bodyJson = JSON.stringify(issue.body || "").replace(/</g, "\\u003c").replace(/>/g, "\\u003e");
-    const titleJson = JSON.stringify(issue.title).replace(/</g, "\\u003c").replace(/>/g, "\\u003e");
-
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: data: vscode-resource:; style-src 'unsafe-inline'; script-src 'unsafe-inline';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: data: vscode-resource:; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Issue #${issue.number}</title>
 <style>
@@ -216,255 +279,127 @@ export class IssueDetailPanel {
   --block-bg: var(--vscode-textBlockQuote-background,#252526);
   --mono: var(--vscode-editor-font-family,'Menlo','Consolas','Courier New',monospace);
 }
-*{box-sizing:border-box;margin:0;padding:0}
-body{font-family:var(--vscode-font-family,-apple-system,sans-serif);font-size:13px;color:var(--fg);background:var(--bg);padding:14px 20px}
-h1{font-size:1.18em;margin-bottom:6px;line-height:1.4;font-weight:600}
-h2{font-size:.92em;font-weight:600;margin-bottom:8px}
-code{background:var(--block-bg);padding:1px 5px;border-radius:3px;font-size:.85em;font-family:var(--mono)}
-.badge{display:inline-block;padding:2px 9px;border-radius:10px;font-size:.72em;font-weight:700;color:#fff;text-transform:uppercase;letter-spacing:.02em}
+*{box-sizing:border-box}
+body{font-family:var(--vscode-font-family,-apple-system,sans-serif);font-size:13px;color:var(--fg);background:var(--bg);padding:14px 20px;margin:0}
+h1{font-size:1.18em;line-height:1.4;font-weight:600}.title-row h1{margin:0}
+h2{font-size:.92em;font-weight:600;margin:0 0 8px}
+a{color:var(--vscode-textLink-foreground)}
+code{background:var(--block-bg);padding:1px 5px;border-radius:3px;font-size:.9em;font-family:var(--mono)}
+pre{background:var(--block-bg);padding:8px 12px;border-radius:4px;overflow-x:auto;margin:.6em 0}pre code{background:none;padding:0}
+.badge{display:inline-block;padding:2px 9px;border-radius:10px;font-size:.72em;font-weight:700;color:#fff;text-transform:uppercase}
 .label{display:inline-block;padding:1px 8px;border-radius:10px;font-size:.72em;font-weight:600;color:#fff;margin-right:3px}
-.meta-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:.82em;color:var(--dim);margin-bottom:12px}
-.mi{color:var(--dim)}.dim{color:var(--dim)}.ml8{margin-left:8px}.ml-auto{margin-left:auto}
-.stats-row{display:flex;flex-wrap:wrap;gap:18px;padding:8px 14px;background:var(--block-bg);border:1px solid var(--border);border-radius:5px;margin-bottom:12px}
-.stat{display:flex;flex-direction:column;gap:2px}
-.stat-lbl{color:var(--dim);font-size:.75em;text-transform:uppercase;letter-spacing:.04em}
-.stat-val{font-weight:700;font-size:1.05em}
+.meta-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:.82em;color:var(--dim);margin:4px 0 12px}
+.mi,.dim,.time{color:var(--dim)}.time{margin-left:auto}
 .actions{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:14px;align-items:center}
 .btn{background:var(--btn-bg);color:var(--btn-fg);border:none;padding:5px 12px;border-radius:4px;cursor:pointer;font-size:.87em;font-family:inherit;white-space:nowrap}
-.btn:hover{background:var(--btn-hover)}
-.btn.sec{background:var(--btn2-bg);color:var(--btn2-fg)}.btn.sec:hover{background:var(--btn2-hover)}
-.btn.danger{background:#b91c1c;color:#fff}.btn.danger:hover{background:#dc2626}
-.btn.success{background:#15803d;color:#fff}.btn.success:hover{background:#16a34a}
-.btn.sm{font-size:.75em;padding:3px 8px}
+.btn:hover{background:var(--btn-hover)}.btn.sec{background:var(--btn2-bg);color:var(--btn2-fg)}.btn.sec:hover{background:var(--btn2-hover)}
+.btn.danger{background:#b91c1c;color:#fff}.btn.success{background:#15803d;color:#fff}.btn.sm{font-size:.75em;padding:3px 8px}
+.btn:focus-visible,.tab:focus-visible,textarea:focus-visible,input:focus-visible,a:focus-visible{outline:1px solid var(--focus);outline-offset:2px}
 .tabs{display:flex;gap:1px;border-bottom:1px solid var(--border);margin:0 0 14px}
 .tab{background:none;border:none;border-bottom:2px solid transparent;color:var(--dim);cursor:pointer;padding:7px 13px;font-size:.88em;font-family:inherit}
 .tab:hover{color:var(--fg)}.tab.active{color:var(--fg);border-bottom-color:var(--focus);font-weight:600}
 .tab-content{display:none}.tab-content.active{display:block}
+.desc-body{line-height:1.6;background:var(--block-bg);border:1px solid var(--border);border-radius:5px;padding:12px;margin-bottom:14px;overflow:hidden;word-break:break-word}
+.markdown-body p{margin:.5em 0}.markdown-body p:first-child{margin-top:0}.markdown-body p:last-child{margin-bottom:0}
+.markdown-body ul,.markdown-body ol{padding-left:1.6em}.markdown-body blockquote{border-left:3px solid var(--border);padding-left:12px;margin:.6em 0;color:var(--dim)}
+.markdown-body img{max-width:100%;height:auto}.markdown-body input[type="checkbox"]{width:auto;margin-right:6px}
 .comment{border:1px solid var(--border);border-radius:6px;margin-bottom:10px;overflow:hidden}
 .comment-hdr{display:flex;align-items:center;gap:8px;padding:7px 12px;background:var(--block-bg);border-bottom:1px solid var(--border);font-size:.84em}
-.comment-body{padding:10px 12px;line-height:1.5;overflow:hidden;word-break:break-word}
-.comment-body p{margin:0 0 0.5em}.comment-body p:last-child{margin:0}
-.comment-body code{background:var(--block-bg);padding:1px 5px;border-radius:3px;font-family:var(--mono);font-size:.85em}
-.comment-body pre{background:var(--block-bg);padding:8px 12px;border-radius:4px;overflow-x:auto;margin:0.5em 0}
-.comment-body pre code{background:none;padding:0}
-.comment-body ul,.comment-body ol{padding-left:1.5em;margin:0.5em 0}
-.comment-body blockquote{border-left:3px solid var(--border);padding-left:12px;margin:0.5em 0;color:var(--dim)}
-.comment-body a{color:var(--focus)}
-.comment-body img{max-width:100%;height:auto}
-.avatar{width:20px;height:20px;border-radius:50%}
-.time{margin-left:auto;color:var(--dim)}
-.empty{color:var(--dim);font-style:italic;padding:6px 0}
-.form-section{margin-top:14px}
-textarea{width:100%;background:var(--input-bg);color:var(--input-fg);border:1px solid var(--input-border);border-radius:4px;padding:7px;font-family:inherit;font-size:.9em;resize:vertical}
-textarea:focus{outline:1px solid var(--focus)}
-input[type="text"]{width:100%;background:var(--input-bg);color:var(--input-fg);border:1px solid var(--input-border);border-radius:4px;padding:6px 8px;font-family:inherit;font-size:.9em;box-sizing:border-box}
-input[type="text"]:focus{outline:1px solid var(--focus)}
-.desc-body{line-height:1.6;background:var(--block-bg);border:1px solid var(--border);border-radius:5px;padding:12px;margin-bottom:14px;overflow:hidden;word-break:break-word}
-.desc-body p{margin:0 0 0.5em}.desc-body p:last-child{margin:0}
-.desc-body code{background:var(--block-bg);padding:1px 5px;border-radius:3px;font-family:var(--mono);font-size:.85em}
-.desc-body pre{background:rgba(0,0,0,0.2);padding:8px 12px;border-radius:4px;overflow-x:auto;margin:0.5em 0}
-.desc-body pre code{background:none;padding:0}
-.desc-body ul,.desc-body ol{padding-left:1.5em;margin:0.5em 0}
-.desc-body blockquote{border-left:3px solid var(--border);padding-left:12px;margin:0.5em 0;color:var(--dim)}
-.desc-body a{color:var(--focus)}
-.desc-body img{max-width:100%;height:auto}
-.md-toggle-row{display:flex;align-items:center;gap:8px;margin-bottom:6px}
-.md-toggle-row .dim{font-size:.8em}
-
-/* ── edit form ── */
-.edit-form{background:var(--block-bg);border:1px solid var(--focus);border-radius:6px;padding:14px;margin-bottom:14px}
-.edit-form label{display:block;font-size:.82em;font-weight:600;margin-bottom:3px;color:var(--dim);text-transform:uppercase;letter-spacing:.04em}
-.edit-form .field{margin-bottom:10px}
-.edit-form .field:last-of-type{margin-bottom:0}
-.edit-actions{display:flex;gap:8px;margin-top:10px}
-
-/* ── timeline ── */
-.timeline{position:relative;padding-left:20px;border-left:2px solid var(--border)}
-.timeline-entry{position:relative;margin-bottom:14px;padding-left:16px}
-.timeline-entry:last-child{margin-bottom:0}
-.timeline-entry::before{content:'';position:absolute;left:-7px;top:5px;width:10px;height:10px;border-radius:50%;background:var(--focus);border:2px solid var(--bg)}
-.timeline-entry .tl-label{font-size:.82em;font-weight:600;color:var(--dim);text-transform:uppercase;letter-spacing:.04em}
-.timeline-entry .tl-value{font-size:.92em;margin-top:2px}
+.comment-body{padding:10px 12px;line-height:1.5;overflow:hidden;word-break:break-word}.avatar{width:20px;height:20px;border-radius:50%}
+.empty{color:var(--dim);font-style:italic;padding:6px 0}.form-section{margin-top:14px}
+textarea,input[type="text"]{width:100%;background:var(--input-bg);color:var(--input-fg);border:1px solid var(--input-border);border-radius:4px;padding:7px;font-family:inherit;font-size:.9em;box-sizing:border-box}
+textarea{resize:vertical}.edit-form{background:var(--block-bg);border:1px solid var(--focus);border-radius:6px;padding:14px;margin-bottom:14px}.edit-form label{display:block;font-size:.82em;font-weight:600;margin-bottom:3px;color:var(--dim)}
+.field{margin-bottom:10px}.edit-actions{display:flex;gap:8px;margin-top:10px}
+.timeline{position:relative;padding-left:20px;border-left:2px solid var(--border)}.timeline-entry{position:relative;margin-bottom:14px;padding-left:16px}.timeline-entry::before{content:'';position:absolute;left:-7px;top:5px;width:10px;height:10px;border-radius:50%;background:var(--focus);border:2px solid var(--bg)}
+.tl-label{font-size:.82em;font-weight:600;color:var(--dim);text-transform:uppercase}.tl-value{font-size:.92em;margin-top:2px}
 </style>
 </head>
 <body>
-
 <div class="title-row" style="display:flex;align-items:baseline;gap:10px;margin-bottom:4px">
   <h1 id="issue-title">${stateIcon} Issue #${issue.number}: ${escHtml(issue.title)}</h1>
-  <button class="btn sm" onclick="startEdit()">✏️ Edit</button>
+  <button id="edit" class="btn sm">✏️ Edit</button>
 </div>
-
 <div class="meta-row">
   <span class="badge" style="background:${stateBg}">${stateLabel}</span>
   by <strong>${escHtml(issue.user.login)}</strong>
-  <span class="dim">${new Date(issue.created_at).toLocaleDateString()}</span>
+  <span class="dim">${escHtml(new Date(issue.created_at).toLocaleDateString())}</span>
   ${labelsHtml}${assigneesHtml}${milestoneHtml}
 </div>
-
 <div class="actions">
-  <button class="btn" onclick="post('openInBrowser')">🔗 Open in Browser</button>
-  <button class="btn" onclick="post('refresh')">↺ Refresh</button>
-  ${
-    issue.state === "open"
-      ? `<button class="btn danger" onclick="post('close')">✕ Close Issue</button>`
-      : `<button class="btn success" onclick="post('reopen')">↺ Re-open Issue</button>`
-  }
+  <button id="open-browser" class="btn">🔗 Open in Browser</button>
+  <button id="refresh" class="btn">↺ Refresh</button>
+  ${issue.state === "open" ? '<button id="change-state" class="btn danger">✕ Close Issue</button>' : '<button id="change-state" class="btn success">↺ Re-open Issue</button>'}
 </div>
-
-<div id="edit-form" class="edit-form" style="display:none">
-  <div class="field">
-    <label>Title</label>
-    <input type="text" id="edit-title" value="${escHtml(issue.title)}">
-  </div>
-  <div class="field">
-    <label>Body</label>
-    <textarea id="edit-body" style="height:120px">${escHtml(issue.body || "")}</textarea>
-  </div>
-  <div class="edit-actions">
-    <button class="btn" onclick="saveEdit()">Save</button>
-    <button class="btn sec" onclick="cancelEdit()">Cancel</button>
-  </div>
+<div id="edit-form" class="edit-form" hidden>
+  <div class="field"><label for="edit-title">Title</label><input type="text" id="edit-title" value="${escHtml(issue.title)}"></div>
+  <div class="field"><label for="edit-body">Body</label><textarea id="edit-body" style="height:120px">${escHtml(issue.body || "")}</textarea></div>
+  <div class="edit-actions"><button id="save-edit" class="btn">Save</button><button id="cancel-edit" class="btn sec">Cancel</button></div>
 </div>
-
-<div class="tabs">
-  <button class="tab active" onclick="showTab('details',this)">Details</button>
-  <button class="tab" onclick="showTab('history',this)">📜 History</button>
+<div class="tabs" role="tablist" aria-label="Issue detail sections">
+  <button id="details-tab" class="tab active" role="tab" aria-selected="true" data-tab="details">Details</button>
+  <button id="history-tab" class="tab" role="tab" aria-selected="false" data-tab="history">📜 History</button>
 </div>
-
-<div id="tab-details" class="tab-content active">
-  ${
-    issue.body?.trim()
-      ? `<div id="body-content" class="desc-body"></div>`
-      : `<div class="desc-body" style="color:var(--dim);font-style:italic">(no description)</div>`
-  }
-
+<div id="tab-details" class="tab-content active" role="tabpanel" aria-labelledby="details-tab">
+  ${bodyHtml ? `<div class="desc-body markdown-body">${bodyHtml}</div>` : '<div class="desc-body dim"><em>(no description)</em></div>'}
   <div style="margin-top:14px">
     <h2>Comments (${comments.length})</h2>
-    <div id="comments-list"></div>
+    <div id="comments-list">${commentsHtml}</div>
     <div class="form-section">
+      <label for="commentBody" class="dim">Add a comment</label>
       <textarea id="commentBody" style="height:60px" placeholder="Write a comment..."></textarea>
-      <div style="margin-top:8px"><button class="btn" onclick="submitComment()">Post Comment</button></div>
+      <div style="margin-top:8px"><button id="post-comment" class="btn">Post Comment</button></div>
     </div>
   </div>
 </div>
-
-<div id="tab-history" class="tab-content">
+<div id="tab-history" class="tab-content" role="tabpanel" aria-labelledby="history-tab">
   <div class="timeline">
-    <div class="timeline-entry">
-      <div class="tl-label">Created</div>
-      <div class="tl-value">${escHtml(createdDate)}</div>
-    </div>
-    <div class="timeline-entry">
-      <div class="tl-label">Last Updated</div>
-      <div class="tl-value">${escHtml(updatedDate)}</div>
-    </div>
-    <div class="timeline-entry">
-      <div class="tl-label">Closed</div>
-      <div class="tl-value">${escHtml(closedDate)}</div>
-    </div>
+    <div class="timeline-entry"><div class="tl-label">Created</div><div class="tl-value">${escHtml(createdDate)}</div></div>
+    <div class="timeline-entry"><div class="tl-label">Last Updated</div><div class="tl-value">${escHtml(updatedDate)}</div></div>
+    <div class="timeline-entry"><div class="tl-label">Closed</div><div class="tl-value">${escHtml(closedDate)}</div></div>
   </div>
 </div>
-
-<script>
+<script nonce="${nonce}">
 const vscode = acquireVsCodeApi();
-function debugLog(msg) { vscode.postMessage({ command: 'debug', body: msg }); }
-window.onerror = function(msg, url, line, col, err) {
-  try {
-    var e = err ? (err.stack || err.message) : msg + ' line ' + line;
-    debugLog('ERROR: ' + e);
-  } catch(x) {}
-  return false;
-};
-debugLog('Issue webview loaded - step1');
-const bodyText = ${bodyJson};
-const commentsData = ${commentsJson};
-debugLog('Issue webview loaded - step2');
-
-function esc(s) {
-  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+function post(command, extra) {
+  vscode.postMessage(Object.assign({ command }, extra || {}));
 }
-
-function post(cmd, extra) {
-  debugLog('post: ' + cmd + (extra ? ' with extra' : ''));
-  vscode.postMessage(Object.assign({ command: cmd }, extra || {}));
+function showTab(name, button) {
+  document.querySelectorAll('.tab-content').forEach((el) => el.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach((el) => {
+    el.classList.remove('active');
+    el.setAttribute('aria-selected', 'false');
+  });
+  document.getElementById('tab-' + name)?.classList.add('active');
+  button.classList.add('active');
+  button.setAttribute('aria-selected', 'true');
 }
-
-function showTab(name, btn) {
-  debugLog('showTab: ' + name);
-  document.querySelectorAll('.tab-content').forEach(function(el) { el.classList.remove('active'); });
-  document.querySelectorAll('.tab').forEach(function(el) { el.classList.remove('active'); });
-  document.getElementById('tab-' + name).classList.add('active');
-  btn.classList.add('active');
-}
-
-function renderBody() {
-  try {
-    var el = document.getElementById('body-content');
-    if (!el) { debugLog('renderBody: no body-content element'); return; }
-    el.innerHTML = '<pre style="margin:0;white-space:pre-wrap">' + esc(bodyText) + '</pre>';
-    debugLog('renderBody done, body length=' + (bodyText ? bodyText.length : 0));
-  } catch(e) { debugLog('renderBody error: ' + e.message); }
-}
-
-function renderComments() {
-  try {
-    var container = document.getElementById('comments-list');
-    if (!container) { debugLog('renderComments: no comments-list element'); return; }
-    if (commentsData.length === 0) {
-      container.innerHTML = '<p class="empty">No comments yet.</p>';
-      debugLog('renderComments: no comments');
-      return;
-    }
-    var html = '';
-    for (var i = 0; i < commentsData.length; i++) {
-      var c = commentsData[i];
-      html += '<div class="comment" id="comment-' + c.id + '">' +
-        '<div class="comment-hdr">' +
-        '<img src="' + esc(c.user.avatar_url) + '" class="avatar" alt="">' +
-        '<strong>' + esc(c.user.login) + '</strong>' +
-        '<span class="time">' + new Date(c.created_at).toLocaleString() + '</span>' +
-        '</div>' +
-        '<div class="comment-body"><pre style="margin:0;white-space:pre-wrap">' + esc(c.body) + '</pre></div>' +
-        '</div>';
-    }
-    container.innerHTML = html;
-    debugLog('renderComments done, count=' + commentsData.length);
-  } catch(e) { debugLog('renderComments error: ' + e.message); }
-}
-
-function startEdit() {
-  document.getElementById('edit-form').style.display = 'block';
-}
-
-function cancelEdit() {
-  document.getElementById('edit-form').style.display = 'none';
-}
-
-function saveEdit() {
-  var title = document.getElementById('edit-title').value;
-  var body = document.getElementById('edit-body').value;
-  post('editIssue', { title: title, body: body });
-}
-
-function submitComment() {
-  var el = document.getElementById('commentBody');
-  var body = (el.value || '').trim();
-  if (!body) return;
-  post('addComment', { body: body });
-  el.value = '';
-}
-
-window.addEventListener("message", function(event) {
-  var message = event.data;
-  debugLog('message received: ' + (message ? message.command : 'null'));
-  if (!message || !message.command) return;
-  if (message.command === "loading") {
-    document.body.style.opacity = "0.7";
-  }
+document.getElementById('edit')?.addEventListener('click', () => {
+  document.getElementById('edit-form').hidden = false;
+  document.getElementById('edit-title')?.focus();
 });
-
-renderBody();
-renderComments();
+document.getElementById('cancel-edit')?.addEventListener('click', () => {
+  document.getElementById('edit-form').hidden = true;
+});
+document.getElementById('save-edit')?.addEventListener('click', () => {
+  const title = document.getElementById('edit-title').value;
+  const body = document.getElementById('edit-body').value;
+  post('editIssue', { title, body });
+});
+document.getElementById('open-browser')?.addEventListener('click', () => post('openInBrowser'));
+document.getElementById('refresh')?.addEventListener('click', () => post('refresh'));
+document.getElementById('change-state')?.addEventListener('click', () => post('${issue.state === "open" ? "close" : "reopen"}'));
+document.getElementById('post-comment')?.addEventListener('click', () => {
+  const input = document.getElementById('commentBody');
+  const body = (input.value || '').trim();
+  if (!body) return;
+  post('addComment', { body });
+  input.value = '';
+});
+document.querySelectorAll('[data-tab]').forEach((button) => button.addEventListener('click', () => showTab(button.dataset.tab, button)));
+document.querySelectorAll('.markdown-body a[href]').forEach((link) => link.addEventListener('click', (event) => {
+  event.preventDefault();
+  post('openExternal', { url: link.getAttribute('href') });
+}));
 </script>
 </body>
 </html>`;
@@ -472,17 +407,28 @@ renderComments();
 
   private dispose(): void {
     IssueDetailPanel.panels.delete(this.key);
-    for (const d of this.disposables) {
-      d.dispose();
+    for (const disposable of this.disposables) {
+      disposable.dispose();
     }
     this.disposables = [];
   }
 }
 
-function escHtml(s: string): string {
-  return s
+function getNonce(): string {
+  const possible =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  let value = "";
+  for (let index = 0; index < 32; index += 1) {
+    value += possible.charAt(Math.floor(Math.random() * possible.length));
+  }
+  return value;
+}
+
+function escHtml(value: string): string {
+  return value
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 }
