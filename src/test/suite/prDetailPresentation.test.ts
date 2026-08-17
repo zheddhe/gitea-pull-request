@@ -47,10 +47,8 @@ suite("PR detail presentation", () => {
       /\.state-dot\{width:8px;height:8px;border-radius:50%;flex:0 0 8px;background:currentColor\}/,
     );
     assert.match(source, /<span class="state-dot \$\{stateClass\}"/);
-    assert.match(
-      source,
-      /<h1>Pull Request #\$\{pr\.number\} \$\{escHtml\(pr\.title\)\}<\/h1>/,
-    );
+    assert.match(source, /<span>Pull Request #\$\{pr\.number\}<\/span>/);
+    assert.match(source, /id="title-text" class="title-text"/);
   });
 
   test("shows review state first with branch and file stats in the common context row", () => {
@@ -74,13 +72,29 @@ suite("PR detail presentation", () => {
     assert.doesNotMatch(source, /id="details-tab"/);
   });
 
-  test("edits title inline and keeps its edit control visually lightweight", () => {
-    assert.match(source, /id="title-view"/);
-    assert.match(source, /id="title-editor"/);
-    assert.match(source, /id="title-input"/);
+  test("edits the title in place and saves on blur or Enter", () => {
+    assert.match(source, /id="title-row" class="title-row"/);
+    assert.match(source, /id="title-text" class="title-text"/);
+    assert.match(source, /id="title-input" class="title-input"/);
     assert.match(source, /class="icon-btn" title="Edit title"/);
-    assert.match(source, /function setTitleEditing\(editing\)/);
+    assert.match(source, /function beginTitleEdit\(\)/);
+    assert.match(source, /function finishTitleEdit\(save\)/);
+    assert.match(source, /addEventListener\('blur'/);
+    assert.match(source, /event\.key==='Enter'/);
+    assert.match(source, /event\.key==='Escape'/);
     assert.match(source, /case "editTitle"/);
+    assert.doesNotMatch(source, /id="save-title"/);
+    assert.doesNotMatch(source, /id="cancel-title"/);
+  });
+
+  test("places global refresh beside the title instead of the action row", () => {
+    assert.match(source, /id="refresh" class="icon-btn" title="Refresh pull request"/);
+    const titleRow = source.indexOf('id="title-row"');
+    const refresh = source.indexOf('id="refresh"', titleRow);
+    const actions = source.indexOf('<div class="actions">', refresh);
+    assert.ok(titleRow >= 0 && refresh > titleRow && actions > refresh);
+    const actionEnd = source.indexOf("</div>", actions);
+    assert.ok(!source.slice(actions, actionEnd).includes('id="refresh"'));
   });
 
   test("uses the target branch itself as the base branch selector", () => {
@@ -92,11 +106,11 @@ suite("PR detail presentation", () => {
     assert.doesNotMatch(source, /id="edit-base"/);
   });
 
-  test("places description editing below the rendered body and removes redundant comment label", () => {
-    const bodyView = source.indexOf('id="body-view"');
-    const editBody = source.indexOf('id="edit-body"', bodyView);
-    const bodyEditor = source.indexOf('id="body-editor"', editBody);
-    assert.ok(bodyView >= 0 && editBody > bodyView && bodyEditor > editBody);
+  test("uses aligned Description and Comments section bars", () => {
+    assert.match(source, /class="section-bar"><span>Description<\/span>/);
+    assert.match(source, /id="edit-body" class="icon-btn"/);
+    assert.match(source, /class="section-bar"><span>Comments \(\$\{comments\.length\}\)<\/span>/);
+    assert.match(source, /id="body-editor" class="description-editor"/);
     assert.match(source, /case "editBody"/);
     assert.match(source, /placeholder="Write a comment\.\.\."/);
     assert.match(source, /aria-label="Add a comment"/);
