@@ -47,7 +47,10 @@ suite("PR detail presentation", () => {
       /\.state-dot\{width:8px;height:8px;border-radius:50%;flex:0 0 8px;background:currentColor\}/,
     );
     assert.match(source, /<span class="state-dot \$\{stateClass\}"/);
-    assert.match(source, /<h1>Pull Request #\$\{pr\.number\} \$\{escHtml\(pr\.title\)\}<\/h1>/);
+    assert.match(
+      source,
+      /<h1>Pull Request #\$\{pr\.number\} \$\{escHtml\(pr\.title\)\}<\/h1>/,
+    );
   });
 
   test("shows review state first with branch and file stats in the common context row", () => {
@@ -71,16 +74,33 @@ suite("PR detail presentation", () => {
     assert.doesNotMatch(source, /id="details-tab"/);
   });
 
-  test("splits title, body and target-branch updates into independent workflows", () => {
-    assert.match(source, /case "editTitle"/);
-    assert.match(source, /case "editBody"/);
-    assert.match(source, /case "updateBase"/);
+  test("edits title inline and keeps its edit control visually lightweight", () => {
+    assert.match(source, /id="title-view"/);
     assert.match(source, /id="title-editor"/);
-    assert.match(source, /id="body-editor"/);
-    assert.match(source, /id="base-editor"/);
-    assert.match(source, /id="edit-body"/);
-    assert.match(source, /id="edit-base"/);
-    assert.doesNotMatch(source, /case "editPR"/);
+    assert.match(source, /id="title-input"/);
+    assert.match(source, /class="icon-btn" title="Edit title"/);
+    assert.match(source, /function setTitleEditing\(editing\)/);
+    assert.match(source, /case "editTitle"/);
+  });
+
+  test("uses the target branch itself as the base branch selector", () => {
+    assert.match(source, /id="base-select"/);
+    assert.match(source, /class="branch-select"/);
+    assert.match(source, /aria-label="Target branch"/);
+    assert.match(source, /post\('updateBase',\{base\}\)/);
+    assert.doesNotMatch(source, /id="base-editor"/);
+    assert.doesNotMatch(source, /id="edit-base"/);
+  });
+
+  test("places description editing below the rendered body and removes redundant comment label", () => {
+    const bodyView = source.indexOf('id="body-view"');
+    const editBody = source.indexOf('id="edit-body"', bodyView);
+    const bodyEditor = source.indexOf('id="body-editor"', editBody);
+    assert.ok(bodyView >= 0 && editBody > bodyView && bodyEditor > editBody);
+    assert.match(source, /case "editBody"/);
+    assert.match(source, /placeholder="Write a comment\.\.\."/);
+    assert.match(source, /aria-label="Add a comment"/);
+    assert.doesNotMatch(source, /<label for="comment-body">Add a comment<\/label>/);
   });
 
   test("makes queued inline review comments explicitly submittable", () => {
@@ -106,12 +126,21 @@ suite("PR detail presentation", () => {
 
   test("puts View Details first in Pull Requests and Changes in Pull Request", () => {
     const pullDetails = pullRequestsSource.indexOf('"View Details"');
-    const pullBranch = pullRequestsSource.indexOf("`${pr.head.ref} → ${pr.base.ref}`", pullDetails);
+    const pullBranch = pullRequestsSource.indexOf(
+      "`${pr.head.ref} → ${pr.base.ref}`",
+      pullDetails,
+    );
     assert.ok(pullDetails >= 0 && pullBranch > pullDetails);
 
     assert.match(changesSource, /class PRDiffDetailItem/);
-    const changesDetails = changesSource.indexOf("details,", changesSource.indexOf("return ["));
-    const changesBranch = changesSource.indexOf("new PRDiffBranchItem", changesDetails);
+    const changesDetails = changesSource.indexOf(
+      "details,",
+      changesSource.indexOf("return ["),
+    );
+    const changesBranch = changesSource.indexOf(
+      "new PRDiffBranchItem",
+      changesDetails,
+    );
     assert.ok(changesDetails >= 0 && changesBranch > changesDetails);
     assert.match(changesSource, /command: "gitea\.viewPRDetail"/);
   });
