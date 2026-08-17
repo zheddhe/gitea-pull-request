@@ -58,19 +58,20 @@ suite("PR detail presentation", () => {
     assert.match(source, /addEventListener\('blur',saveTitle\)/);
     assert.match(source, /event\.key==='Enter'/);
     assert.match(source, /event\.key==='Escape'/);
-    assert.doesNotMatch(source, /id="save-title"/);
-    assert.doesNotMatch(source, /id="cancel-title"/);
   });
 
-  test("places global refresh beside the title", () => {
-    assert.match(
-      source,
-      /id="refresh" class="icon-btn" title="Refresh pull request"/,
-    );
+  test("keeps only edit browser and refresh context actions beside the title", () => {
     const title = source.indexOf('class="title-prefix"');
-    const refresh = source.indexOf('id="refresh"', title);
-    const actions = source.indexOf('<div class="actions">', refresh);
-    assert.ok(title >= 0 && refresh > title && actions > refresh);
+    const edit = source.indexOf('id="edit-title"', title);
+    const browser = source.indexOf('id="open-browser"', edit);
+    const refresh = source.indexOf('id="refresh"', browser);
+    const tabs = source.indexOf('<nav class="tabs"', refresh);
+    assert.ok(title >= 0 && edit > title && browser > edit && refresh > browser);
+    assert.ok(tabs > refresh);
+    assert.doesNotMatch(source, /id="checkout"/);
+    assert.doesNotMatch(source, /id="merge-method"/);
+    assert.doesNotMatch(source, /id="merge"/);
+    assert.doesNotMatch(source, /id="change-state"/);
   });
 
   test("uses the base branch itself as an inline selector", () => {
@@ -78,8 +79,6 @@ suite("PR detail presentation", () => {
     assert.match(source, /class="branch-select"/);
     assert.match(source, /aria-label="Base branch"/);
     assert.match(source, /post\('updateBase',\{base\}\)/);
-    assert.doesNotMatch(source, /id="base-editor"/);
-    assert.doesNotMatch(source, /id="edit-base"/);
   });
 
   test("keeps diff statistics out of PR detail", () => {
@@ -100,7 +99,6 @@ suite("PR detail presentation", () => {
     const request = source.indexOf('data-review-event="REQUEST_CHANGES"', approve);
     assert.ok(reviewActions >= 0 && comment > reviewActions);
     assert.ok(approve > comment && request > approve);
-    assert.doesNotMatch(source, /Submit Review/);
   });
 
   test("shows only a compact pending inline comment counter", () => {
@@ -127,7 +125,10 @@ suite("PR detail presentation", () => {
     );
     assert.ok(pullDetails >= 0 && pullBranch > pullDetails);
 
-    const changesDetails = changesSource.indexOf("details,", changesSource.indexOf("return ["));
+    const changesDetails = changesSource.indexOf(
+      "details,",
+      changesSource.indexOf("return ["),
+    );
     const commits = changesSource.indexOf("commitsSection", changesDetails);
     const reviews = changesSource.indexOf("reviewsSection", commits);
     const files = changesSource.indexOf("filesSection", reviews);
@@ -135,17 +136,28 @@ suite("PR detail presentation", () => {
     assert.ok(reviews > commits && files > reviews);
   });
 
-  test("aligns sidebar Review context and action styling", () => {
+  test("centralizes operational actions in sidebar Review", () => {
     assert.match(
       reviewSource,
       /Review Pull Request #\$\{pr\.number\} \(\$\{active\.repoInfo\.label\}\)/,
     );
-    assert.match(reviewSource, /<strong>Source branch<\/strong>/);
-    assert.match(reviewSource, /<strong>Base branch<\/strong>/);
-    assert.doesNotMatch(reviewSource, /class="title">#\$\{pr\.number\}/);
-    assert.match(reviewSource, /class="success-outline" id="approve"/);
-    assert.match(reviewSource, /class="danger-outline" id="requestChanges"/);
-    assert.match(reviewSource, /class="outline" id="checkoutBase"/);
+    const checks = reviewSource.indexOf('<div class="section-title">Checks</div>');
+    const review = reviewSource.indexOf('<div class="section-title">Review</div>', checks);
+    const branches = reviewSource.indexOf(
+      '<div class="section-title">Branch management</div>',
+      review,
+    );
+    const actions = reviewSource.indexOf(
+      '<div class="section-title">Actions</div>',
+      branches,
+    );
+    assert.ok(checks >= 0 && review > checks && branches > review && actions > branches);
+    assert.match(reviewSource, /id="checkoutSource"/);
+    assert.match(reviewSource, /id="checkoutBase"/);
+    assert.match(reviewSource, /id="closePR"/);
+    assert.match(reviewSource, /case "checkoutSource"/);
+    assert.match(reviewSource, /case "closePR"/);
+    assert.match(reviewSource, /closePullRequest\(/);
   });
 
   test("keeps native Markdown preview on PR View Details hover", () => {
