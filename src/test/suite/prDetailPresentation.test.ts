@@ -155,8 +155,9 @@ suite("PR detail presentation", () => {
     assert.match(reviewSource, /id="checkoutSource"/);
     assert.match(reviewSource, /id="checkoutBase"/);
     assert.match(reviewSource, /id="closePR"/);
-    assert.match(reviewSource, /case "checkoutSource"/);
-    assert.match(reviewSource, /case "closePR"/);
+    assert.match(reviewSource, /message\.type === "checkoutSource"/);
+    assert.match(reviewSource, /message\.type === "checkoutBase"/);
+    assert.match(reviewSource, /message\.type === "closePR"/);
     assert.match(reviewSource, /closePullRequest\(/);
   });
 
