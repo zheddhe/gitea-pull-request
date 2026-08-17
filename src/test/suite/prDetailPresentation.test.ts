@@ -139,18 +139,18 @@ suite("PR detail presentation", () => {
     assert.ok(branch >= 0 && commits > branch && reviews > commits && files > reviews);
   });
 
-  test("makes sidebar Review the branch management hub", () => {
+  test("orders sidebar Review around the user workflow", () => {
     assert.match(
       reviewSource,
       /Review Pull Request #\$\{pr\.number\} \(\$\{active\.repoInfo\.label\}\)/,
     );
     const branches = reviewSource.indexOf('<span>Branch management</span>');
-    const readiness = reviewSource.indexOf('<span>Merge readiness</span>', branches);
-    const checks = reviewSource.indexOf('<span>Checks</span>', readiness);
-    const review = reviewSource.indexOf('<span>Review</span>', checks);
-    const actions = reviewSource.indexOf('<span>Actions</span>', review);
-    assert.ok(branches >= 0 && readiness > branches && checks > readiness);
-    assert.ok(review > checks && actions > review);
+    const review = reviewSource.indexOf('<span>Review</span>', branches);
+    const checks = reviewSource.indexOf('<span>Checks</span>', review);
+    const readiness = reviewSource.indexOf('<span>Merge readiness</span>', checks);
+    const actions = reviewSource.indexOf('<span>Actions</span>', readiness);
+    assert.ok(branches >= 0 && review > branches && checks > review);
+    assert.ok(readiness > checks && actions > readiness);
     assert.match(
       reviewSource,
       /<select aria-label="Source branch" disabled><option selected>/,
