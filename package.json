@@ -3,7 +3,7 @@
   "displayName": "Gitea Pull Request",
   "description": "Pull requests, reviews, issues and CI context for self-hosted Gitea, directly in Visual Studio Code",
   "readme": "./README.md",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "publisher": "zheddhe",
   "repository": {
     "type": "git",
@@ -33,11 +33,10 @@
     "theme": "dark"
   },
   "engines": {
-    "vscode": "^1.85.0"
+    "vscode": "^1.133.0"
   },
   "categories": [
-    "SCM Providers",
-    "Other"
+    "SCM Providers"
   ],
   "activationEvents": [
     "onStartupFinished"
@@ -110,23 +109,48 @@
         {
           "id": "gitea.pullRequests",
           "name": "Pull Requests",
-          "icon": "resources/gitea-activity.svg"
+          "icon": "resources/gitea-activity.svg",
+          "when": "!gitea.prSession.creating"
+        },
+        {
+          "id": "gitea.pullRequestsCreateMode",
+          "name": "Pull Requests",
+          "icon": "resources/gitea-activity.svg",
+          "when": "gitea.prSession.creating",
+          "initialSize": 2
         },
         {
           "id": "gitea.createPullRequest",
           "name": "Create Pull Request",
           "type": "webview",
-          "when": "gitea.prSession.creating"
+          "when": "gitea.prSession.creating",
+          "initialSize": 8
         },
         {
           "id": "gitea.issues",
           "name": "Issues",
-          "icon": "resources/gitea-activity.svg"
+          "icon": "resources/gitea-activity.svg",
+          "when": "!gitea.prSession.creating"
+        },
+        {
+          "id": "gitea.issuesCreateCompact",
+          "name": "Issues",
+          "icon": "resources/gitea-activity.svg",
+          "when": "gitea.prSession.creating",
+          "visibility": "collapsed"
         },
         {
           "id": "gitea.ciRuns",
           "name": "CI / Actions",
-          "icon": "resources/gitea-activity.svg"
+          "icon": "resources/gitea-activity.svg",
+          "when": "!gitea.prSession.creating"
+        },
+        {
+          "id": "gitea.ciRunsCreateCompact",
+          "name": "CI / Actions",
+          "icon": "resources/gitea-activity.svg",
+          "when": "gitea.prSession.creating",
+          "visibility": "collapsed"
         }
       ],
       "giteaPullRequestContext": [
@@ -154,6 +178,10 @@
       {
         "view": "gitea.pullRequests",
         "contents": "No pull requests are currently listed.\n[Create Pull Request](command:gitea.createPRSidebar)"
+      },
+      {
+        "view": "gitea.pullRequestsCreateMode",
+        "contents": "No pull requests are currently listed."
       }
     ],
     "commands": [
@@ -172,6 +200,31 @@
       {
         "command": "gitea.refreshPRs",
         "title": "Gitea: Refresh Pull Requests",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "gitea.refreshActivePR",
+        "title": "Gitea: Refresh Active Pull Request",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "gitea.viewActivePRDetail",
+        "title": "Gitea: View Active Pull Request Details",
+        "icon": "$(eye)"
+      },
+      {
+        "command": "gitea.openActivePR",
+        "title": "Gitea: Open Active Pull Request in Browser",
+        "icon": "$(link-external)"
+      },
+      {
+        "command": "gitea.refreshCreatePR",
+        "title": "Gitea: Refresh Pull Request Branches",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "gitea.refreshPostMerge",
+        "title": "Gitea: Refresh Post-Merge Branch State",
         "icon": "$(refresh)"
       },
       {
@@ -205,6 +258,16 @@
         "icon": "$(close)"
       },
       {
+        "command": "gitea.cancelCreatePR",
+        "title": "Gitea: Cancel Pull Request Creation",
+        "icon": "$(close)"
+      },
+      {
+        "command": "gitea.finishPostMerge",
+        "title": "Gitea: Keep Branches and Finish",
+        "icon": "$(close)"
+      },
+      {
         "command": "gitea.viewPRDetail",
         "title": "Gitea: Open Full Pull Request Details"
       },
@@ -220,10 +283,6 @@
         "command": "gitea.createPRSidebar",
         "title": "Gitea: Create Pull Request",
         "icon": "$(git-pull-request-create)"
-      },
-      {
-        "command": "gitea.createPR",
-        "title": "Gitea: Create Pull Request (Legacy)"
       },
       {
         "command": "gitea.mergePR",
@@ -290,32 +349,87 @@
       "view/title": [
         {
           "command": "gitea.refreshPRs",
-          "when": "view == gitea.pullRequests",
+          "when": "view == gitea.pullRequests || view == gitea.pullRequestsCreateMode",
           "group": "navigation"
         },
         {
           "command": "gitea.createPRSidebar",
-          "when": "view == gitea.pullRequests",
+          "when": "view == gitea.pullRequests && !gitea.prSession.creating",
           "group": "navigation"
+        },
+        {
+          "command": "gitea.refreshCreatePR",
+          "when": "view == gitea.createPullRequest && gitea.prSession.creating",
+          "group": "navigation@1"
+        },
+        {
+          "command": "gitea.cancelCreatePR",
+          "when": "view == gitea.createPullRequest && gitea.prSession.creating",
+          "group": "navigation@2"
+        },
+        {
+          "command": "gitea.viewActivePRDetail",
+          "when": "view == gitea.prDiff && gitea.prSession.active",
+          "group": "navigation@0"
+        },
+        {
+          "command": "gitea.openActivePR",
+          "when": "view == gitea.prDiff && gitea.prSession.active",
+          "group": "navigation@1"
+        },
+        {
+          "command": "gitea.refreshActivePR",
+          "when": "view == gitea.prDiff && gitea.prSession.active",
+          "group": "navigation@2"
         },
         {
           "command": "gitea.clearActivePR",
           "when": "view == gitea.prDiff && gitea.prSession.active",
-          "group": "navigation"
+          "group": "navigation@3"
+        },
+        {
+          "command": "gitea.viewActivePRDetail",
+          "when": "view == gitea.reviewPullRequest && gitea.prSession.active",
+          "group": "navigation@0"
+        },
+        {
+          "command": "gitea.openActivePR",
+          "when": "view == gitea.reviewPullRequest && gitea.prSession.active",
+          "group": "navigation@1"
+        },
+        {
+          "command": "gitea.refreshActivePR",
+          "when": "view == gitea.reviewPullRequest && gitea.prSession.active",
+          "group": "navigation@2"
+        },
+        {
+          "command": "gitea.clearActivePR",
+          "when": "view == gitea.reviewPullRequest && gitea.prSession.active",
+          "group": "navigation@3"
+        },
+        {
+          "command": "gitea.refreshPostMerge",
+          "when": "view == gitea.postMergePullRequest && gitea.prSession.merged",
+          "group": "navigation@1"
+        },
+        {
+          "command": "gitea.finishPostMerge",
+          "when": "view == gitea.postMergePullRequest && gitea.prSession.merged",
+          "group": "navigation@2"
         },
         {
           "command": "gitea.refreshCI",
-          "when": "view == gitea.ciRuns",
+          "when": "view == gitea.ciRuns || view == gitea.ciRunsCreateCompact",
           "group": "navigation"
         },
         {
           "command": "gitea.refreshIssues",
-          "when": "view == gitea.issues",
+          "when": "view == gitea.issues || view == gitea.issuesCreateCompact",
           "group": "navigation"
         },
         {
           "command": "gitea.createIssue",
-          "when": "view == gitea.issues",
+          "when": "view == gitea.issues || view == gitea.issuesCreateCompact",
           "group": "navigation"
         }
       ],
@@ -421,10 +535,10 @@
   },
   "devDependencies": {
     "@types/mocha": "^10.0.0",
-    "@types/node": "^20.0.0",
-    "@types/vscode": "^1.85.0",
+    "@types/node": "^24.0.0",
+    "@types/vscode": "^1.125.0",
     "@typescript-eslint/eslint-plugin": "^8.0.0",
-    "@vscode/test-electron": "^2.3.0",
+    "@vscode/test-electron": "^3.1.0",
     "eslint": "^9.0.0",
     "mocha": "^11.0.0",
     "typescript": "^5.3.0"

@@ -13,6 +13,21 @@ import type {
 
 const REVIEW_REQUEST_TIMEOUT_MS = 8000;
 
+type CommitStatusState =
+  | "pending"
+  | "success"
+  | "error"
+  | "failure"
+  | "warning";
+
+type RawStatusLike = Record<string, unknown> & {
+  state?: unknown;
+  status?: unknown;
+  context?: unknown;
+  description?: unknown;
+  target_url?: unknown;
+};
+
 export class PullRequestReviewApi {
   constructor(private readonly auth: AuthManager) {}
 
@@ -20,32 +35,44 @@ export class PullRequestReviewApi {
     repoInfo: RepoInfo,
     ref: string,
   ): Promise<GiteaCombinedStatus> {
-    const status = await this.request<GiteaCombinedStatus>(
+    const status = await this.request<GiteaCombinedStatus & RawStatusLike>(
       repoInfo,
       `/repos/${repoInfo.owner}/${repoInfo.repo}/commits/${encodeURIComponent(ref)}/status`,
     );
 
-    const statuses = Array.isArray(status?.statuses)
-      ? status.statuses.filter(Boolean).map((item) => ({
-          ...item,
-          state: normalizeStatusState(item?.state),
-          context: typeof item?.context === "string" ? item.context : "",
-          description:
-            typeof item?.description === "string" ? item.description : "",
-          target_url:
-            typeof item?.target_url === "string" ? item.target_url : "",
-        }))
+    const rawStatuses = Array.isArray(status?.statuses)
+      ? (status.statuses as unknown[]).filter(Boolean)
       : [];
+
+    const statuses = rawStatuses.map((rawItem, index) => {
+      const item = rawItem as RawStatusLike;
+      const normalizedState = normalizeStatusState(item.state, item.status);
+      const context = typeof item.context === "string" ? item.context : "";
+      const description =
+        typeof item.description === "string" ? item.description : "";
+
+      log(
+        `[review-api] check[${index}] context=${JSON.stringify(context)} rawState=${formatLogValue(item.state)} rawStatus=${formatLogValue(item.status)} normalized=${normalizedState} description=${JSON.stringify(description)}`,
+      );
+
+      return {
+        ...item,
+        state: normalizedState,
+        context,
+        description,
+        target_url: normalizeTargetUrl(repoInfo.serverUrl, item.target_url),
+      } as GiteaCombinedStatus["statuses"][number];
+    });
 
     const normalized: GiteaCombinedStatus = {
       ...status,
-      state: normalizeStatusState(status?.state),
+      state: normalizeStatusState(status?.state, status?.status),
       statuses,
       total_count:
         typeof status?.total_count === "number" ? status.total_count : statuses.length,
     };
     log(
-      `[review-api] normalized combined status state=${normalized.state} checks=${statuses.length}`,
+      `[review-api] normalized combined status ref=${ref} rawState=${formatLogValue(status?.state)} rawStatus=${formatLogValue(status?.status)} state=${normalized.state} checks=${statuses.length}`,
     );
     return normalized;
   }
@@ -188,15 +215,44 @@ export class PullRequestReviewApi {
 }
 
 function normalizeStatusState(
-  value: unknown,
-): "pending" | "success" | "error" | "failure" | "warning" {
-  switch (value) {
-    case "success":
-    case "error":
-    case "failure":
-    case "warning":
-      return value;
-    default:
-      return "pending";
+  stateValue: unknown,
+  statusValue?: unknown,
+): CommitStatusState {
+  const candidates = [stateValue, statusValue];
+  for (const candidate of candidates) {
+    if (typeof candidate !== "string") continue;
+    const normalized = candidate.trim().toLowerCase();
+    switch (normalized) {
+      case "pending":
+      case "success":
+      case "error":
+      case "failure":
+      case "warning":
+        return normalized;
+    }
+  }
+  return "pending";
+}
+
+function formatLogValue(value: unknown): string {
+  if (value === undefined) return "<undefined>";
+  if (value === null) return "<null>";
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function normalizeTargetUrl(serverUrl: string, value: unknown): string {
+  if (typeof value !== "string" || !value.trim()) {
+    return "";
+  }
+
+  try {
+    return new URL(value, `${serverUrl.replace(/\/$/, "")}/`).toString();
+  } catch {
+    log(`[review-api] ignored invalid check target_url=${value}`);
+    return "";
   }
 }

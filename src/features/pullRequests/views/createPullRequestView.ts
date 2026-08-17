@@ -6,7 +6,7 @@ import { RepoInfo, RepoManager } from "../../../context/repoManager";
 import { PullRequestProvider } from "../../../views/pullRequestProvider";
 import {
   draftTitle,
-  suggestTitleFromBranch,
+  reconcileBranchSelection,
   validBranchPair,
 } from "../domain/createPullRequestModel";
 import { PullRequestSessionService } from "../services/pullRequestSessionService";
@@ -32,14 +32,13 @@ interface FormSnapshot {
 }
 
 type CreateViewMessage =
+  | ({ type: "updateForm" } & FormSnapshot)
   | ({ type: "changeBranches" } & FormSnapshot)
   | ({ type: "pickAssignees" } & FormSnapshot)
   | ({ type: "pickReviewers" } & FormSnapshot)
   | ({ type: "pickLabels" } & FormSnapshot)
   | ({ type: "pickMilestone" } & FormSnapshot)
-  | ({ type: "create"; draft: boolean } & FormSnapshot)
-  | { type: "cancel" }
-  | { type: "openLegacy" };
+  | ({ type: "create"; draft: boolean } & FormSnapshot);
 
 export class CreatePullRequestViewProvider
   implements vscode.WebviewViewProvider, vscode.Disposable
@@ -58,7 +57,12 @@ export class CreatePullRequestViewProvider
     private readonly prProvider: PullRequestProvider,
   ) {
     this.disposables.push(
-      this.session.onDidChangeState(() => this.render()),
+      this.session.onDidChangeState((state) => {
+        if (state.kind !== "creating") {
+          this.draft = undefined;
+        }
+        this.render();
+      }),
       this.repoManager.onDidChange(() => {
         if (
           this.draft &&
@@ -94,9 +98,7 @@ export class CreatePullRequestViewProvider
     }
 
     const repoInfo = await this.pickRepository();
-    if (!repoInfo) {
-      return;
-    }
+    if (!repoInfo) return;
 
     let branches: string[];
     try {
@@ -126,7 +128,7 @@ export class CreatePullRequestViewProvider
       branches,
       baseBranch,
       headBranch,
-      title: suggestTitleFromBranch(headBranch),
+      title: "",
       body: "",
       assignees: [],
       reviewers: [],
@@ -145,10 +147,53 @@ export class CreatePullRequestViewProvider
     );
   }
 
-  dispose(): void {
-    for (const disposable of this.disposables) {
-      disposable.dispose();
+  async refreshBranches(): Promise<void> {
+    if (!this.draft || this.session.current.kind !== "creating") return;
+
+    const { repoInfo, baseBranch: previousBase, headBranch: previousHead } =
+      this.draft;
+
+    try {
+      const branches = await this.api.listBranches(repoInfo);
+      if (branches.length < 2) {
+        vscode.window.showWarningMessage(
+          `At least two branches are required to create a pull request in ${repoInfo.label}.`,
+        );
+        return;
+      }
+
+      const selection = reconcileBranchSelection(
+        branches,
+        previousBase,
+        previousHead,
+        repoInfo.currentBranch,
+      );
+
+      this.draft.branches = branches;
+      this.draft.baseBranch = selection.baseBranch;
+      this.draft.headBranch = selection.headBranch;
+
+      if (
+        selection.baseBranch !== previousBase ||
+        selection.headBranch !== previousHead
+      ) {
+        await this.session.startCreating(
+          this.repositoryRef(repoInfo),
+          selection.baseBranch,
+          selection.headBranch,
+        );
+      }
+
+      this.render();
+    } catch (error) {
+      vscode.window.showErrorMessage(
+        `Unable to refresh Gitea branches: ${(error as Error).message}`,
+      );
     }
+  }
+
+  dispose(): void {
+    for (const disposable of this.disposables) disposable.dispose();
     this.disposables.length = 0;
   }
 
@@ -158,9 +203,7 @@ export class CreatePullRequestViewProvider
       vscode.window.showErrorMessage("No Gitea repositories detected.");
       return undefined;
     }
-    if (repos.length === 1) {
-      return repos[0];
-    }
+    if (repos.length === 1) return repos[0];
 
     const selected = await vscode.window.showQuickPick(
       repos.map((repoInfo) => ({
@@ -178,34 +221,19 @@ export class CreatePullRequestViewProvider
 
   private pickDefaultBase(branches: string[], headBranch: string): string {
     for (const candidate of ["main", "master"]) {
-      if (candidate !== headBranch && branches.includes(candidate)) {
-        return candidate;
-      }
+      if (candidate !== headBranch && branches.includes(candidate)) return candidate;
     }
     return branches.find((branch) => branch !== headBranch) ?? branches[0];
   }
 
   private async handleMessage(message: CreateViewMessage): Promise<void> {
-    if (message.type === "cancel") {
-      this.draft = undefined;
-      await this.session.clear();
-      return;
-    }
-
-    if (message.type === "openLegacy") {
-      await this.session.clear();
-      this.draft = undefined;
-      await vscode.commands.executeCommand("gitea.createPR");
-      return;
-    }
-
-    if (!this.draft) {
-      return;
-    }
+    if (!this.draft) return;
 
     this.applyForm(message);
 
     switch (message.type) {
+      case "updateForm":
+        return;
       case "changeBranches":
         await this.changeBranches(message);
         return;
@@ -227,15 +255,8 @@ export class CreatePullRequestViewProvider
     }
   }
 
-  private applyForm(
-    message: Exclude<
-      CreateViewMessage,
-      { type: "cancel" } | { type: "openLegacy" }
-    >,
-  ): void {
-    if (!this.draft) {
-      return;
-    }
+  private applyForm(message: CreateViewMessage): void {
+    if (!this.draft) return;
     this.draft.baseBranch = message.baseBranch;
     this.draft.headBranch = message.headBranch;
     this.draft.title = message.title;
@@ -243,9 +264,7 @@ export class CreatePullRequestViewProvider
   }
 
   private async changeBranches(message: FormSnapshot): Promise<void> {
-    if (!this.draft) {
-      return;
-    }
+    if (!this.draft) return;
     if (
       !this.draft.branches.includes(message.baseBranch) ||
       !this.draft.branches.includes(message.headBranch) ||
@@ -268,9 +287,7 @@ export class CreatePullRequestViewProvider
         users.map((user) => ({
           label: user.login,
           description: user.full_name || undefined,
-          picked: this.draft?.assignees.some(
-            (item) => item.login === user.login,
-          ),
+          picked: this.draft?.assignees.some((item) => item.login === user.login),
           user,
         })),
         { canPickMany: true, placeHolder: "Select pull request assignees" },
@@ -294,9 +311,7 @@ export class CreatePullRequestViewProvider
         users.map((user) => ({
           label: user.login,
           description: user.full_name || undefined,
-          picked: this.draft?.reviewers.some(
-            (item) => item.login === user.login,
-          ),
+          picked: this.draft?.reviewers.some((item) => item.login === user.login),
           user,
         })),
         { canPickMany: true, placeHolder: "Select requested reviewers" },
@@ -437,9 +452,7 @@ export class CreatePullRequestViewProvider
   }
 
   private render(): void {
-    if (!this.view) {
-      return;
-    }
+    if (!this.view) return;
 
     if (!this.draft || this.session.current.kind !== "creating") {
       this.view.webview.html = this.emptyHtml();
@@ -458,6 +471,7 @@ export class CreatePullRequestViewProvider
       labels,
       milestone,
     } = this.draft;
+
     const branchOptions = (selected: string) =>
       branches
         .map(
@@ -466,8 +480,10 @@ export class CreatePullRequestViewProvider
         )
         .join("");
 
-    const summary = (values: string[], empty: string) =>
-      escapeHtml(values.length > 0 ? values.join(", ") : empty);
+    const chips = (values: string[], emptyLabel = "None selected") =>
+      values.length > 0
+        ? values.map((value) => `<span class="chip">${escapeHtml(value)}</span>`).join("")
+        : `<span class="metadata-empty">${escapeHtml(emptyLabel)}</span>`;
 
     this.view.webview.html = `<!doctype html>
 <html lang="en">
@@ -475,46 +491,68 @@ export class CreatePullRequestViewProvider
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
-  body { padding: 12px; color: var(--vscode-foreground); font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); }
+  * { box-sizing: border-box; }
+  body { padding: 12px; color: var(--vscode-foreground); font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); line-height: 1.45; }
   .repo { margin-bottom: 14px; color: var(--vscode-descriptionForeground); }
-  label { display: block; margin: 10px 0 4px; font-weight: 600; }
-  select, input, textarea { box-sizing: border-box; width: 100%; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, transparent); padding: 6px 8px; }
+  .section { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--vscode-panel-border); }
+  .section:first-of-type { margin-top: 0; border-top: 0; padding-top: 0; }
+  .section-title { display: flex; align-items: center; gap: 7px; margin-bottom: 8px; font-weight: 600; }
+  label { display: block; margin: 0 0 4px; font-weight: 600; }
+  select, input, textarea { width: 100%; font: inherit; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, transparent); padding: 6px 8px; }
+  select:focus-visible, input:focus-visible, textarea:focus-visible, button:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 2px; }
   textarea { min-height: 110px; resize: vertical; }
-  .branches { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  .metadata { margin-top: 14px; border-top: 1px solid var(--vscode-panel-border); padding-top: 8px; }
-  .metadata button { display: block; width: 100%; text-align: left; margin: 4px 0; }
+  .branch-row { display: grid; grid-template-columns: 110px minmax(0,1fr); gap: 8px; align-items: center; }
+  .branch-row + .branch-row { margin-top: 6px; }
+  .branch-row label { margin: 0; }
+  .form-card { border: 1px solid var(--vscode-panel-border); border-radius: 3px; overflow: hidden; }
+  .form-field { padding: 9px 10px; }
+  .form-field + .form-field { border-top: 1px solid var(--vscode-panel-border); }
+  .metadata-list { display: grid; gap: 7px; }
+  .metadata-row { border: 1px solid var(--vscode-panel-border); border-radius: 3px; overflow: hidden; }
+  .metadata-picker { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px; border: 0; padding: 7px 9px; color: var(--vscode-foreground); background: var(--vscode-textBlockQuote-background, var(--vscode-editor-inactiveSelectionBackground)); cursor: pointer; text-align: left; }
+  .metadata-picker .name { font-weight: 600; }
+  .metadata-picker .chevron { color: var(--vscode-descriptionForeground); }
+  .metadata-values { display: flex; gap: 5px; flex-wrap: wrap; padding: 7px 9px; border-top: 1px solid var(--vscode-panel-border); min-height: 30px; align-items: center; }
+  .chip { display: inline-flex; align-items: center; border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border)); border-radius: 999px; padding: 1px 7px; font-size: .88em; }
+  .metadata-empty { color: var(--vscode-descriptionForeground); font-size: .9em; }
   .actions { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
-  button { border: 0; padding: 6px 12px; color: var(--vscode-button-foreground); background: var(--vscode-button-background); cursor: pointer; }
+  button { font: inherit; border: 1px solid transparent; padding: 6px 12px; color: var(--vscode-button-foreground); background: var(--vscode-button-background); cursor: pointer; }
   button.secondary { color: var(--vscode-button-secondaryForeground); background: var(--vscode-button-secondaryBackground); }
-  button.link { color: var(--vscode-textLink-foreground); background: transparent; padding-left: 0; }
   .hint { margin-top: 10px; color: var(--vscode-descriptionForeground); }
 </style>
 </head>
 <body>
   <div class="repo">${escapeHtml(repoInfo.label)} · ${escapeHtml(repoInfo.serverUrl)}</div>
-  <div class="branches">
-    <div><label for="base">BASE</label><select id="base">${branchOptions(baseBranch)}</select></div>
-    <div><label for="head">MERGE</label><select id="head">${branchOptions(headBranch)}</select></div>
-  </div>
-  <label for="title">TITLE</label>
-  <input id="title" value="${escapeHtml(title)}" placeholder="Pull request title">
-  <label for="body">DESCRIPTION</label>
-  <textarea id="body" placeholder="Describe the changes">${escapeHtml(body)}</textarea>
 
-  <div class="metadata">
-    <button class="secondary" data-action="pickReviewers">Reviewers · ${summary(reviewers.map((user) => user.login), "None")}</button>
-    <button class="secondary" data-action="pickAssignees">Assignees · ${summary(assignees.map((user) => user.login), "None")}</button>
-    <button class="secondary" data-action="pickLabels">Labels · ${summary(labels.map((label) => label.name), "None")}</button>
-    <button class="secondary" data-action="pickMilestone">Milestone · ${escapeHtml(milestone?.title ?? "None")}</button>
-  </div>
+  <section class="section">
+    <div class="section-title">Branch identification</div>
+    <div class="branch-row"><label for="head">Source branch</label><select id="head">${branchOptions(headBranch)}</select></div>
+    <div class="branch-row"><label for="base">Base branch</label><select id="base">${branchOptions(baseBranch)}</select></div>
+  </section>
 
-  <div class="hint">Create Draft uses Gitea's work-in-progress convention by applying the configured-compatible <strong>WIP:</strong> title prefix.</div>
+  <section class="section">
+    <div class="section-title">General information</div>
+    <div class="form-card">
+      <div class="form-field"><input id="title" aria-label="Pull request title" value="${escapeHtml(title)}" placeholder="Pull request title"></div>
+      <div class="form-field"><textarea id="body" aria-label="Pull request description" placeholder="Pull request description">${escapeHtml(body)}</textarea></div>
+    </div>
+  </section>
+
+  <section class="section metadata">
+    <div class="section-title">Metadata</div>
+    <div class="metadata-list">
+      <div class="metadata-row"><button class="metadata-picker" data-action="pickReviewers"><span class="name">Reviewers</span><span class="chevron">›</span></button><div class="metadata-values">${chips(reviewers.map((user) => user.login))}</div></div>
+      <div class="metadata-row"><button class="metadata-picker" data-action="pickAssignees"><span class="name">Assignees</span><span class="chevron">›</span></button><div class="metadata-values">${chips(assignees.map((user) => user.login))}</div></div>
+      <div class="metadata-row"><button class="metadata-picker" data-action="pickLabels"><span class="name">Labels</span><span class="chevron">›</span></button><div class="metadata-values">${chips(labels.map((label) => label.name))}</div></div>
+      <div class="metadata-row"><button class="metadata-picker" data-action="pickMilestone"><span class="name">Milestone</span><span class="chevron">›</span></button><div class="metadata-values">${chips(milestone ? [milestone.title] : [])}</div></div>
+    </div>
+  </section>
+
+  <div class="hint">Create Draft uses Gitea's work-in-progress convention by applying the configured-compatible <strong>WIP:</strong> title prefix. Use the × title action to cancel creation.</div>
   <div class="actions">
-    <button class="secondary" id="cancel">Cancel</button>
     <button id="create">Create</button>
-    <button id="createDraft">Create Draft</button>
+    <button class="secondary" id="createDraft">Create Draft</button>
   </div>
-  <button class="link" id="legacy">Use legacy create flow</button>
 <script>
   const vscode = acquireVsCodeApi();
   const base = document.getElementById('base');
@@ -525,11 +563,12 @@ export class CreatePullRequestViewProvider
     return { type, baseBranch: base.value, headBranch: head.value, title: title.value, body: body.value, ...extra };
   }
   function branchesChanged() { vscode.postMessage(snapshot('changeBranches')); }
+  function formChanged() { vscode.postMessage(snapshot('updateForm')); }
   base.addEventListener('change', branchesChanged);
   head.addEventListener('change', branchesChanged);
+  title.addEventListener('input', formChanged);
+  body.addEventListener('input', formChanged);
   document.querySelectorAll('[data-action]').forEach((button) => button.addEventListener('click', () => vscode.postMessage(snapshot(button.dataset.action))));
-  document.getElementById('cancel').addEventListener('click', () => vscode.postMessage({ type: 'cancel' }));
-  document.getElementById('legacy').addEventListener('click', () => vscode.postMessage({ type: 'openLegacy' }));
   document.getElementById('create').addEventListener('click', () => vscode.postMessage(snapshot('create', { draft: false })));
   document.getElementById('createDraft').addEventListener('click', () => vscode.postMessage(snapshot('create', { draft: true })));
 </script>
@@ -547,6 +586,7 @@ function escapeHtml(value: string): string {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
+    .split(String.fromCharCode(34))
+    .join("&quot;")
     .replace(/'/g, "&#039;");
 }

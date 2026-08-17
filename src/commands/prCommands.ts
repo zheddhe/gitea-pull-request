@@ -18,6 +18,10 @@ import {
 } from "../views/prDiffProvider";
 import type { GiteaPullRequest } from "../api/types";
 
+type PRDetailTarget =
+  | PullRequestItem
+  | { pr: GiteaPullRequest; repoInfo: RepoInfo };
+
 export function registerPRCommands(
   context: vscode.ExtensionContext,
   api: GiteaApiClient,
@@ -44,12 +48,15 @@ export function registerPRCommands(
 
     vscode.commands.registerCommand(
       "gitea.viewPRDetail",
-      async (item: PullRequestItem) => {
+      async (target: PRDetailTarget) => {
+        const pr = target instanceof PullRequestItem ? target.pr : target.pr;
+        const repoInfo =
+          target instanceof PullRequestItem ? target.repoInfo : target.repoInfo;
         await PRDetailPanel.show(
           context.extensionUri,
           api,
-          item.repoInfo,
-          item.pr,
+          repoInfo,
+          pr,
         );
       },
     ),
@@ -74,12 +81,9 @@ export function registerPRCommands(
         const provider = PRDiffProvider.getActive();
         if (!provider) return;
 
-        // args[0] is either TreeItemCheckboxState (number) or the PRDiffFileItem
-        // args[1] is the PRDiffFileItem when checkbox is clicked
         const fileItem = (args.length > 1 ? args[1] : args[0]) as PRDiffFileItem;
 
         if (args.length > 1 && typeof args[0] === "number") {
-          // Checkbox toggle
           const state = args[0] as vscode.TreeItemCheckboxState;
           if (state === vscode.TreeItemCheckboxState.Checked) {
             provider.markViewed(fileItem.filename);
@@ -87,7 +91,6 @@ export function registerPRCommands(
             provider.markUnviewed(fileItem.filename);
           }
         } else {
-          // Label click — open diff
           await openFileDiff(provider.api, fileItem.repoInfo, fileItem.pr, fileItem.filename);
         }
       },
@@ -102,12 +105,10 @@ export function registerPRCommands(
         const dirItem = (args.length > 1 ? args[1] : args[0]) as PRDiffDirItem;
 
         if (args.length > 1 && typeof args[0] === "number") {
-          // Checkbox toggle
           const state = args[0] as vscode.TreeItemCheckboxState;
           const check = state === vscode.TreeItemCheckboxState.Checked;
           provider.toggleDirViewed(dirItem.dirPath, check);
         }
-        // Label click does nothing (just expands/collapses via VSCode)
       },
     ),
 
@@ -132,22 +133,15 @@ export function registerPRCommands(
       "gitea.checkoutPR",
       async (arg: PullRequestItem | GiteaPullRequest, repoInfo?: RepoInfo) => {
         const pr = arg instanceof PullRequestItem ? arg.pr : arg;
-        const ri =
-          arg instanceof PullRequestItem ? arg.repoInfo : repoInfo;
+        const ri = arg instanceof PullRequestItem ? arg.repoInfo : repoInfo;
         await checkoutPR(pr, ri);
       },
     ),
 
-    vscode.commands.registerCommand("gitea.createPR", async () => {
-      await createPR(api, repoManager, auth, prProvider);
-    }),
-
     vscode.commands.registerCommand(
       "gitea.mergePR",
       async (arg: PullRequestItem) => {
-        if (!(arg instanceof PullRequestItem)) {
-          return;
-        }
+        if (!(arg instanceof PullRequestItem)) return;
         await mergePR(api, arg.pr, arg.repoInfo, prProvider);
       },
     ),
@@ -155,9 +149,7 @@ export function registerPRCommands(
     vscode.commands.registerCommand(
       "gitea.approvePR",
       async (arg: PullRequestItem) => {
-        if (!(arg instanceof PullRequestItem)) {
-          return;
-        }
+        if (!(arg instanceof PullRequestItem)) return;
         await reviewPR(api, arg.pr, arg.repoInfo, "APPROVED", prProvider);
       },
     ),
@@ -165,9 +157,7 @@ export function registerPRCommands(
     vscode.commands.registerCommand(
       "gitea.requestChangesPR",
       async (arg: PullRequestItem) => {
-        if (!(arg instanceof PullRequestItem)) {
-          return;
-        }
+        if (!(arg instanceof PullRequestItem)) return;
         await reviewPR(
           api,
           arg.pr,
@@ -184,26 +174,19 @@ export function registerPRCommands(
         if (arg instanceof PullRequestItem) {
           await addComment(api, arg.repoInfo, arg.pr.number, prProvider);
         } else {
-          // invoked from command palette — pick a repo then enter PR number
           const repoInfo = await pickRepo(repoManager, auth);
-          if (!repoInfo) {
-            return;
-          }
+          if (!repoInfo) return;
           const numStr = await vscode.window.showInputBox({
             prompt: "PR number",
             validateInput: (v) => (/^\d+$/.test(v) ? null : "Enter a number"),
           });
-          if (!numStr) {
-            return;
-          }
+          if (!numStr) return;
           await addComment(api, repoInfo, parseInt(numStr, 10), prProvider);
         }
       },
     ),
   );
 }
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
 
 async function pickRepo(
   repoManager: RepoManager,
@@ -214,9 +197,7 @@ async function pickRepo(
     vscode.window.showErrorMessage("No Gitea repositories detected.");
     return undefined;
   }
-  if (repos.length === 1) {
-    return repos[0];
-  }
+  if (repos.length === 1) return repos[0];
   const choice = await vscode.window.showQuickPick(
     repos.map((r) => ({
       label: r.label,
@@ -244,7 +225,6 @@ async function checkoutPR(
     vscode.window.showErrorMessage("No git repository found in workspace.");
     return;
   }
-  // Prefer the git repo matching the detected Gitea repo's root path
   const repo = repoInfo
     ? (allRepos.find(
         (r: { rootUri: vscode.Uri }) => r.rootUri.fsPath === repoInfo.rootPath,
@@ -278,94 +258,6 @@ async function checkoutPR(
   );
 }
 
-async function createPR(
-  api: GiteaApiClient,
-  repoManager: RepoManager,
-  auth: AuthManager,
-  prProvider: PullRequestProvider,
-): Promise<void> {
-  const repoInfo = await pickRepo(repoManager, auth);
-  if (!repoInfo) {
-    return;
-  }
-
-  let branches: string[] = [];
-  try {
-    branches = await api.listBranches(repoInfo);
-  } catch {
-    /* fall through to text input */
-  }
-
-  const head =
-    branches.length > 0
-      ? await vscode.window.showQuickPick(branches, {
-          placeHolder: "Head branch (source)",
-        })
-      : await vscode.window.showInputBox({
-          prompt: "Head branch (source)",
-          value: repoInfo.currentBranch ?? "",
-        });
-  if (!head) {
-    return;
-  }
-
-  const base =
-    branches.length > 0
-      ? await vscode.window.showQuickPick(
-          branches.filter((b) => b !== head),
-          { placeHolder: "Base branch (target)" },
-        )
-      : await vscode.window.showInputBox({
-          prompt: "Base branch (target)",
-          value: "main",
-        });
-  if (!base) {
-    return;
-  }
-
-  const title = await vscode.window.showInputBox({
-    prompt: "Pull request title",
-    validateInput: (v) => (v ? null : "Title is required"),
-  });
-  if (!title) {
-    return;
-  }
-
-  const body =
-    (await vscode.window.showInputBox({ prompt: "Description (optional)" })) ??
-    "";
-
-  let pr: { number: number; html_url: string } | undefined;
-  try {
-    pr = await vscode.window.withProgress(
-      {
-        location: vscode.ProgressLocation.Notification,
-        title: "Creating pull request...",
-      },
-      async () => {
-        return api.createPullRequest(repoInfo, {
-          title,
-          body,
-          head,
-          base,
-        });
-      },
-    );
-    const action = await vscode.window.showInformationMessage(
-      `PR #${pr.number} created.`,
-      "Open in Browser",
-    );
-    if (action === "Open in Browser") {
-      await vscode.env.openExternal(vscode.Uri.parse(pr.html_url));
-    }
-    prProvider.refresh();
-  } catch (err) {
-    vscode.window.showErrorMessage(
-      `Failed to create PR: ${(err as Error).message}`,
-    );
-  }
-}
-
 async function mergePR(
   api: GiteaApiClient,
   pr: GiteaPullRequest,
@@ -380,17 +272,13 @@ async function mergePR(
     ],
     { placeHolder: "Select merge method" },
   );
-  if (!method) {
-    return;
-  }
+  if (!method) return;
   const confirm = await vscode.window.showWarningMessage(
     `Merge PR #${pr.number} (${method.value})?`,
     { modal: true },
     "Merge",
   );
-  if (confirm !== "Merge") {
-    return;
-  }
+  if (confirm !== "Merge") return;
   try {
     await vscode.window.withProgress(
       {
@@ -454,9 +342,7 @@ async function addComment(
     prompt: `Comment on PR #${prNumber}`,
     validateInput: (v) => (v?.trim() ? null : "Comment cannot be empty"),
   });
-  if (!body) {
-    return;
-  }
+  if (!body) return;
   try {
     await vscode.window.withProgress(
       {
@@ -482,7 +368,10 @@ async function openFileDiff(
   pr: GiteaPullRequest,
   filename: string,
 ): Promise<void> {
-  const tmpDir = path.join(os.tmpdir(), `gitea-diff-${repoInfo.key.replace(/[^a-zA-Z0-9]/g, "_")}-${pr.number}-${Date.now()}`);
+  const tmpDir = path.join(
+    os.tmpdir(),
+    `gitea-diff-${repoInfo.key.replace(/[^a-zA-Z0-9]/g, "_")}-${pr.number}-${Date.now()}`,
+  );
 
   try {
     const [baseContent, headContent] = await Promise.allSettled([
@@ -490,14 +379,14 @@ async function openFileDiff(
       api.getFileContents(repoInfo, pr.head.ref, filename),
     ]);
 
-    // Handle cases where the file doesn't exist on one branch (added/deleted)
     const baseText = baseContent.status === "fulfilled" ? baseContent.value : "";
     const headText = headContent.status === "fulfilled" ? headContent.value : "";
 
-    // Check if either side looks binary (contains null bytes)
     const hasNullByte = (s: string) => s.includes("\0");
     if (hasNullByte(baseText) || hasNullByte(headText)) {
-      vscode.window.showInformationMessage(`File '${filename}' appears to be binary — skipping diff.`);
+      vscode.window.showInformationMessage(
+        `File '${filename}' appears to be binary — skipping diff.`,
+      );
       return;
     }
 
@@ -512,9 +401,10 @@ async function openFileDiff(
     const baseUri = vscode.Uri.file(baseFile);
     const headUri = vscode.Uri.file(headFile);
 
-    const title = filename === path.basename(filename)
-      ? `${filename} (${pr.head.ref} → ${pr.base.ref})`
-      : `PR #${pr.number} — ${filename}`;
+    const title =
+      filename === path.basename(filename)
+        ? `${filename} (${pr.head.ref} → ${pr.base.ref})`
+        : `PR #${pr.number} — ${filename}`;
 
     await vscode.commands.executeCommand(
       "vscode.diff",
@@ -524,6 +414,8 @@ async function openFileDiff(
       { preview: true, preserveFocus: false },
     );
   } catch (err) {
-    vscode.window.showErrorMessage(`Failed to open diff for '${filename}': ${(err as Error).message}`);
+    vscode.window.showErrorMessage(
+      `Failed to open diff for '${filename}': ${(err as Error).message}`,
+    );
   }
 }

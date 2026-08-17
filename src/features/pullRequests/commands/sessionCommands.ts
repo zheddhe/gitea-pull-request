@@ -27,10 +27,21 @@ export function registerPullRequestSessionCommands(
         );
 
         await vscode.commands.executeCommand(PULL_REQUEST_CONTEXT_CONTAINER);
+        await vscode.commands.executeCommand("gitea.viewActivePRDetail");
       },
     ),
     vscode.commands.registerCommand("gitea.clearActivePR", async () => {
       await session.clear();
+    }),
+    vscode.commands.registerCommand("gitea.cancelCreatePR", async () => {
+      if (session.current.kind === "creating") {
+        await session.clear();
+      }
+    }),
+    vscode.commands.registerCommand("gitea.finishPostMerge", async () => {
+      if (session.current.kind === "merged") {
+        await session.clear();
+      }
     }),
   );
 }

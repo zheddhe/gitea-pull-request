@@ -1,7 +1,7 @@
 import * as path from "path";
 import { runTests } from "@vscode/test-electron";
 
-const DEFAULT_VSCODE_TEST_VERSION = "1.85.0";
+const DEFAULT_VSCODE_TEST_VERSION = "1.133.0";
 
 async function main(): Promise<void> {
   try {

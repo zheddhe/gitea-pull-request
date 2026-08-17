@@ -15,11 +15,9 @@ type MergedPullRequestState = Extract<
 >;
 
 type PostMergeMessage =
-  | { type: "refreshBranches" }
   | { type: "deleteBranches" }
   | { type: "checkoutBase" }
-  | { type: "createNew" }
-  | { type: "done" };
+  | { type: "createNew" };
 
 interface CleanupQuickPickItem extends vscode.QuickPickItem {
   cleanupKind: "local" | "remote";
@@ -75,6 +73,15 @@ export class PostMergePullRequestViewProvider
     if (state) void this.loadIdentity(state);
   }
 
+  async refreshBranchState(): Promise<void> {
+    const state = this.mergedState();
+    if (!state || this.busy) return;
+    log(
+      `[post-merge-view] refreshing branch identity repo=${state.repository.fullName} pr=#${state.pullRequest.number}`,
+    );
+    await this.loadIdentity(state, true);
+  }
+
   dispose(): void {
     for (const disposable of this.disposables) disposable.dispose();
     this.disposables.length = 0;
@@ -86,9 +93,6 @@ export class PostMergePullRequestViewProvider
     if (!state) return;
 
     switch (message.type) {
-      case "refreshBranches":
-        await this.loadIdentity(state, true);
-        return;
       case "deleteBranches":
         await this.deleteBranches(state);
         return;
@@ -98,9 +102,6 @@ export class PostMergePullRequestViewProvider
       case "createNew":
         await this.session.clear();
         await vscode.commands.executeCommand("gitea.createPRSidebar");
-        return;
-      case "done":
-        await this.session.clear();
         return;
     }
   }
@@ -287,7 +288,7 @@ export class PostMergePullRequestViewProvider
     const identity = this.identity;
     const plan = identity ? planBranchCleanup(identity) : undefined;
     const branchSummary = this.loading
-      ? "<p>Resolving local and remote branch identity...</p>"
+      ? '<p class="muted">Resolving local and remote branch identity…</p>'
       : identity
         ? `<dl>
             <dt>PR head</dt><dd><code>${escapeHtml(identity.prHead)}</code></dd>
@@ -307,26 +308,30 @@ export class PostMergePullRequestViewProvider
       : "";
 
     this.view.webview.html = this.html(`
-      <h3>Pull request successfully merged.</h3>
-      <p><strong>#${pr.number}</strong> ${escapeHtml(pr.title)}</p>
-      <p>${escapeHtml(state.repository.fullName)} · <code>${escapeHtml(pr.head.ref)}</code> → <code>${escapeHtml(pr.base.ref)}</code></p>
+      <div class="header">
+        <div class="title">Pull request successfully merged</div>
+        <div class="meta"><strong>#${pr.number}</strong> ${escapeHtml(pr.title)}</div>
+        <div class="meta">${escapeHtml(state.repository.fullName)} · <code>${escapeHtml(pr.head.ref)}</code> → <code>${escapeHtml(pr.base.ref)}</code></div>
+      </div>
       ${warning}
-      <h4>Branch state</h4>
-      ${branchSummary}
-      <div class="actions">
-        <button id="create" ${disabled}>Create New Pull Request...</button>
-        <button id="delete" ${cleanupDisabled}>Delete Branch...</button>
-        <button id="checkout" ${disabled}>Checkout '${escapeHtml(pr.base.ref)}' without deleting branch</button>
-        <button id="done" class="secondary" ${disabled}>Keep branches and finish</button>
-        <button id="refresh" class="secondary" ${disabled}>Refresh branch state</button>
+      <div class="section">
+        <div class="section-title">Branch state</div>
+        ${branchSummary}
+      </div>
+      <div class="section">
+        <div class="section-title">Next action</div>
+        <div class="actions">
+          <button id="create" ${disabled}>Create New Pull Request…</button>
+          <button id="delete" ${cleanupDisabled}>Delete Branch…</button>
+          <button id="checkout" class="secondary" ${disabled}>Checkout '${escapeHtml(pr.base.ref)}' without deleting branch</button>
+        </div>
+        <p class="muted">Use the ↻ title action to refresh branch state, or × to keep branches and finish.</p>
       </div>
       <script>
         const vscode = acquireVsCodeApi();
         document.getElementById('create')?.addEventListener('click', () => vscode.postMessage({ type: 'createNew' }));
         document.getElementById('delete')?.addEventListener('click', () => vscode.postMessage({ type: 'deleteBranches' }));
         document.getElementById('checkout')?.addEventListener('click', () => vscode.postMessage({ type: 'checkoutBase' }));
-        document.getElementById('done')?.addEventListener('click', () => vscode.postMessage({ type: 'done' }));
-        document.getElementById('refresh')?.addEventListener('click', () => vscode.postMessage({ type: 'refreshBranches' }));
       </script>
     `);
   }
@@ -338,12 +343,17 @@ export class PostMergePullRequestViewProvider
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
-  body { font-family: var(--vscode-font-family); color: var(--vscode-foreground); padding: 8px 12px; }
+  body { font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); color: var(--vscode-foreground); padding: 12px; }
   code { font-family: var(--vscode-editor-font-family); }
+  .header { margin-bottom: 12px; }
+  .title { font-weight: 600; margin-bottom: 4px; }
+  .meta, .muted { color: var(--vscode-descriptionForeground); }
+  .section { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--vscode-panel-border); }
+  .section-title { font-weight: 600; margin-bottom: 6px; }
   dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 12px; }
   dt { color: var(--vscode-descriptionForeground); }
   dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
-  .actions { display: grid; gap: 7px; margin-top: 12px; }
+  .actions { display: grid; gap: 7px; margin-top: 8px; }
   button { color: var(--vscode-button-foreground); background: var(--vscode-button-background); border: 0; padding: 7px 12px; cursor: pointer; text-align: left; }
   button:hover { background: var(--vscode-button-hoverBackground); }
   button.secondary { color: var(--vscode-button-secondaryForeground); background: var(--vscode-button-secondaryBackground); }

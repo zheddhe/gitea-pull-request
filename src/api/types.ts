@@ -92,13 +92,25 @@ export interface GiteaReview {
 export interface GiteaReviewComment {
   id: number;
   user: GiteaUser;
+  resolver?: GiteaUser;
   body: string;
   path: string;
+  pull_request_review_id?: number;
+  commit_id?: string;
+  original_commit_id?: string;
   diff_hunk?: string;
+  /** Current/new-file line returned by Gitea when reading a review comment. */
+  position?: number;
+  /** Original/old-file line returned by Gitea when reading a review comment. */
+  original_position?: number;
+  /** @deprecated Internal compatibility alias while the detail renderer migrates. */
   new_position?: number;
+  /** @deprecated Internal compatibility alias while the detail renderer migrates. */
   old_position?: number;
   created_at: string;
   updated_at: string;
+  html_url?: string;
+  pull_request_url?: string;
 }
 
 export interface GiteaFileDiff {

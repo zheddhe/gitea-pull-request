@@ -19,6 +19,7 @@ export class IssueDetailPanel {
     const existing = IssueDetailPanel.panels.get(key);
     if (existing) {
       existing.panel.reveal(vscode.ViewColumn.One);
+      await existing.update(issue);
       return;
     }
     const panel = vscode.window.createWebviewPanel(
@@ -27,14 +28,7 @@ export class IssueDetailPanel {
       vscode.ViewColumn.One,
       { enableScripts: true, retainContextWhenHidden: true },
     );
-    const instance = new IssueDetailPanel(
-      panel,
-      extensionUri,
-      api,
-      repoInfo,
-      issue,
-      key,
-    );
+    const instance = new IssueDetailPanel(panel, extensionUri, api, repoInfo, issue, key);
     IssueDetailPanel.panels.set(key, instance);
     await instance.update(issue);
   }
@@ -48,441 +42,228 @@ export class IssueDetailPanel {
     private readonly key: string,
   ) {
     this.panel = panel;
-
+    void this.extensionUri;
     panel.onDidDispose(() => this.dispose(), null, this.disposables);
     panel.webview.onDidReceiveMessage(
-      (msg) => this.handleMessage(msg),
+      (message) => void this.handleMessage(message),
       null,
       this.disposables,
     );
   }
 
-  private async handleMessage(msg: {
+  private async handleMessage(message: {
     command: string;
     [key: string]: unknown;
   }): Promise<void> {
-    switch (msg.command) {
+    switch (message.command) {
       case "addComment":
-        await this.addComment((msg.body as string) ?? "");
-        break;
-      case "close":
-        await this.changeState("closed");
-        break;
-      case "reopen":
-        await this.changeState("open");
-        break;
-      case "editIssue":
-        await this.editIssue(
-          (msg.title as string) ?? "",
-          (msg.body as string) ?? "",
+        await this.addComment((message.body as string) ?? "");
+        return;
+      case "editComment":
+        await this.editComment(
+          Number(message.commentId),
+          (message.body as string) ?? "",
         );
-        break;
+        return;
+      case "editTitle":
+        await this.updateIssue({ title: ((message.title as string) ?? "").trim() });
+        return;
+      case "editBody":
+        await this.updateIssue({ body: (message.body as string) ?? "" });
+        return;
       case "refresh":
         this.issue = await this.api.getIssue(this.repoInfo, this.issue.number);
         await this.update(this.issue);
-        break;
+        return;
       case "openInBrowser":
-        vscode.env.openExternal(vscode.Uri.parse(this.issue.html_url));
-        break;
-      case "debug":
-        log("Issue webview: " + (msg.body as string));
-        break;
+        await vscode.env.openExternal(vscode.Uri.parse(this.issue.html_url));
+        return;
+      case "openExternal":
+        await this.openExternal((message.url as string) ?? "");
+        return;
       default:
-        log("Issue unknown message: " + msg.command);
-        break;
+        log(`Issue unknown message: ${message.command}`);
     }
   }
 
-  private async editIssue(title: string, body: string): Promise<void> {
-    if (!title.trim()) {
+  private async openExternal(rawUrl: string): Promise<void> {
+    try {
+      const resolved = new URL(rawUrl, this.issue.html_url);
+      if (resolved.protocol !== "http:" && resolved.protocol !== "https:") {
+        throw new Error("Unsupported URL scheme");
+      }
+      await vscode.env.openExternal(vscode.Uri.parse(resolved.toString()));
+    } catch (error) {
+      log(`Issue link rejected: ${rawUrl} (${(error as Error).message})`);
+      vscode.window.showWarningMessage("Unsupported issue link.");
+    }
+  }
+
+  private async updateIssue(params: { title?: string; body?: string }): Promise<void> {
+    if (params.title !== undefined && !params.title.trim()) {
       vscode.window.showWarningMessage("Title cannot be empty.");
       return;
     }
     try {
-      this.issue = await this.api.updateIssue(this.repoInfo, this.issue.number, {
-        title: title.trim(),
-        body,
-      });
+      this.issue = await this.api.updateIssue(this.repoInfo, this.issue.number, params);
       this.panel.title = `Issue #${this.issue.number}: ${this.issue.title}`;
       await this.update(this.issue);
-      vscode.window.showInformationMessage(
-        `Issue #${this.issue.number} updated.`,
-      );
-    } catch (err) {
-      vscode.window.showErrorMessage(`Failed: ${(err as Error).message}`);
+    } catch (error) {
+      vscode.window.showErrorMessage(`Failed to update issue: ${(error as Error).message}`);
     }
   }
 
   private async addComment(body: string): Promise<void> {
-    if (!body.trim()) {
-      vscode.window.showWarningMessage("Comment cannot be empty.");
-      return;
-    }
+    if (!body.trim()) return;
     try {
-      await this.api.addIssueComment(this.repoInfo, this.issue.number, body);
-      vscode.window.showInformationMessage("Comment posted.");
+      await this.api.addIssueComment(this.repoInfo, this.issue.number, body.trim());
       this.issue = await this.api.getIssue(this.repoInfo, this.issue.number);
       await this.update(this.issue);
-    } catch (err) {
-      vscode.window.showErrorMessage(
-        `Failed to add comment: ${(err as Error).message}`,
-      );
+    } catch (error) {
+      vscode.window.showErrorMessage(`Failed to add comment: ${(error as Error).message}`);
     }
   }
 
-  private async changeState(state: "open" | "closed"): Promise<void> {
+  private async editComment(commentId: number, body: string): Promise<void> {
+    if (!Number.isFinite(commentId) || commentId <= 0 || !body.trim()) return;
     try {
-      this.issue =
-        state === "closed"
-          ? await this.api.closeIssue(this.repoInfo, this.issue.number)
-          : await this.api.reopenIssue(this.repoInfo, this.issue.number);
+      await this.api.updateComment(this.repoInfo, commentId, body.trim());
       await this.update(this.issue);
-      vscode.window.showInformationMessage(
-        `Issue #${this.issue.number} ${state === "closed" ? "closed" : "re-opened"}.`,
-      );
-    } catch (err) {
-      vscode.window.showErrorMessage(`Failed: ${(err as Error).message}`);
+    } catch (error) {
+      vscode.window.showErrorMessage(`Failed to edit comment: ${(error as Error).message}`);
     }
   }
 
   async update(issue: GiteaIssue): Promise<void> {
-    log("Issue update: #" + issue.number);
+    log(`Issue update: #${issue.number}`);
     try {
-      const comments = await this.api.listIssueComments(
-        this.repoInfo,
-        issue.number,
-      );
-      this.panel.webview.html = this.renderHtml(issue, comments);
-    } catch (err) {
-      this.panel.webview.html = `<!DOCTYPE html><html><body><h2>Error</h2><p>${escHtml((err as Error).message)}</p></body></html>`;
+      const comments = await this.api.listIssueComments(this.repoInfo, issue.number);
+      const rendered = await Promise.all([
+        this.renderMarkdown(issue.body ?? ""),
+        ...comments.map((comment) => this.renderMarkdown(comment.body ?? "")),
+      ]);
+      this.panel.webview.html = this.renderHtml(issue, comments, rendered[0] ?? "", rendered.slice(1));
+    } catch (error) {
+      this.panel.webview.html = `<!DOCTYPE html><html><body style="padding:20px;color:var(--vscode-foreground);background:var(--vscode-editor-background);font-family:var(--vscode-font-family)"><h2>Error loading issue</h2><p>${escHtml((error as Error).message)}</p></body></html>`;
     }
   }
 
-  private renderHtml(issue: GiteaIssue, comments: GiteaComment[]): string {
-    const stateBg = issue.state === "open" ? "#2da44e" : "#cf222e";
-    const stateLabel = issue.state === "open" ? "Open" : "Closed";
-    const stateIcon = issue.state === "open" ? "🟢" : "🟣";
+  private async renderMarkdown(markdown: string): Promise<string> {
+    if (!markdown.trim()) return "";
+    try {
+      const rendered = await vscode.commands.executeCommand<string>("markdown.api.render", markdown);
+      if (typeof rendered === "string") return rendered;
+      throw new Error("VS Code Markdown renderer returned no HTML");
+    } catch (error) {
+      log(`Issue Markdown renderer fallback: ${(error as Error).message}`);
+      return `<pre>${escHtml(markdown)}</pre>`;
+    }
+  }
 
-    const labelsHtml =
-      issue.labels
-        ?.map(
-          (l) =>
-            `<span class="label" style="background:#${l.color}">${escHtml(l.name)}</span>`,
-        )
-        .join("") ?? "";
-    const assigneesHtml =
-      issue.assignees?.length
-        ? `<span class="mi">👤 ${issue.assignees.map((a) => escHtml(a.login)).join(", ")}</span>`
-        : issue.assignee
-          ? `<span class="mi">👤 ${escHtml(issue.assignee.login)}</span>`
-          : "";
+  private renderHtml(
+    issue: GiteaIssue,
+    comments: GiteaComment[],
+    bodyHtml: string,
+    commentBodies: string[],
+  ): string {
+    const stateLabel = issue.state === "open" ? "Open" : "Closed";
+    const stateClass = issue.state === "open" ? "state-open" : "state-closed";
+    const nonce = getNonce();
+    const labelsHtml = issue.labels?.map(
+      (label) => `<span class="label" style="--label-color:#${escHtml(label.color)}">${escHtml(label.name)}</span>`,
+    ).join("") ?? "";
+    const assignees = issue.assignees?.length
+      ? issue.assignees.map((user) => user.login).join(", ")
+      : issue.assignee?.login;
+    const assigneesHtml = assignees
+      ? `<span>assigned to <strong>${escHtml(assignees)}</strong></span>`
+      : "";
     const milestoneHtml = issue.milestone
-      ? `<span class="mi">🏁 ${escHtml(issue.milestone.title)}</span>`
+      ? `<span>Milestone: <strong>${escHtml(issue.milestone.title)}</strong></span>`
       : "";
 
-    const createdDate = new Date(issue.created_at).toLocaleString();
-    const updatedDate = new Date(issue.updated_at).toLocaleString();
-    const closedDate = issue.closed_at
-      ? new Date(issue.closed_at).toLocaleString()
-      : "—";
+    const editIcon = `<svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M11.3 1.7a1 1 0 0 1 1.4 0l1.6 1.6a1 1 0 0 1 0 1.4l-8.6 8.6-3.2.7.7-3.2 8.1-9.1zm.7 1.1-7.9 8.8-.3 1.1 1.1-.3 8.3-8.3L12 2.8z"/></svg>`;
+    const refreshIcon = `<svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M13.2 3.8A6 6 0 1 0 14 9h-1.2a4.8 4.8 0 1 1-.7-4.3L10 6h5V1l-1.8 2.8z"/></svg>`;
+    const externalIcon = `<svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M9 2h5v5h-1V3.7L7.35 9.35l-.7-.7L12.3 3H9V2zM3 4h4v1H4v7h7V8h1v5H3V4z"/></svg>`;
 
-    const commentsJson = JSON.stringify(comments).replace(/</g, "\\u003c").replace(/>/g, "\\u003e");
-    const bodyJson = JSON.stringify(issue.body || "").replace(/</g, "\\u003c").replace(/>/g, "\\u003e");
-    const titleJson = JSON.stringify(issue.title).replace(/</g, "\\u003c").replace(/>/g, "\\u003e");
+    const commentsHtml = comments.length
+      ? comments.map((comment, index) =>
+          `<article class="comment" data-comment-id="${comment.id}"><header class="comment-header"><img src="${escHtml(comment.user.avatar_url)}" class="avatar" alt=""><strong>${escHtml(comment.user.login)}</strong><span class="time">${escHtml(new Date(comment.created_at).toLocaleString())}</span><button class="icon-btn edit-comment" data-comment-id="${comment.id}" title="Edit comment" aria-label="Edit comment by ${escHtml(comment.user.login)}">${editIcon}</button></header><div id="comment-view-${comment.id}" class="comment-body markdown-body">${commentBodies[index] ?? ""}</div><div id="comment-editor-${comment.id}" class="comment-editor" hidden><textarea id="comment-input-${comment.id}">${escHtml(comment.body ?? "")}</textarea><div class="editor-actions"><button class="btn save-comment" data-comment-id="${comment.id}">Save</button><button class="btn sec cancel-comment" data-comment-id="${comment.id}">Cancel</button></div></div></article>`,
+        ).join("")
+      : '<p class="empty">No comments yet.</p>';
 
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: data: vscode-resource:; style-src 'unsafe-inline'; script-src 'unsafe-inline';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: data: vscode-resource:; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Issue #${issue.number}</title>
 <style>
-:root {
-  --bg: var(--vscode-editor-background,#1e1e1e);
-  --fg: var(--vscode-editor-foreground,#d4d4d4);
-  --border: var(--vscode-panel-border,#3c3c3c);
-  --dim: var(--vscode-descriptionForeground,#888);
-  --input-bg: var(--vscode-input-background,#3c3c3c);
-  --input-fg: var(--vscode-input-foreground,#d4d4d4);
-  --input-border: var(--vscode-input-border,#555);
-  --btn-bg: var(--vscode-button-background,#0e639c);
-  --btn-fg: var(--vscode-button-foreground,#fff);
-  --btn-hover: var(--vscode-button-hoverBackground,#1177bb);
-  --btn2-bg: var(--vscode-button-secondaryBackground,#3a3d41);
-  --btn2-fg: var(--vscode-button-secondaryForeground,#ccc);
-  --btn2-hover: var(--vscode-button-secondaryHoverBackground,#45494e);
-  --focus: var(--vscode-focusBorder,#007fd4);
-  --block-bg: var(--vscode-textBlockQuote-background,#252526);
-  --mono: var(--vscode-editor-font-family,'Menlo','Consolas','Courier New',monospace);
-}
-*{box-sizing:border-box;margin:0;padding:0}
-body{font-family:var(--vscode-font-family,-apple-system,sans-serif);font-size:13px;color:var(--fg);background:var(--bg);padding:14px 20px}
-h1{font-size:1.18em;margin-bottom:6px;line-height:1.4;font-weight:600}
-h2{font-size:.92em;font-weight:600;margin-bottom:8px}
-code{background:var(--block-bg);padding:1px 5px;border-radius:3px;font-size:.85em;font-family:var(--mono)}
-.badge{display:inline-block;padding:2px 9px;border-radius:10px;font-size:.72em;font-weight:700;color:#fff;text-transform:uppercase;letter-spacing:.02em}
-.label{display:inline-block;padding:1px 8px;border-radius:10px;font-size:.72em;font-weight:600;color:#fff;margin-right:3px}
-.meta-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:.82em;color:var(--dim);margin-bottom:12px}
-.mi{color:var(--dim)}.dim{color:var(--dim)}.ml8{margin-left:8px}.ml-auto{margin-left:auto}
-.stats-row{display:flex;flex-wrap:wrap;gap:18px;padding:8px 14px;background:var(--block-bg);border:1px solid var(--border);border-radius:5px;margin-bottom:12px}
-.stat{display:flex;flex-direction:column;gap:2px}
-.stat-lbl{color:var(--dim);font-size:.75em;text-transform:uppercase;letter-spacing:.04em}
-.stat-val{font-weight:700;font-size:1.05em}
-.actions{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:14px;align-items:center}
-.btn{background:var(--btn-bg);color:var(--btn-fg);border:none;padding:5px 12px;border-radius:4px;cursor:pointer;font-size:.87em;font-family:inherit;white-space:nowrap}
-.btn:hover{background:var(--btn-hover)}
-.btn.sec{background:var(--btn2-bg);color:var(--btn2-fg)}.btn.sec:hover{background:var(--btn2-hover)}
-.btn.danger{background:#b91c1c;color:#fff}.btn.danger:hover{background:#dc2626}
-.btn.success{background:#15803d;color:#fff}.btn.success:hover{background:#16a34a}
-.btn.sm{font-size:.75em;padding:3px 8px}
-.tabs{display:flex;gap:1px;border-bottom:1px solid var(--border);margin:0 0 14px}
-.tab{background:none;border:none;border-bottom:2px solid transparent;color:var(--dim);cursor:pointer;padding:7px 13px;font-size:.88em;font-family:inherit}
-.tab:hover{color:var(--fg)}.tab.active{color:var(--fg);border-bottom-color:var(--focus);font-weight:600}
-.tab-content{display:none}.tab-content.active{display:block}
-.comment{border:1px solid var(--border);border-radius:6px;margin-bottom:10px;overflow:hidden}
-.comment-hdr{display:flex;align-items:center;gap:8px;padding:7px 12px;background:var(--block-bg);border-bottom:1px solid var(--border);font-size:.84em}
-.comment-body{padding:10px 12px;line-height:1.5;overflow:hidden;word-break:break-word}
-.comment-body p{margin:0 0 0.5em}.comment-body p:last-child{margin:0}
-.comment-body code{background:var(--block-bg);padding:1px 5px;border-radius:3px;font-family:var(--mono);font-size:.85em}
-.comment-body pre{background:var(--block-bg);padding:8px 12px;border-radius:4px;overflow-x:auto;margin:0.5em 0}
-.comment-body pre code{background:none;padding:0}
-.comment-body ul,.comment-body ol{padding-left:1.5em;margin:0.5em 0}
-.comment-body blockquote{border-left:3px solid var(--border);padding-left:12px;margin:0.5em 0;color:var(--dim)}
-.comment-body a{color:var(--focus)}
-.comment-body img{max-width:100%;height:auto}
-.avatar{width:20px;height:20px;border-radius:50%}
-.time{margin-left:auto;color:var(--dim)}
-.empty{color:var(--dim);font-style:italic;padding:6px 0}
-.form-section{margin-top:14px}
-textarea{width:100%;background:var(--input-bg);color:var(--input-fg);border:1px solid var(--input-border);border-radius:4px;padding:7px;font-family:inherit;font-size:.9em;resize:vertical}
-textarea:focus{outline:1px solid var(--focus)}
-input[type="text"]{width:100%;background:var(--input-bg);color:var(--input-fg);border:1px solid var(--input-border);border-radius:4px;padding:6px 8px;font-family:inherit;font-size:.9em;box-sizing:border-box}
-input[type="text"]:focus{outline:1px solid var(--focus)}
-.desc-body{line-height:1.6;background:var(--block-bg);border:1px solid var(--border);border-radius:5px;padding:12px;margin-bottom:14px;overflow:hidden;word-break:break-word}
-.desc-body p{margin:0 0 0.5em}.desc-body p:last-child{margin:0}
-.desc-body code{background:var(--block-bg);padding:1px 5px;border-radius:3px;font-family:var(--mono);font-size:.85em}
-.desc-body pre{background:rgba(0,0,0,0.2);padding:8px 12px;border-radius:4px;overflow-x:auto;margin:0.5em 0}
-.desc-body pre code{background:none;padding:0}
-.desc-body ul,.desc-body ol{padding-left:1.5em;margin:0.5em 0}
-.desc-body blockquote{border-left:3px solid var(--border);padding-left:12px;margin:0.5em 0;color:var(--dim)}
-.desc-body a{color:var(--focus)}
-.desc-body img{max-width:100%;height:auto}
-.md-toggle-row{display:flex;align-items:center;gap:8px;margin-bottom:6px}
-.md-toggle-row .dim{font-size:.8em}
-
-/* ── edit form ── */
-.edit-form{background:var(--block-bg);border:1px solid var(--focus);border-radius:6px;padding:14px;margin-bottom:14px}
-.edit-form label{display:block;font-size:.82em;font-weight:600;margin-bottom:3px;color:var(--dim);text-transform:uppercase;letter-spacing:.04em}
-.edit-form .field{margin-bottom:10px}
-.edit-form .field:last-of-type{margin-bottom:0}
-.edit-actions{display:flex;gap:8px;margin-top:10px}
-
-/* ── timeline ── */
-.timeline{position:relative;padding-left:20px;border-left:2px solid var(--border)}
-.timeline-entry{position:relative;margin-bottom:14px;padding-left:16px}
-.timeline-entry:last-child{margin-bottom:0}
-.timeline-entry::before{content:'';position:absolute;left:-7px;top:5px;width:10px;height:10px;border-radius:50%;background:var(--focus);border:2px solid var(--bg)}
-.timeline-entry .tl-label{font-size:.82em;font-weight:600;color:var(--dim);text-transform:uppercase;letter-spacing:.04em}
-.timeline-entry .tl-value{font-size:.92em;margin-top:2px}
+:root{--surface:var(--vscode-editor-background);--subtle:var(--vscode-textBlockQuote-background,var(--vscode-editor-inactiveSelectionBackground));--fg:var(--vscode-foreground);--muted:var(--vscode-descriptionForeground);--border:var(--vscode-panel-border,var(--vscode-widget-border));--focus:var(--vscode-focusBorder);--input-bg:var(--vscode-input-background);--input-fg:var(--vscode-input-foreground);--input-border:var(--vscode-input-border,transparent);--button-bg:var(--vscode-button-background);--button-fg:var(--vscode-button-foreground);--button-secondary-bg:var(--vscode-button-secondaryBackground);--button-secondary-fg:var(--vscode-button-secondaryForeground);--success:var(--vscode-testing-iconPassed,var(--vscode-charts-green));--danger:var(--vscode-testing-iconFailed,var(--vscode-errorForeground));--mono:var(--vscode-editor-font-family)}
+*{box-sizing:border-box}html,body{margin:0;background:var(--surface);color:var(--fg)}body{font-family:var(--vscode-font-family);font-size:var(--vscode-font-size,13px);line-height:1.45;padding:16px 20px}button,input,textarea{font:inherit}
+.title-row{display:flex;align-items:center;gap:7px;min-width:0;margin-bottom:5px;white-space:nowrap}.title-prefix,.title-text{font-size:1.22em;font-weight:600}.title-prefix{flex:0 0 auto}.title-text{overflow:hidden;text-overflow:ellipsis}.title-input{display:none;min-width:180px;width:min(520px,45vw);font-size:1.22em;font-weight:600;padding:1px 5px}.title-row.editing .title-text{display:none}.title-row.editing .title-input{display:inline-block}.state-dot{width:8px;height:8px;border-radius:50%;flex:0 0 8px;background:currentColor}.state-open{color:var(--success)}.state-closed{color:var(--danger)}
+.icon-btn{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;padding:2px;border:0;border-radius:3px;background:transparent;color:var(--muted);cursor:pointer}.icon-btn:hover{background:var(--vscode-toolbar-hoverBackground,var(--subtle));color:var(--fg)}.icon-btn svg{width:14px;height:14px}.meta-row{display:flex;align-items:center;flex-wrap:wrap;gap:6px 9px;color:var(--muted);font-size:.92em;margin-bottom:14px}.meta-row strong{color:var(--fg)}.badge{display:inline-flex;border:1px solid currentColor;border-radius:999px;padding:1px 7px;font-size:.82em;font-weight:600;text-transform:uppercase}.label{border:1px solid var(--label-color);border-radius:999px;padding:1px 7px;font-size:.78em}
+.section-card,.comment{border:1px solid var(--border);border-radius:3px;margin-bottom:10px;overflow:hidden}.section-card{margin-bottom:14px}.section-bar,.comment-header{display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--subtle);border-bottom:1px solid var(--border)}.section-bar{justify-content:space-between;font-weight:600}.section-content,.comment-body{padding:10px 12px}.description-editor,.comment-editor{padding:10px 12px;background:var(--subtle)}.description-editor textarea{min-height:140px}.comment-editor textarea{min-height:90px}.editor-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.btn{border:1px solid transparent;border-radius:2px;padding:4px 10px;min-height:26px;cursor:pointer;background:var(--button-bg);color:var(--button-fg)}.btn.sec{background:var(--button-secondary-bg);color:var(--button-secondary-fg)}.btn:focus-visible,.icon-btn:focus-visible,input:focus-visible,textarea:focus-visible{outline:1px solid var(--focus);outline-offset:2px}textarea,input[type="text"]{background:var(--input-bg);color:var(--input-fg);border:1px solid var(--input-border);border-radius:2px;padding:6px 8px;width:100%;resize:vertical}
+.markdown-body{line-height:1.5;overflow-wrap:anywhere}.markdown-body h1{font-size:1.28em}.markdown-body h2{font-size:1.16em}.markdown-body h3{font-size:1.06em}.markdown-body code{font-family:var(--mono)}.markdown-body pre{overflow:auto}.markdown-body table{border-collapse:collapse;max-width:100%;overflow:auto;display:block}.markdown-body th,.markdown-body td{border:1px solid var(--border);padding:4px 7px}.markdown-body blockquote{border-left:3px solid var(--vscode-textBlockQuote-border,var(--border));padding:.25em .8em;margin:.7em 0;color:var(--muted)}
+.avatar{width:20px;height:20px;border-radius:50%}.time{margin-left:auto;color:var(--muted);font-size:.92em}.empty{color:var(--muted)}.comments-title{display:flex;align-items:center;padding:7px 10px;background:var(--subtle);border:1px solid var(--border);border-radius:3px 3px 0 0;font-weight:600;margin-top:14px}
 </style>
 </head>
 <body>
-
-<div class="title-row" style="display:flex;align-items:baseline;gap:10px;margin-bottom:4px">
-  <h1 id="issue-title">${stateIcon} Issue #${issue.number}: ${escHtml(issue.title)}</h1>
-  <button class="btn sm" onclick="startEdit()">✏️ Edit</button>
-</div>
-
-<div class="meta-row">
-  <span class="badge" style="background:${stateBg}">${stateLabel}</span>
-  by <strong>${escHtml(issue.user.login)}</strong>
-  <span class="dim">${new Date(issue.created_at).toLocaleDateString()}</span>
-  ${labelsHtml}${assigneesHtml}${milestoneHtml}
-</div>
-
-<div class="actions">
-  <button class="btn" onclick="post('openInBrowser')">🔗 Open in Browser</button>
-  <button class="btn" onclick="post('refresh')">↺ Refresh</button>
-  ${
-    issue.state === "open"
-      ? `<button class="btn danger" onclick="post('close')">✕ Close Issue</button>`
-      : `<button class="btn success" onclick="post('reopen')">↺ Re-open Issue</button>`
-  }
-</div>
-
-<div id="edit-form" class="edit-form" style="display:none">
-  <div class="field">
-    <label>Title</label>
-    <input type="text" id="edit-title" value="${escHtml(issue.title)}">
+<header>
+  <div id="title-row" class="title-row">
+    <span class="state-dot ${stateClass}" aria-hidden="true"></span>
+    <span class="title-prefix">Issue #${issue.number}</span>
+    <span id="title-text" class="title-text">${escHtml(issue.title)}</span>
+    <input id="title-input" class="title-input" type="text" aria-label="Issue title" value="${escHtml(issue.title)}">
+    <button id="edit-title" class="icon-btn" title="Edit title" aria-label="Edit issue title">${editIcon}</button>
+    <button id="open-browser" class="icon-btn" title="Open in Browser" aria-label="Open issue in browser">${externalIcon}</button>
+    <button id="refresh" class="icon-btn" title="Refresh issue" aria-label="Refresh issue">${refreshIcon}</button>
   </div>
-  <div class="field">
-    <label>Body</label>
-    <textarea id="edit-body" style="height:120px">${escHtml(issue.body || "")}</textarea>
-  </div>
-  <div class="edit-actions">
-    <button class="btn" onclick="saveEdit()">Save</button>
-    <button class="btn sec" onclick="cancelEdit()">Cancel</button>
-  </div>
-</div>
-
-<div class="tabs">
-  <button class="tab active" onclick="showTab('details',this)">Details</button>
-  <button class="tab" onclick="showTab('history',this)">📜 History</button>
-</div>
-
-<div id="tab-details" class="tab-content active">
-  ${
-    issue.body?.trim()
-      ? `<div id="body-content" class="desc-body"></div>`
-      : `<div class="desc-body" style="color:var(--dim);font-style:italic">(no description)</div>`
-  }
-
-  <div style="margin-top:14px">
-    <h2>Comments (${comments.length})</h2>
-    <div id="comments-list"></div>
-    <div class="form-section">
-      <textarea id="commentBody" style="height:60px" placeholder="Write a comment..."></textarea>
-      <div style="margin-top:8px"><button class="btn" onclick="submitComment()">Post Comment</button></div>
-    </div>
-  </div>
-</div>
-
-<div id="tab-history" class="tab-content">
-  <div class="timeline">
-    <div class="timeline-entry">
-      <div class="tl-label">Created</div>
-      <div class="tl-value">${escHtml(createdDate)}</div>
-    </div>
-    <div class="timeline-entry">
-      <div class="tl-label">Last Updated</div>
-      <div class="tl-value">${escHtml(updatedDate)}</div>
-    </div>
-    <div class="timeline-entry">
-      <div class="tl-label">Closed</div>
-      <div class="tl-value">${escHtml(closedDate)}</div>
-    </div>
-  </div>
-</div>
-
-<script>
-const vscode = acquireVsCodeApi();
-function debugLog(msg) { vscode.postMessage({ command: 'debug', body: msg }); }
-window.onerror = function(msg, url, line, col, err) {
-  try {
-    var e = err ? (err.stack || err.message) : msg + ' line ' + line;
-    debugLog('ERROR: ' + e);
-  } catch(x) {}
-  return false;
-};
-debugLog('Issue webview loaded - step1');
-const bodyText = ${bodyJson};
-const commentsData = ${commentsJson};
-debugLog('Issue webview loaded - step2');
-
-function esc(s) {
-  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-
-function post(cmd, extra) {
-  debugLog('post: ' + cmd + (extra ? ' with extra' : ''));
-  vscode.postMessage(Object.assign({ command: cmd }, extra || {}));
-}
-
-function showTab(name, btn) {
-  debugLog('showTab: ' + name);
-  document.querySelectorAll('.tab-content').forEach(function(el) { el.classList.remove('active'); });
-  document.querySelectorAll('.tab').forEach(function(el) { el.classList.remove('active'); });
-  document.getElementById('tab-' + name).classList.add('active');
-  btn.classList.add('active');
-}
-
-function renderBody() {
-  try {
-    var el = document.getElementById('body-content');
-    if (!el) { debugLog('renderBody: no body-content element'); return; }
-    el.innerHTML = '<pre style="margin:0;white-space:pre-wrap">' + esc(bodyText) + '</pre>';
-    debugLog('renderBody done, body length=' + (bodyText ? bodyText.length : 0));
-  } catch(e) { debugLog('renderBody error: ' + e.message); }
-}
-
-function renderComments() {
-  try {
-    var container = document.getElementById('comments-list');
-    if (!container) { debugLog('renderComments: no comments-list element'); return; }
-    if (commentsData.length === 0) {
-      container.innerHTML = '<p class="empty">No comments yet.</p>';
-      debugLog('renderComments: no comments');
-      return;
-    }
-    var html = '';
-    for (var i = 0; i < commentsData.length; i++) {
-      var c = commentsData[i];
-      html += '<div class="comment" id="comment-' + c.id + '">' +
-        '<div class="comment-hdr">' +
-        '<img src="' + esc(c.user.avatar_url) + '" class="avatar" alt="">' +
-        '<strong>' + esc(c.user.login) + '</strong>' +
-        '<span class="time">' + new Date(c.created_at).toLocaleString() + '</span>' +
-        '</div>' +
-        '<div class="comment-body"><pre style="margin:0;white-space:pre-wrap">' + esc(c.body) + '</pre></div>' +
-        '</div>';
-    }
-    container.innerHTML = html;
-    debugLog('renderComments done, count=' + commentsData.length);
-  } catch(e) { debugLog('renderComments error: ' + e.message); }
-}
-
-function startEdit() {
-  document.getElementById('edit-form').style.display = 'block';
-}
-
-function cancelEdit() {
-  document.getElementById('edit-form').style.display = 'none';
-}
-
-function saveEdit() {
-  var title = document.getElementById('edit-title').value;
-  var body = document.getElementById('edit-body').value;
-  post('editIssue', { title: title, body: body });
-}
-
-function submitComment() {
-  var el = document.getElementById('commentBody');
-  var body = (el.value || '').trim();
-  if (!body) return;
-  post('addComment', { body: body });
-  el.value = '';
-}
-
-window.addEventListener("message", function(event) {
-  var message = event.data;
-  debugLog('message received: ' + (message ? message.command : 'null'));
-  if (!message || !message.command) return;
-  if (message.command === "loading") {
-    document.body.style.opacity = "0.7";
-  }
-});
-
-renderBody();
-renderComments();
+  <div class="meta-row"><span class="badge ${stateClass}">${stateLabel}</span><span>by <strong>${escHtml(issue.user.login)}</strong></span><span>${escHtml(new Date(issue.created_at).toLocaleDateString())}</span>${labelsHtml}${assigneesHtml}${milestoneHtml}</div>
+</header>
+<section class="section-card"><div class="section-bar"><span>Description</span><button id="edit-body" class="icon-btn" title="Edit description" aria-label="Edit issue description">${editIcon}</button></div><div id="body-view" class="section-content">${bodyHtml ? `<div class="markdown-body">${bodyHtml}</div>` : '<div class="empty">(no description)</div>'}</div><div id="body-editor" class="description-editor" hidden><textarea id="body-input">${escHtml(issue.body || "")}</textarea><div class="editor-actions"><button id="save-body" class="btn">Save</button><button id="cancel-body" class="btn sec">Cancel</button></div></div></section>
+<div class="comments-title">Comments (${comments.length})</div><div>${commentsHtml}</div>
+<div><textarea id="comment-body" aria-label="Add a comment" style="height:70px" placeholder="Write a comment..."></textarea><div class="editor-actions"><button id="post-comment" class="btn">Post Comment</button></div></div>
+<script nonce="${nonce}">
+const vscode=acquireVsCodeApi();let titleCancelled=false;const originalTitle=${JSON.stringify(issue.title)};
+function post(command,extra){vscode.postMessage(Object.assign({command},extra||{}));}
+function setTitleEditing(editing){document.getElementById('title-row').classList.toggle('editing',editing);if(editing){titleCancelled=false;const input=document.getElementById('title-input');input.focus();input.select();}}
+function saveTitle(){if(titleCancelled)return;const input=document.getElementById('title-input');const title=(input.value||'').trim();if(!title){input.value=originalTitle;setTitleEditing(false);return;}if(title===originalTitle){setTitleEditing(false);return;}post('editTitle',{title});}
+function setBodyEditing(editing){document.getElementById('body-view').hidden=editing;document.getElementById('body-editor').hidden=!editing;if(editing)document.getElementById('body-input')?.focus();}
+function setCommentEditing(id,editing){const view=document.getElementById('comment-view-'+id);const editor=document.getElementById('comment-editor-'+id);if(view)view.hidden=editing;if(editor)editor.hidden=!editing;if(editing)document.getElementById('comment-input-'+id)?.focus();}
+document.getElementById('edit-title')?.addEventListener('click',()=>setTitleEditing(true));document.getElementById('title-input')?.addEventListener('blur',saveTitle);document.getElementById('title-input')?.addEventListener('keydown',(event)=>{if(event.key==='Escape'){titleCancelled=true;event.currentTarget.value=originalTitle;setTitleEditing(false);}else if(event.key==='Enter'){event.preventDefault();saveTitle();}});
+document.getElementById('open-browser')?.addEventListener('click',()=>post('openInBrowser'));document.getElementById('refresh')?.addEventListener('click',()=>post('refresh'));document.getElementById('edit-body')?.addEventListener('click',()=>setBodyEditing(true));document.getElementById('cancel-body')?.addEventListener('click',()=>setBodyEditing(false));document.getElementById('save-body')?.addEventListener('click',()=>post('editBody',{body:document.getElementById('body-input').value||''}));
+document.querySelectorAll('.edit-comment').forEach((button)=>button.addEventListener('click',()=>setCommentEditing(button.dataset.commentId,true)));document.querySelectorAll('.cancel-comment').forEach((button)=>button.addEventListener('click',()=>setCommentEditing(button.dataset.commentId,false)));document.querySelectorAll('.save-comment').forEach((button)=>button.addEventListener('click',()=>{const id=button.dataset.commentId;const input=document.getElementById('comment-input-'+id);const body=(input?.value||'').trim();if(!body)return;post('editComment',{commentId:Number(id),body});}));
+document.getElementById('post-comment')?.addEventListener('click',()=>{const input=document.getElementById('comment-body');const body=(input.value||'').trim();if(!body)return;post('addComment',{body});input.value='';});document.querySelectorAll('.markdown-body a[href]').forEach((link)=>link.addEventListener('click',(event)=>{event.preventDefault();post('openExternal',{url:link.getAttribute('href')});}));
 </script>
 </body>
 </html>`;
   }
 
-  private dispose(): void {
+  dispose(): void {
     IssueDetailPanel.panels.delete(this.key);
-    for (const d of this.disposables) {
-      d.dispose();
-    }
+    for (const disposable of this.disposables) disposable.dispose();
     this.disposables = [];
   }
 }
 
-function escHtml(s: string): string {
-  return s
+function getNonce(): string {
+  const characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  let value = "";
+  for (let index = 0; index < 32; index += 1) {
+    value += characters.charAt(Math.floor(Math.random() * characters.length));
+  }
+  return value;
+}
+
+function escHtml(value: string): string {
+  return String(value ?? "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+    .split(String.fromCharCode(34))
+    .join("&quot;")
+    .replace(/'/g, "&#39;");
 }

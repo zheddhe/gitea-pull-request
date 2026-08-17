@@ -2,9 +2,17 @@ import * as vscode from "vscode";
 import { GiteaApiClient } from "../api/giteaApiClient";
 import { RepoManager, RepoInfo } from "../context/repoManager";
 import { AuthManager } from "../auth/authManager";
-import { IssuesProvider, IssueItem } from "../views/issuesProvider";
+import {
+  IssuesProvider,
+  IssueItem,
+  type IssueFilter,
+} from "../views/issuesProvider";
 import { IssueDetailPanel } from "../views/issueDetailPanel";
 import type { GiteaIssue } from "../api/types";
+
+interface IssueFilterQuickPickItem extends vscode.QuickPickItem {
+  filter: IssueFilter;
+}
 
 export function registerIssueCommands(
   context: vscode.ExtensionContext,
@@ -17,6 +25,31 @@ export function registerIssueCommands(
     vscode.commands.registerCommand("gitea.refreshIssues", () =>
       issuesProvider.refresh(),
     ),
+
+    vscode.commands.registerCommand("gitea.configureIssueFilter", async () => {
+      const current = issuesProvider.getFilter();
+      const choice = await vscode.window.showQuickPick<IssueFilterQuickPickItem>(
+        [
+          {
+            filter: "open",
+            label: "$(issues) Open issues",
+            description: current === "open" ? "Current" : undefined,
+          },
+          {
+            filter: "closed",
+            label: "$(issue-closed) Closed issues",
+            description: current === "closed" ? "Current" : undefined,
+          },
+        ],
+        {
+          title: "Filter Gitea Issues",
+          placeHolder: "Choose which issue state to show",
+        },
+      );
+      if (choice) {
+        issuesProvider.setFilter(choice.filter);
+      }
+    }),
 
     vscode.commands.registerCommand(
       "gitea.loadMoreIssues",
