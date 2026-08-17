@@ -23,10 +23,11 @@ suite("PR detail presentation", () => {
     "utf8",
   );
 
-  test("renders PR body, comments and review bodies through VS Code Markdown", () => {
+  test("renders PR and inline review content through VS Code Markdown", () => {
     assert.match(source, /"markdown\.api\.render"/);
     assert.match(source, /commentBodies/);
     assert.match(source, /reviewBodies/);
+    assert.match(source, /reviewCommentBodies/);
   });
 
   test("does not dim the entire PR panel while refreshing", () => {
@@ -80,25 +81,41 @@ suite("PR detail presentation", () => {
     assert.doesNotMatch(source, /Files <strong>/);
   });
 
-  test("opens Reviews by default with only inline comment submission actions", () => {
-    assert.match(source, /class="tab active" id="reviews-tab"/);
-    assert.match(source, /id="tab-reviews" class="tab-content active"/);
+  test("opens Inline Reviews first and separates Review History", () => {
+    const inlineTab = source.indexOf('class="tab active" id="inline-reviews-tab"');
+    const historyTab = source.indexOf('id="review-history-tab"', inlineTab);
+    const discussionTab = source.indexOf('id="discussion-tab"', historyTab);
+    assert.ok(inlineTab >= 0 && historyTab > inlineTab && discussionTab > historyTab);
+    assert.match(source, /id="tab-inline-reviews" class="tab-content active"/);
+    assert.match(source, /id="tab-review-history" class="tab-content"/);
+    assert.match(source, /Inline Reviews \(\$\{reviewComments\.length\}\)/);
+    assert.match(source, /Review History \(\$\{activeReviews\.length\}\)/);
     assert.match(source, /id="submit-inline"/);
     assert.match(source, /submitInlineReview/);
     assert.match(source, /Pending inline comments: 0/);
     assert.doesNotMatch(source, /data-review-event=/);
     assert.doesNotMatch(source, /id="review-body"/);
-    assert.doesNotMatch(source, />Approve<\/button>/);
-    assert.doesNotMatch(source, />Request Changes<\/button>/);
   });
 
-  test("restores file status color cues in the Reviews tab", () => {
+  test("restores file status color cues and readable file names", () => {
     assert.match(source, /class="file-status \$\{statusClass\}"/);
     assert.match(source, /file-status-added/);
     assert.match(source, /file-status-deleted/);
     assert.match(source, /file-status-modified/);
+    assert.match(source, /\.file-header\{[^}]*color:var\(--fg\)/);
+    assert.match(source, /\.file-path\{[^}]*color:var\(--fg\)/);
     assert.match(source, /diff-add \.lc/);
     assert.match(source, /diff-del \.lc/);
+  });
+
+  test("places existing inline comments by either side of the diff", () => {
+    assert.match(source, /const byNewLine = new Map/);
+    assert.match(source, /const byOldLine = new Map/);
+    assert.match(source, /byNewLine\.get\(line\.newLine\)/);
+    assert.match(source, /byOldLine\.get\(line\.oldLine\)/);
+    assert.match(source, /matchedCommentIds/);
+    assert.match(source, /Unplaced inline comments/);
+    assert.match(source, /review-comment-body markdown-body/);
   });
 
   test("uses aligned Description and Comments section bars", () => {
@@ -134,6 +151,10 @@ suite("PR detail presentation", () => {
     const actions = reviewSource.indexOf('<span>Actions</span>', review);
     assert.ok(branches >= 0 && readiness > branches && checks > readiness);
     assert.ok(review > checks && actions > review);
+    assert.match(
+      reviewSource,
+      /<select aria-label="Source branch" disabled><option selected>/,
+    );
     assert.match(reviewSource, /id="baseBranch"/);
     assert.match(reviewSource, /type: "updateBase"/);
     assert.match(reviewSource, /message\.type === "updateBase"/);
