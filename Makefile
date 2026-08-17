@@ -41,10 +41,10 @@ lock: ## Create/update package-lock.json after any package.json dependency or me
 	@echo "package-lock.json synchronized with package.json. Review and commit it with package.json."
 
 bootstrap: lock ## Synchronize the lock file, then install the exact dependency set (use after clone or package.json changes)
-	$(NPM) ci
+	$(NPM) ci --include=dev
 
-deps: ## Install exactly the committed dependencies; fails if package.json and package-lock.json differ
-	$(NPM) ci
+deps: ## Install exactly the committed dependencies, including build/test tooling; fails if package.json and package-lock.json differ
+	$(NPM) ci --include=dev
 
 promote: ## Promote package.json + package-lock.json to RELEASE_VERSION without creating a git tag
 	@test -n "$(RELEASE_VERSION)" || { echo "ERROR: RELEASE_VERSION is required, e.g. 'make promote RELEASE_VERSION=0.3.0'." >&2; exit 1; }
