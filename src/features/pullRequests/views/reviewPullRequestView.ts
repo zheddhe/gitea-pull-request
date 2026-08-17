@@ -36,6 +36,7 @@ interface ReadinessState {
   reviews?: GiteaReview[];
   mergeSettings?: RepositoryMergeSettings;
   branchPolicy?: BranchMergePolicy;
+  branches?: string[];
   warning?: string;
 }
 
@@ -68,6 +69,7 @@ type ReviewViewMessage =
   | { type: "closePR" }
   | { type: "checkoutSource" }
   | { type: "checkoutBase" }
+  | { type: "updateBase"; base: string }
   | { type: "openCheck"; url: string };
 
 const MERGE_METHOD_STATE_KEY = "gitea.prReview.mergeMethod";
@@ -100,9 +102,7 @@ export class ReviewPullRequestViewProvider
           const repoInfo = this.repoManager
             .getRepos()
             .find((repo) => repo.key === state.repository.key);
-          if (repoInfo) {
-            void this.loadReadiness(repoInfo, state);
-          }
+          if (repoInfo) void this.loadReadiness(repoInfo, state);
         }
       }),
       this.repoManager.onDidChange(() => {
@@ -150,19 +150,13 @@ export class ReviewPullRequestViewProvider
         vscode.window.showWarningMessage("Unsupported check URL.");
         return;
       }
-      log(`[review-view] opening check url=${message.url}`);
       await vscode.env.openExternal(uri);
       return;
     }
 
-    if (this.busy) {
-      log(`[review-view] ignored type=${message.type}; busy=true`);
-      return;
-    }
-
+    if (this.busy) return;
     const active = this.activeContext();
     if (!active) {
-      log(`[review-view] ignored type=${message.type}; no active PR`);
       vscode.window.showWarningMessage(
         "No active Gitea pull request is available for review.",
       );
@@ -195,6 +189,10 @@ export class ReviewPullRequestViewProvider
     }
     if (message.type === "checkoutBase") {
       await this.checkoutBranch(active.repoInfo, active.state, "base");
+      return;
+    }
+    if (message.type === "updateBase") {
+      await this.updateBase(active.repoInfo, active.state, message.base);
       return;
     }
 
@@ -268,9 +266,6 @@ export class ReviewPullRequestViewProvider
       this.prProvider.refresh();
       const refreshed = this.activeContext();
       if (refreshed) await this.loadReadiness(refreshed.repoInfo, refreshed.state);
-      vscode.window.showInformationMessage(
-        `PR #${state.pullRequest.number} marked ready for review.`,
-      );
     } catch (error) {
       vscode.window.showErrorMessage(
         `Unable to mark PR #${state.pullRequest.number} ready for review: ${(error as Error).message}`,
@@ -281,21 +276,47 @@ export class ReviewPullRequestViewProvider
     }
   }
 
-  private async refreshActivePullRequest(repoInfo: RepoInfo): Promise<void> {
-    const state = this.session.current;
-    if (state.kind !== "active" || state.repository.key !== repoInfo.key) return;
+  private async updateBase(
+    repoInfo: RepoInfo,
+    state: ActivePullRequestState,
+    base: string,
+  ): Promise<void> {
+    if (!base || base === state.pullRequest.base.ref) return;
+    this.busy = true;
+    this.render();
     try {
-      const pullRequest = await this.api.getPullRequest(
+      const pullRequest = await this.api.updatePullRequest(
         repoInfo,
         state.pullRequest.number,
+        { base },
       );
       await this.session.activate(state.repository, pullRequest, state.checkoutState);
       this.prProvider.refresh();
+      this.readiness = { loading: false };
+      const refreshed = this.activeContext();
+      if (refreshed) await this.loadReadiness(refreshed.repoInfo, refreshed.state);
+      vscode.window.showInformationMessage(
+        `PR #${pullRequest.number} base branch changed to ${base}.`,
+      );
     } catch (error) {
       vscode.window.showErrorMessage(
-        `Unable to refresh active pull request: ${(error as Error).message}`,
+        `Unable to change base branch: ${(error as Error).message}`,
       );
+    } finally {
+      this.busy = false;
+      this.render();
     }
+  }
+
+  private async refreshActivePullRequest(repoInfo: RepoInfo): Promise<void> {
+    const state = this.session.current;
+    if (state.kind !== "active" || state.repository.key !== repoInfo.key) return;
+    const pullRequest = await this.api.getPullRequest(
+      repoInfo,
+      state.pullRequest.number,
+    );
+    await this.session.activate(state.repository, pullRequest, state.checkoutState);
+    this.prProvider.refresh();
   }
 
   private async loadReadiness(
@@ -307,12 +328,14 @@ export class ReviewPullRequestViewProvider
     this.readiness = { loading: true, identity };
     this.render();
 
-    const [status, reviews, mergeSettings, branchPolicy] = await Promise.allSettled([
-      this.reviewApi.getCombinedStatus(repoInfo, state.pullRequest.head.sha),
-      this.reviewApi.listReviews(repoInfo, state.pullRequest.number),
-      this.reviewApi.getRepositoryMergeSettings(repoInfo),
-      this.reviewApi.getBranchMergePolicy(repoInfo, state.pullRequest.base.ref),
-    ]);
+    const [status, reviews, mergeSettings, branchPolicy, branches] =
+      await Promise.allSettled([
+        this.reviewApi.getCombinedStatus(repoInfo, state.pullRequest.head.sha),
+        this.reviewApi.listReviews(repoInfo, state.pullRequest.number),
+        this.reviewApi.getRepositoryMergeSettings(repoInfo),
+        this.reviewApi.getBranchMergePolicy(repoInfo, state.pullRequest.base.ref),
+        this.api.listBranches(repoInfo),
+      ]);
 
     const current = this.activeContext();
     if (
@@ -322,10 +345,11 @@ export class ReviewPullRequestViewProvider
       return;
     }
 
-    const warnings = [status, reviews, mergeSettings, branchPolicy]
+    const warnings = [status, reviews, mergeSettings, branchPolicy, branches]
       .filter((result) => result.status === "rejected")
       .map((result) => (result as PromiseRejectedResult).reason as Error)
       .map((error) => error.message);
+
     this.readiness = {
       loading: false,
       identity,
@@ -335,6 +359,7 @@ export class ReviewPullRequestViewProvider
         mergeSettings.status === "fulfilled" ? mergeSettings.value : undefined,
       branchPolicy:
         branchPolicy.status === "fulfilled" ? branchPolicy.value : undefined,
+      branches: branches.status === "fulfilled" ? branches.value : undefined,
       warning: warnings.length > 0 ? warnings.join(" | ") : undefined,
     };
     this.render();
@@ -394,9 +419,9 @@ export class ReviewPullRequestViewProvider
       const confirm = await vscode.window.showWarningMessage(
         `Merge PR #${latestPr.number} using ${mergeMethodLabel(method)}?`,
         { modal: true },
-        "Merge",
+        "Merge PR",
       );
-      if (confirm !== "Merge") return;
+      if (confirm !== "Merge PR") return;
       await this.api.mergePullRequest(repoInfo, latestPr.number, method);
       let mergedPr = latestPr;
       try {
@@ -407,9 +432,7 @@ export class ReviewPullRequestViewProvider
       const presence = await this.branchPresence(repoInfo, latestPr.head.ref);
       await this.session.markMerged(originalState.repository, mergedPr, presence);
       this.prProvider.refresh();
-      vscode.window.showInformationMessage(
-        `PR #${latestPr.number} merged using ${mergeMethodLabel(method)}.`,
-      );
+      vscode.window.showInformationMessage(`PR #${latestPr.number} merged.`);
     } catch (error) {
       vscode.window.showErrorMessage(`Merge failed: ${(error as Error).message}`);
     } finally {
@@ -437,8 +460,6 @@ export class ReviewPullRequestViewProvider
       );
       await this.session.activate(state.repository, closed, state.checkoutState);
       this.prProvider.refresh();
-      const refreshed = this.activeContext();
-      if (refreshed) await this.loadReadiness(refreshed.repoInfo, refreshed.state);
       vscode.window.showInformationMessage(`PR #${closed.number} closed.`);
     } catch (error) {
       vscode.window.showErrorMessage(
@@ -526,7 +547,9 @@ export class ReviewPullRequestViewProvider
     repoInfo: RepoInfo,
     showErrors = true,
   ): Promise<GitRepositoryLike | undefined> {
-    const gitExt = vscode.extensions.getExtension<GitExtensionExportsLike>("vscode.git");
+    const gitExt = vscode.extensions.getExtension<GitExtensionExportsLike>(
+      "vscode.git",
+    );
     if (!gitExt) {
       if (showErrors) vscode.window.showErrorMessage("Git extension not available.");
       return undefined;
@@ -581,6 +604,13 @@ export class ReviewPullRequestViewProvider
           `<option value="${method}"${method === selected ? " selected" : ""}>${escapeHtml(mergeMethodLabel(method))}</option>`,
       )
       .join("");
+    const branchOptions = (this.readiness.branches ?? [pr.base.ref])
+      .filter((branch) => branch !== pr.head.ref)
+      .map(
+        (branch) =>
+          `<option value="${escapeHtml(branch)}"${branch === pr.base.ref ? " selected" : ""}>${escapeHtml(branch)}</option>`,
+      )
+      .join("");
     const blockers = readiness.blockingReasons
       .map((reason) => `<li>${escapeHtml(reason)}</li>`)
       .join("");
@@ -588,15 +618,22 @@ export class ReviewPullRequestViewProvider
       .map((warning) => `<li>${escapeHtml(warning)}</li>`)
       .join("");
     const statuses = this.readiness.status?.statuses ?? [];
-    const successfulChecks = statuses.filter((status) => status.state === "success").length;
-    const pendingChecks = statuses.filter((status) => status.state === "pending").length;
+    const successfulChecks = statuses.filter(
+      (status) => status.state === "success",
+    ).length;
+    const pendingChecks = statuses.filter(
+      (status) => status.state === "pending",
+    ).length;
     const failedChecks = statuses.filter(
       (status) => status.state === "failure" || status.state === "error",
     ).length;
-    const warningChecks = statuses.filter((status) => status.state === "warning").length;
-    const checkSummary = statuses.length > 0
-      ? `${successfulChecks} successful · ${pendingChecks} pending · ${failedChecks} failed${warningChecks ? ` · ${warningChecks} warning` : ""}`
-      : "No commit status checks reported";
+    const warningChecks = statuses.filter(
+      (status) => status.state === "warning",
+    ).length;
+    const checkSummary =
+      statuses.length > 0
+        ? `${successfulChecks} successful · ${pendingChecks} pending · ${failedChecks} failed${warningChecks ? ` · ${warningChecks} warning` : ""}`
+        : "No commit status checks reported";
     const checks = statuses
       .map((status) => {
         const label = escapeHtml(status.context || "check");
@@ -604,11 +641,20 @@ export class ReviewPullRequestViewProvider
           ? `<div class="check-description">${escapeHtml(status.description)}</div>`
           : "";
         const name = status.target_url
-          ? `<a href="#" data-check-url="${escapeHtml(status.target_url)}" title="Open check in Gitea">${label}</a>`
+          ? `<a href="#" data-check-url="${escapeHtml(status.target_url)}">${label}</a>`
           : label;
-        return `<li class="check check-${status.state}"><span class="check-state">${escapeHtml(checkStateLabel(status.state))}</span><span class="check-content"><span class="check-name">${name}</span>${description}</span></li>`;
+        return `<li class="check check-${status.state}"><span class="check-state">${escapeHtml(checkStateLabel(status.state))}</span><span>${name}${description}</span></li>`;
       })
       .join("");
+
+    const icon = (path: string) =>
+      `<svg class="section-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="${path}"/></svg>`;
+    const branchIcon = icon("M5 3.5A2.5 2.5 0 1 1 3 1v8a3 3 0 0 0 3 3h2.5a2.5 2.5 0 1 1 0 1H6a4 4 0 0 1-4-4V5.45A2.5 2.5 0 0 1 5 3.5zM3.5 2A1.5 1.5 0 1 0 3.5 5a1.5 1.5 0 0 0 0-3zm7 9A1.5 1.5 0 1 0 10.5 14a1.5 1.5 0 0 0 0-3z");
+    const readinessIcon = icon("M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm0 1a6 6 0 1 1 0 12A6 6 0 0 1 8 2zm3.85 3.15-.7-.7L7 8.6 4.85 6.45l-.7.7L7 10l4.85-4.85z");
+    const checksIcon = icon("M6.5 11.5 3 8l.7-.7 2.8 2.8 5.8-5.8.7.7-6.5 6.5z");
+    const reviewIcon = icon("M2 2h12v9H7.2L4 13.7V11H2V2zm1 1v7h2v1.55L6.8 10H13V3H3z");
+    const actionsIcon = icon("M6 3.5 11 8l-5 4.5v-9z");
+    const checkoutIcon = icon("M8 1v8.1l2.55-2.55.7.7L7.5 11 3.75 7.25l.7-.7L7 9.1V1h1zm-5 11h9v1H3v-1z");
 
     this.view.webview.html = `<!doctype html>
 <html lang="en">
@@ -616,94 +662,86 @@ export class ReviewPullRequestViewProvider
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
-  body { padding: 12px; color: var(--vscode-foreground); font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); }
-  .muted { color: var(--vscode-descriptionForeground); }
-  textarea, select { box-sizing: border-box; width: 100%; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, transparent); padding: 6px 8px; }
-  textarea { min-height: 110px; resize: vertical; }
-  .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
-  button { border: 1px solid transparent; padding: 6px 12px; color: var(--vscode-button-foreground); background: var(--vscode-button-background); cursor: pointer; }
-  button.secondary { color: var(--vscode-button-secondaryForeground); background: var(--vscode-button-secondaryBackground); }
-  button.success-outline { color: var(--vscode-testing-iconPassed); background: var(--vscode-button-secondaryBackground); border-color: var(--vscode-testing-iconPassed); }
-  button.danger-outline { color: var(--vscode-errorForeground); background: var(--vscode-button-secondaryBackground); border-color: var(--vscode-errorForeground); }
-  button.outline { color: var(--vscode-foreground); background: var(--vscode-button-secondaryBackground); border-color: var(--vscode-widget-border, var(--vscode-panel-border)); }
-  button:disabled, select:disabled { opacity: 0.55; cursor: default; }
-  .section { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--vscode-panel-border); }
-  .section-title { font-weight: 600; margin-bottom: 6px; }
-  .branch-row { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 5px 8px; color: var(--vscode-descriptionForeground); }
-  .branch-row strong { color: var(--vscode-foreground); }
-  ul { margin: 6px 0; padding-left: 20px; }
-  .blocked { color: var(--vscode-errorForeground); }
-  .ready { color: var(--vscode-testing-iconPassed); }
-  .checks { list-style: none; padding: 0; margin-top: 8px; }
-  .check { display: grid; grid-template-columns: max-content 1fr; gap: 8px; align-items: start; padding: 6px 0; border-top: 1px solid var(--vscode-panel-border); }
-  .check:first-child { border-top: 0; }
-  .check-state { min-width: 62px; font-size: 0.9em; font-weight: 600; }
-  .check-success .check-state { color: var(--vscode-testing-iconPassed); }
-  .check-pending .check-state, .check-warning .check-state { color: var(--vscode-editorWarning-foreground); }
-  .check-failure .check-state, .check-error .check-state { color: var(--vscode-errorForeground); }
-  .check-description { color: var(--vscode-descriptionForeground); margin-top: 2px; overflow-wrap: anywhere; }
-  a { color: var(--vscode-textLink-foreground); text-decoration: none; }
+  body{padding:12px;color:var(--vscode-foreground);font-family:var(--vscode-font-family);font-size:var(--vscode-font-size)}
+  .muted{color:var(--vscode-descriptionForeground)}
+  textarea,select{box-sizing:border-box;width:100%;color:var(--vscode-input-foreground);background:var(--vscode-input-background);border:1px solid var(--vscode-input-border,transparent);padding:6px 8px}
+  textarea{min-height:110px;resize:vertical}
+  .section{margin-top:14px;padding-top:10px;border-top:1px solid var(--vscode-panel-border)}
+  .section:first-child{margin-top:0;padding-top:0;border-top:0}
+  .section-title{display:flex;align-items:center;gap:6px;font-weight:600;margin-bottom:7px}
+  .section-icon{width:15px;height:15px;flex:0 0 15px;color:var(--vscode-descriptionForeground)}
+  .actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+  button{border:1px solid transparent;padding:6px 12px;color:var(--vscode-button-foreground);background:var(--vscode-button-background);cursor:pointer}
+  button.success-outline{color:var(--vscode-testing-iconPassed);background:var(--vscode-button-secondaryBackground);border-color:var(--vscode-testing-iconPassed)}
+  button.danger-outline{color:var(--vscode-errorForeground);background:var(--vscode-button-secondaryBackground);border-color:var(--vscode-errorForeground)}
+  button.icon-button{display:inline-flex;align-items:center;justify-content:center;width:28px;height:26px;padding:3px;color:var(--vscode-foreground);background:var(--vscode-button-secondaryBackground);border-color:var(--vscode-widget-border,var(--vscode-panel-border))}
+  button.icon-button .section-icon{color:currentColor}
+  button:disabled,select:disabled{opacity:.55;cursor:default}
+  .branch-grid{display:grid;grid-template-columns:max-content minmax(0,1fr) max-content;gap:7px 8px;align-items:center}
+  .branch-grid strong{white-space:nowrap}.branch-value{min-width:0;overflow:hidden;text-overflow:ellipsis;font-family:var(--vscode-editor-font-family)}
+  ul{margin:6px 0;padding-left:20px}.blocked{color:var(--vscode-errorForeground)}.ready{color:var(--vscode-testing-iconPassed)}
+  .checks{list-style:none;padding:0;margin-top:8px}.check{display:grid;grid-template-columns:max-content 1fr;gap:8px;padding:6px 0;border-top:1px solid var(--vscode-panel-border)}.check:first-child{border-top:0}.check-state{min-width:62px;font-size:.9em;font-weight:600}.check-success .check-state{color:var(--vscode-testing-iconPassed)}.check-pending .check-state,.check-warning .check-state{color:var(--vscode-editorWarning-foreground)}.check-failure .check-state,.check-error .check-state{color:var(--vscode-errorForeground)}.check-description{color:var(--vscode-descriptionForeground);margin-top:2px;overflow-wrap:anywhere}a{color:var(--vscode-textLink-foreground);text-decoration:none}
 </style>
 </head>
 <body>
   <div class="section">
-    <div class="section-title">Merge readiness</div>
+    <div class="section-title">${branchIcon}<span>Branch management</span></div>
+    <div class="branch-grid">
+      <strong>Source branch</strong><span class="branch-value">${escapeHtml(pr.head.ref)}</span><button class="icon-button" id="checkoutSource" title="Checkout source branch" aria-label="Checkout source branch">${checkoutIcon}</button>
+      <strong>Base branch</strong><select id="baseBranch" aria-label="Base branch"${this.busy ? " disabled" : ""}>${branchOptions}</select><button class="icon-button" id="checkoutBase" title="Checkout base branch" aria-label="Checkout base branch">${checkoutIcon}</button>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">${readinessIcon}<span>Merge readiness</span></div>
     <div>${stateLabel} · ${mergeable}</div>
     <div>${escapeHtml(readiness.reviewLabel)} · ${escapeHtml(readiness.ciLabel)}</div>
     ${this.readiness.loading ? '<div class="muted">Refreshing merge readiness…</div>' : ""}
     ${blockers ? `<ul class="blocked">${blockers}</ul>` : '<div class="ready">No blocking condition detected from available Gitea signals.</div>'}
     ${warnings ? `<ul class="muted">${warnings}</ul>` : ""}
-    ${this.readiness.warning ? `<div class="muted">Some readiness metadata is unavailable: ${escapeHtml(this.readiness.warning)}</div>` : ""}
   </div>
 
   <div class="section">
-    <div class="section-title">Checks</div>
+    <div class="section-title">${checksIcon}<span>Checks</span></div>
     <div class="muted">${escapeHtml(checkSummary)}</div>
     ${checks ? `<ul class="checks">${checks}</ul>` : ""}
   </div>
 
   <div class="section">
-    <div class="section-title">Review</div>
+    <div class="section-title">${reviewIcon}<span>Review</span></div>
     <textarea id="reviewBody" placeholder="Leave a comment or review message">${escapeHtml(this.reviewBody)}</textarea>
     <div class="actions">
       <button id="comment"${disabled}>Comment</button>
       <button class="success-outline" id="approve"${disabled}>Approve</button>
       <button class="danger-outline" id="requestChanges"${disabled}>Request Changes</button>
-      ${wip ? `<button class="secondary" id="readyForReview"${disabled}>Mark Ready for Review</button>` : ""}
+      ${wip ? `<button id="readyForReview"${disabled}>Mark Ready for Review</button>` : ""}
     </div>
   </div>
 
   <div class="section">
-    <div class="section-title">Branch management</div>
-    <div class="branch-row"><strong>Source branch</strong><span>${escapeHtml(pr.head.ref)}</span><strong>Base branch</strong><span>${escapeHtml(pr.base.ref)}</span></div>
-    <div class="actions">
-      <button class="outline" id="checkoutSource"${disabled}>Checkout source '${escapeHtml(pr.head.ref)}'</button>
-      <button class="outline" id="checkoutBase"${disabled}>Checkout base '${escapeHtml(pr.base.ref)}'</button>
-    </div>
-  </div>
-
-  <div class="section">
-    <div class="section-title">Actions</div>
+    <div class="section-title">${actionsIcon}<span>Actions</span></div>
     <select id="mergeMethod"${this.busy || supported.length === 0 ? " disabled" : ""}>${methodOptions}</select>
     <div class="actions">
-      <button id="merge"${mergeDisabled ? " disabled" : ""}>Merge</button>
+      <button id="merge"${mergeDisabled ? " disabled" : ""}>Merge PR</button>
       ${pr.state === "open" && !pr.merged ? `<button class="danger-outline" id="closePR"${disabled}>Close PR</button>` : ""}
     </div>
   </div>
 <script>
-  const vscode = acquireVsCodeApi();
-  const body = document.getElementById('reviewBody');
-  const mergeMethod = document.getElementById('mergeMethod');
-  document.getElementById('comment')?.addEventListener('click', () => vscode.postMessage({ type: 'comment', body: body.value }));
-  document.getElementById('approve')?.addEventListener('click', () => vscode.postMessage({ type: 'approve', body: body.value }));
-  document.getElementById('requestChanges')?.addEventListener('click', () => vscode.postMessage({ type: 'requestChanges', body: body.value }));
-  document.getElementById('readyForReview')?.addEventListener('click', () => vscode.postMessage({ type: 'readyForReview' }));
-  document.querySelectorAll('[data-check-url]').forEach((link) => link.addEventListener('click', (event) => { event.preventDefault(); vscode.postMessage({ type: 'openCheck', url: link.dataset.checkUrl }); }));
-  mergeMethod?.addEventListener('change', () => vscode.postMessage({ type: 'selectMergeMethod', method: mergeMethod.value }));
-  document.getElementById('merge')?.addEventListener('click', () => vscode.postMessage({ type: 'merge' }));
-  document.getElementById('closePR')?.addEventListener('click', () => vscode.postMessage({ type: 'closePR' }));
-  document.getElementById('checkoutSource')?.addEventListener('click', () => vscode.postMessage({ type: 'checkoutSource' }));
-  document.getElementById('checkoutBase')?.addEventListener('click', () => vscode.postMessage({ type: 'checkoutBase' }));
+  const vscode=acquireVsCodeApi();
+  const body=document.getElementById('reviewBody');
+  const mergeMethod=document.getElementById('mergeMethod');
+  const baseBranch=document.getElementById('baseBranch');
+  document.getElementById('comment')?.addEventListener('click',()=>vscode.postMessage({type:'comment',body:body.value}));
+  document.getElementById('approve')?.addEventListener('click',()=>vscode.postMessage({type:'approve',body:body.value}));
+  document.getElementById('requestChanges')?.addEventListener('click',()=>vscode.postMessage({type:'requestChanges',body:body.value}));
+  document.getElementById('readyForReview')?.addEventListener('click',()=>vscode.postMessage({type:'readyForReview'}));
+  document.querySelectorAll('[data-check-url]').forEach((link)=>link.addEventListener('click',(event)=>{event.preventDefault();vscode.postMessage({type:'openCheck',url:link.dataset.checkUrl});}));
+  mergeMethod?.addEventListener('change',()=>vscode.postMessage({type:'selectMergeMethod',method:mergeMethod.value}));
+  baseBranch?.addEventListener('change',()=>vscode.postMessage({type:'updateBase',base:baseBranch.value}));
+  document.getElementById('merge')?.addEventListener('click',()=>vscode.postMessage({type:'merge'}));
+  document.getElementById('closePR')?.addEventListener('click',()=>vscode.postMessage({type:'closePR'}));
+  document.getElementById('checkoutSource')?.addEventListener('click',()=>vscode.postMessage({type:'checkoutSource'}));
+  document.getElementById('checkoutBase')?.addEventListener('click',()=>vscode.postMessage({type:'checkoutBase'}));
 </script>
 </body>
 </html>`;
