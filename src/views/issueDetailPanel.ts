@@ -19,23 +19,16 @@ export class IssueDetailPanel {
     const existing = IssueDetailPanel.panels.get(key);
     if (existing) {
       existing.panel.reveal(vscode.ViewColumn.One);
+      await existing.update(issue);
       return;
     }
-
     const panel = vscode.window.createWebviewPanel(
       "giteaIssueDetail",
       `Issue #${issue.number}: ${issue.title}`,
       vscode.ViewColumn.One,
       { enableScripts: true, retainContextWhenHidden: true },
     );
-    const instance = new IssueDetailPanel(
-      panel,
-      extensionUri,
-      api,
-      repoInfo,
-      issue,
-      key,
-    );
+    const instance = new IssueDetailPanel(panel, extensionUri, api, repoInfo, issue, key);
     IssueDetailPanel.panels.set(key, instance);
     await instance.update(issue);
   }
@@ -50,51 +43,40 @@ export class IssueDetailPanel {
   ) {
     this.panel = panel;
     void this.extensionUri;
-
     panel.onDidDispose(() => this.dispose(), null, this.disposables);
     panel.webview.onDidReceiveMessage(
-      (msg) => this.handleMessage(msg),
+      (message) => void this.handleMessage(message),
       null,
       this.disposables,
     );
   }
 
-  private async handleMessage(msg: {
+  private async handleMessage(message: {
     command: string;
     [key: string]: unknown;
   }): Promise<void> {
-    switch (msg.command) {
+    switch (message.command) {
       case "addComment":
-        await this.addComment((msg.body as string) ?? "");
-        break;
-      case "close":
-        await this.changeState("closed");
-        break;
-      case "reopen":
-        await this.changeState("open");
-        break;
-      case "editIssue":
-        await this.editIssue(
-          (msg.title as string) ?? "",
-          (msg.body as string) ?? "",
-        );
-        break;
+        await this.addComment((message.body as string) ?? "");
+        return;
+      case "editTitle":
+        await this.updateIssue({ title: ((message.title as string) ?? "").trim() });
+        return;
+      case "editBody":
+        await this.updateIssue({ body: (message.body as string) ?? "" });
+        return;
       case "refresh":
         this.issue = await this.api.getIssue(this.repoInfo, this.issue.number);
         await this.update(this.issue);
-        break;
+        return;
       case "openInBrowser":
         await vscode.env.openExternal(vscode.Uri.parse(this.issue.html_url));
-        break;
+        return;
       case "openExternal":
-        await this.openExternal((msg.url as string) ?? "");
-        break;
-      case "debug":
-        log("Issue webview: " + (msg.body as string));
-        break;
+        await this.openExternal((message.url as string) ?? "");
+        return;
       default:
-        log("Issue unknown message: " + msg.command);
-        break;
+        log(`Issue unknown message: ${message.command}`);
     }
   }
 
@@ -111,92 +93,50 @@ export class IssueDetailPanel {
     }
   }
 
-  private async editIssue(title: string, body: string): Promise<void> {
-    if (!title.trim()) {
+  private async updateIssue(params: { title?: string; body?: string }): Promise<void> {
+    if (params.title !== undefined && !params.title.trim()) {
       vscode.window.showWarningMessage("Title cannot be empty.");
       return;
     }
     try {
-      this.issue = await this.api.updateIssue(this.repoInfo, this.issue.number, {
-        title: title.trim(),
-        body,
-      });
+      this.issue = await this.api.updateIssue(this.repoInfo, this.issue.number, params);
       this.panel.title = `Issue #${this.issue.number}: ${this.issue.title}`;
       await this.update(this.issue);
-      vscode.window.showInformationMessage(
-        `Issue #${this.issue.number} updated.`,
-      );
-    } catch (err) {
-      vscode.window.showErrorMessage(`Failed: ${(err as Error).message}`);
+    } catch (error) {
+      vscode.window.showErrorMessage(`Failed to update issue: ${(error as Error).message}`);
     }
   }
 
   private async addComment(body: string): Promise<void> {
-    if (!body.trim()) {
-      vscode.window.showWarningMessage("Comment cannot be empty.");
-      return;
-    }
+    if (!body.trim()) return;
     try {
-      await this.api.addIssueComment(this.repoInfo, this.issue.number, body);
-      vscode.window.showInformationMessage("Comment posted.");
+      await this.api.addIssueComment(this.repoInfo, this.issue.number, body.trim());
       this.issue = await this.api.getIssue(this.repoInfo, this.issue.number);
       await this.update(this.issue);
-    } catch (err) {
-      vscode.window.showErrorMessage(
-        `Failed to add comment: ${(err as Error).message}`,
-      );
-    }
-  }
-
-  private async changeState(state: "open" | "closed"): Promise<void> {
-    try {
-      this.issue =
-        state === "closed"
-          ? await this.api.closeIssue(this.repoInfo, this.issue.number)
-          : await this.api.reopenIssue(this.repoInfo, this.issue.number);
-      await this.update(this.issue);
-      vscode.window.showInformationMessage(
-        `Issue #${this.issue.number} ${state === "closed" ? "closed" : "re-opened"}.`,
-      );
-    } catch (err) {
-      vscode.window.showErrorMessage(`Failed: ${(err as Error).message}`);
+    } catch (error) {
+      vscode.window.showErrorMessage(`Failed to add comment: ${(error as Error).message}`);
     }
   }
 
   async update(issue: GiteaIssue): Promise<void> {
-    log("Issue update: #" + issue.number);
+    log(`Issue update: #${issue.number}`);
     try {
-      const comments = await this.api.listIssueComments(
-        this.repoInfo,
-        issue.number,
-      );
-      const [bodyHtml, ...commentBodies] = await Promise.all([
+      const comments = await this.api.listIssueComments(this.repoInfo, issue.number);
+      const rendered = await Promise.all([
         this.renderMarkdown(issue.body ?? ""),
         ...comments.map((comment) => this.renderMarkdown(comment.body ?? "")),
       ]);
-      this.panel.webview.html = this.renderHtml(
-        issue,
-        comments,
-        bodyHtml,
-        commentBodies,
-      );
-    } catch (err) {
-      this.panel.webview.html = `<!DOCTYPE html><html><body><h2>Error</h2><p>${escHtml((err as Error).message)}</p></body></html>`;
+      this.panel.webview.html = this.renderHtml(issue, comments, rendered[0] ?? "", rendered.slice(1));
+    } catch (error) {
+      this.panel.webview.html = `<!DOCTYPE html><html><body style="padding:20px;color:var(--vscode-foreground);background:var(--vscode-editor-background);font-family:var(--vscode-font-family)"><h2>Error loading issue</h2><p>${escHtml((error as Error).message)}</p></body></html>`;
     }
   }
 
   private async renderMarkdown(markdown: string): Promise<string> {
-    if (!markdown.trim()) {
-      return "";
-    }
+    if (!markdown.trim()) return "";
     try {
-      const rendered = await vscode.commands.executeCommand<string>(
-        "markdown.api.render",
-        markdown,
-      );
-      if (typeof rendered === "string") {
-        return rendered;
-      }
+      const rendered = await vscode.commands.executeCommand<string>("markdown.api.render", markdown);
+      if (typeof rendered === "string") return rendered;
       throw new Error("VS Code Markdown renderer returned no HTML");
     } catch (error) {
       log(`Issue Markdown renderer fallback: ${(error as Error).message}`);
@@ -213,44 +153,27 @@ export class IssueDetailPanel {
     const stateLabel = issue.state === "open" ? "Open" : "Closed";
     const stateClass = issue.state === "open" ? "state-open" : "state-closed";
     const nonce = getNonce();
-
-    const labelsHtml =
-      issue.labels
-        ?.map(
-          (label) =>
-            `<span class="label" style="--label-color:#${escHtml(label.color)}">${escHtml(label.name)}</span>`,
-        )
-        .join("") ?? "";
-    const assigneesHtml = issue.assignees?.length
-      ? `<span class="mi">Assignees: ${issue.assignees.map((user) => escHtml(user.login)).join(", ")}</span>`
-      : issue.assignee
-        ? `<span class="mi">Assignee: ${escHtml(issue.assignee.login)}</span>`
-        : "";
-    const milestoneHtml = issue.milestone
-      ? `<span class="mi">Milestone: ${escHtml(issue.milestone.title)}</span>`
+    const labelsHtml = issue.labels?.map(
+      (label) => `<span class="label" style="--label-color:#${escHtml(label.color)}">${escHtml(label.name)}</span>`,
+    ).join("") ?? "";
+    const assignees = issue.assignees?.length
+      ? issue.assignees.map((user) => user.login).join(", ")
+      : issue.assignee?.login;
+    const assigneesHtml = assignees
+      ? `<span>assigned to <strong>${escHtml(assignees)}</strong></span>`
       : "";
-
+    const milestoneHtml = issue.milestone
+      ? `<span>Milestone: <strong>${escHtml(issue.milestone.title)}</strong></span>`
+      : "";
     const commentsHtml = comments.length
-      ? comments
-          .map((comment, index) => {
-            const renderedBody = commentBodies[index] ?? "";
-            return `<article class="comment" id="comment-${comment.id}">
-              <header class="comment-hdr">
-                <img src="${escHtml(comment.user.avatar_url)}" class="avatar" alt="">
-                <strong>${escHtml(comment.user.login)}</strong>
-                <span class="time">${escHtml(new Date(comment.created_at).toLocaleString())}</span>
-              </header>
-              <div class="comment-body markdown-body">${renderedBody}</div>
-            </article>`;
-          })
-          .join("")
+      ? comments.map((comment, index) =>
+          `<article class="comment"><header class="comment-header"><img src="${escHtml(comment.user.avatar_url)}" class="avatar" alt=""><strong>${escHtml(comment.user.login)}</strong><span class="time">${escHtml(new Date(comment.created_at).toLocaleString())}</span></header><div class="comment-body markdown-body">${commentBodies[index] ?? ""}</div></article>`,
+        ).join("")
       : '<p class="empty">No comments yet.</p>';
 
-    const createdDate = new Date(issue.created_at).toLocaleString();
-    const updatedDate = new Date(issue.updated_at).toLocaleString();
-    const closedDate = issue.closed_at
-      ? new Date(issue.closed_at).toLocaleString()
-      : "—";
+    const editIcon = `<svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M11.3 1.7a1 1 0 0 1 1.4 0l1.6 1.6a1 1 0 0 1 0 1.4l-8.6 8.6-3.2.7.7-3.2 8.1-9.1zm.7 1.1-7.9 8.8-.3 1.1 1.1-.3 8.3-8.3L12 2.8z"/></svg>`;
+    const refreshIcon = `<svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M13.2 3.8A6 6 0 1 0 14 9h-1.2a4.8 4.8 0 1 1-.7-4.3L10 6h5V1l-1.8 2.8z"/></svg>`;
+    const externalIcon = `<svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M9 2h5v5h-1V3.7L7.35 9.35l-.7-.7L12.3 3H9V2zM3 4h4v1H4v7h7V8h1v5H3V4z"/></svg>`;
 
     return `<!DOCTYPE html>
 <html lang="en">
@@ -260,194 +183,67 @@ export class IssueDetailPanel {
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Issue #${issue.number}</title>
 <style>
-:root {
-  --surface: var(--vscode-editor-background);
-  --surface-subtle: var(--vscode-textBlockQuote-background, var(--vscode-editor-inactiveSelectionBackground));
-  --fg: var(--vscode-foreground);
-  --muted: var(--vscode-descriptionForeground);
-  --border: var(--vscode-panel-border, var(--vscode-widget-border));
-  --focus: var(--vscode-focusBorder);
-  --link: var(--vscode-textLink-foreground);
-  --link-active: var(--vscode-textLink-activeForeground, var(--vscode-textLink-foreground));
-  --input-bg: var(--vscode-input-background);
-  --input-fg: var(--vscode-input-foreground);
-  --input-border: var(--vscode-input-border, transparent);
-  --button-bg: var(--vscode-button-background);
-  --button-fg: var(--vscode-button-foreground);
-  --button-hover: var(--vscode-button-hoverBackground);
-  --button-secondary-bg: var(--vscode-button-secondaryBackground);
-  --button-secondary-fg: var(--vscode-button-secondaryForeground);
-  --button-secondary-hover: var(--vscode-button-secondaryHoverBackground);
-  --success: var(--vscode-testing-iconPassed, var(--vscode-charts-green));
-  --danger: var(--vscode-testing-iconFailed, var(--vscode-errorForeground));
-  --mono: var(--vscode-editor-font-family);
-  --base-size: var(--vscode-font-size, 13px);
-}
-*{box-sizing:border-box}
-html,body{margin:0;padding:0;background:var(--surface);color:var(--fg)}
-body{font-family:var(--vscode-font-family);font-size:var(--base-size);line-height:1.45;padding:16px 20px}
-button,input,textarea{font:inherit}
-a{color:var(--link);text-decoration:none}a:hover{color:var(--link-active);text-decoration:underline}
-.title-row{display:flex;align-items:center;gap:10px;margin-bottom:5px;min-width:0}
-.title-row h1{font-size:1.22em;line-height:1.3;font-weight:600;margin:0;min-width:0;overflow-wrap:anywhere}
-.state-dot{width:8px;height:8px;border-radius:50%;flex:0 0 8px;background:currentColor}.state-open{color:var(--success)}.state-closed{color:var(--danger)}
-.meta-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px 9px;color:var(--muted);font-size:.92em;margin:0 0 12px}
-.meta-row strong{color:var(--fg);font-weight:600}
-.badge{display:inline-flex;align-items:center;border:1px solid currentColor;border-radius:999px;padding:1px 7px;font-size:.78em;font-weight:600;text-transform:uppercase;background:transparent}
-.label{display:inline-flex;align-items:center;border:1px solid var(--label-color);color:var(--fg);border-radius:999px;padding:1px 7px;font-size:.78em;font-weight:500;background:color-mix(in srgb,var(--label-color) 18%,transparent)}
-.mi,.dim,.time{color:var(--muted)}.time{margin-left:auto;font-size:.92em}
-.actions{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;align-items:center}
-.btn{border:1px solid transparent;border-radius:2px;padding:4px 10px;min-height:26px;cursor:pointer;background:var(--button-bg);color:var(--button-fg)}
-.btn:hover{background:var(--button-hover)}.btn.sec{background:var(--button-secondary-bg);color:var(--button-secondary-fg)}.btn.sec:hover{background:var(--button-secondary-hover)}
-.btn.danger{background:var(--button-secondary-bg);color:var(--danger);border-color:color-mix(in srgb,var(--danger) 55%,transparent)}.btn.danger:hover{background:color-mix(in srgb,var(--danger) 14%,var(--button-secondary-bg))}
-.btn.success{background:var(--button-secondary-bg);color:var(--success);border-color:color-mix(in srgb,var(--success) 55%,transparent)}.btn.success:hover{background:color-mix(in srgb,var(--success) 14%,var(--button-secondary-bg))}
-.btn.sm{font-size:.9em;padding:2px 8px;min-height:22px}
-.btn:focus-visible,.tab:focus-visible,textarea:focus-visible,input:focus-visible,a:focus-visible{outline:1px solid var(--focus);outline-offset:2px}
-.tabs{display:flex;gap:2px;border-bottom:1px solid var(--border);margin:0 0 14px}
-.tab{background:transparent;border:0;border-bottom:2px solid transparent;color:var(--muted);cursor:pointer;padding:6px 10px;font:inherit}.tab:hover{color:var(--fg)}.tab.active{color:var(--fg);border-bottom-color:var(--focus);font-weight:600}
-.tab-content{display:none}.tab-content.active{display:block}
-section>h2{font-size:1em;line-height:1.3;font-weight:600;margin:16px 0 8px;color:var(--fg)}
-.desc-body{background:var(--surface-subtle);border:1px solid var(--border);border-radius:3px;padding:12px 14px;margin-bottom:14px;overflow:hidden;overflow-wrap:anywhere}
-.markdown-body{font-size:1em;line-height:1.5}
-.markdown-body h1,.markdown-body h2,.markdown-body h3,.markdown-body h4,.markdown-body h5,.markdown-body h6{font-weight:600;line-height:1.3;margin:1.05em 0 .45em;color:var(--fg)}
-.markdown-body h1:first-child,.markdown-body h2:first-child,.markdown-body h3:first-child{margin-top:0}
-.markdown-body h1{font-size:1.28em;border-bottom:1px solid var(--border);padding-bottom:.25em}.markdown-body h2{font-size:1.16em}.markdown-body h3{font-size:1.06em}.markdown-body h4,.markdown-body h5,.markdown-body h6{font-size:1em}
-.markdown-body p{margin:.55em 0}.markdown-body p:first-child{margin-top:0}.markdown-body p:last-child{margin-bottom:0}
-.markdown-body ul,.markdown-body ol{margin:.55em 0;padding-left:1.65em}.markdown-body li{margin:.22em 0}.markdown-body li>p{margin:.2em 0}
-.markdown-body blockquote{border-left:3px solid var(--vscode-textBlockQuote-border,var(--border));background:var(--vscode-textBlockQuote-background,transparent);padding:.25em .8em;margin:.7em 0;color:var(--muted)}
-.markdown-body code{font-family:var(--mono);font-size:.92em;background:var(--vscode-textCodeBlock-background,var(--surface-subtle));border-radius:2px;padding:.08em .3em}
-.markdown-body pre{font-family:var(--mono);font-size:.92em;line-height:1.45;background:var(--vscode-textCodeBlock-background,var(--surface-subtle));border:1px solid var(--border);padding:9px 11px;border-radius:3px;overflow:auto;margin:.7em 0}.markdown-body pre code{background:transparent;padding:0}
-.markdown-body hr{border:0;border-top:1px solid var(--border);margin:1em 0}.markdown-body img{max-width:100%;height:auto}
-.markdown-body table{border-collapse:collapse;width:max-content;max-width:100%;display:block;overflow:auto;margin:.7em 0}.markdown-body th,.markdown-body td{border:1px solid var(--border);padding:5px 8px;text-align:left}.markdown-body th{font-weight:600;background:var(--surface-subtle)}
-.markdown-body input[type="checkbox"]{width:auto;margin:0 6px 0 0;vertical-align:middle;accent-color:var(--success)}
-.comment{border:1px solid var(--border);border-radius:3px;margin-bottom:10px;overflow:hidden;background:var(--surface)}
-.comment-hdr{display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--surface-subtle);border-bottom:1px solid var(--border)}.comment-hdr strong{font-weight:600}
-.comment-body{padding:10px 12px;overflow:hidden;overflow-wrap:anywhere}.avatar{width:20px;height:20px;border-radius:50%}
-.empty{color:var(--muted);font-style:italic;padding:6px 0}.form-section{margin-top:14px}.form-section>label{display:block;margin-bottom:5px;font-size:.92em}
-textarea,input[type="text"]{width:100%;background:var(--input-bg);color:var(--input-fg);border:1px solid var(--input-border);border-radius:2px;padding:6px 8px;box-sizing:border-box}
-textarea{resize:vertical;line-height:1.45}.edit-form{background:var(--surface-subtle);border:1px solid var(--focus);border-radius:3px;padding:12px;margin-bottom:14px}.edit-form label{display:block;font-size:.92em;font-weight:600;margin-bottom:4px;color:var(--fg)}
-.field{margin-bottom:10px}.edit-actions{display:flex;gap:6px;margin-top:10px}
-.timeline{position:relative;padding-left:18px;border-left:1px solid var(--border)}.timeline-entry{position:relative;margin-bottom:13px;padding-left:13px}.timeline-entry::before{content:'';position:absolute;left:-18px;top:5px;width:7px;height:7px;border-radius:50%;background:var(--focus);box-shadow:0 0 0 2px var(--surface)}
-.tl-label{font-size:.82em;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.03em}.tl-value{margin-top:2px}
-@media (max-width:600px){body{padding:12px}.title-row{align-items:flex-start;flex-wrap:wrap}.time{margin-left:0;width:100%}}
+:root{--surface:var(--vscode-editor-background);--subtle:var(--vscode-textBlockQuote-background,var(--vscode-editor-inactiveSelectionBackground));--fg:var(--vscode-foreground);--muted:var(--vscode-descriptionForeground);--border:var(--vscode-panel-border,var(--vscode-widget-border));--focus:var(--vscode-focusBorder);--input-bg:var(--vscode-input-background);--input-fg:var(--vscode-input-foreground);--input-border:var(--vscode-input-border,transparent);--button-bg:var(--vscode-button-background);--button-fg:var(--vscode-button-foreground);--button-secondary-bg:var(--vscode-button-secondaryBackground);--button-secondary-fg:var(--vscode-button-secondaryForeground);--success:var(--vscode-testing-iconPassed,var(--vscode-charts-green));--danger:var(--vscode-testing-iconFailed,var(--vscode-errorForeground));--mono:var(--vscode-editor-font-family)}
+*{box-sizing:border-box}html,body{margin:0;background:var(--surface);color:var(--fg)}body{font-family:var(--vscode-font-family);font-size:var(--vscode-font-size,13px);line-height:1.45;padding:16px 20px}button,input,textarea{font:inherit}
+.title-row{display:flex;align-items:center;gap:7px;min-width:0;margin-bottom:5px;white-space:nowrap}.title-prefix,.title-text{font-size:1.22em;font-weight:600}.title-prefix{flex:0 0 auto}.title-text{overflow:hidden;text-overflow:ellipsis}.title-input{display:none;min-width:180px;width:min(520px,45vw);font-size:1.22em;font-weight:600;padding:1px 5px}.title-row.editing .title-text{display:none}.title-row.editing .title-input{display:inline-block}.state-dot{width:8px;height:8px;border-radius:50%;flex:0 0 8px;background:currentColor}.state-open{color:var(--success)}.state-closed{color:var(--danger)}
+.icon-btn{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;padding:2px;border:0;border-radius:3px;background:transparent;color:var(--muted);cursor:pointer}.icon-btn:hover{background:var(--vscode-toolbar-hoverBackground,var(--subtle));color:var(--fg)}.icon-btn svg{width:14px;height:14px}.meta-row{display:flex;align-items:center;flex-wrap:wrap;gap:6px 9px;color:var(--muted);font-size:.92em;margin-bottom:14px}.meta-row strong{color:var(--fg)}.badge{display:inline-flex;border:1px solid currentColor;border-radius:999px;padding:1px 7px;font-size:.82em;font-weight:600;text-transform:uppercase}.label{border:1px solid var(--label-color);border-radius:999px;padding:1px 7px;font-size:.78em}
+.section-card,.comment{border:1px solid var(--border);border-radius:3px;margin-bottom:10px;overflow:hidden}.section-card{margin-bottom:14px}.section-bar,.comment-header{display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--subtle);border-bottom:1px solid var(--border)}.section-bar{justify-content:space-between;font-weight:600}.section-content,.comment-body{padding:10px 12px}.description-editor{padding:10px 12px;background:var(--subtle)}.description-editor textarea{min-height:140px}.editor-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.btn{border:1px solid transparent;border-radius:2px;padding:4px 10px;min-height:26px;cursor:pointer;background:var(--button-bg);color:var(--button-fg)}.btn.sec{background:var(--button-secondary-bg);color:var(--button-secondary-fg)}.btn:focus-visible,.icon-btn:focus-visible,input:focus-visible,textarea:focus-visible{outline:1px solid var(--focus);outline-offset:2px}textarea,input[type="text"]{background:var(--input-bg);color:var(--input-fg);border:1px solid var(--input-border);border-radius:2px;padding:6px 8px;width:100%;resize:vertical}
+.markdown-body{line-height:1.5;overflow-wrap:anywhere}.markdown-body h1{font-size:1.28em}.markdown-body h2{font-size:1.16em}.markdown-body h3{font-size:1.06em}.markdown-body code{font-family:var(--mono)}.markdown-body pre{overflow:auto}.markdown-body table{border-collapse:collapse;max-width:100%;overflow:auto;display:block}.markdown-body th,.markdown-body td{border:1px solid var(--border);padding:4px 7px}.markdown-body blockquote{border-left:3px solid var(--vscode-textBlockQuote-border,var(--border));padding:.25em .8em;margin:.7em 0;color:var(--muted)}
+.avatar{width:20px;height:20px;border-radius:50%}.time{margin-left:auto;color:var(--muted);font-size:.92em}.empty{color:var(--muted)}.comments-title{display:flex;align-items:center;padding:7px 10px;background:var(--subtle);border:1px solid var(--border);border-radius:3px 3px 0 0;font-weight:600;margin-top:14px}
 </style>
 </head>
 <body>
-<div class="title-row">
-  <span class="state-dot ${stateClass}" aria-hidden="true"></span>
-  <h1 id="issue-title">Issue #${issue.number}: ${escHtml(issue.title)}</h1>
-  <button id="edit" class="btn sm">Edit</button>
-</div>
-<div class="meta-row">
-  <span class="badge ${stateClass}">${stateLabel}</span>
-  by <strong>${escHtml(issue.user.login)}</strong>
-  <span>${escHtml(new Date(issue.created_at).toLocaleDateString())}</span>
-  ${labelsHtml}${assigneesHtml}${milestoneHtml}
-</div>
-<div class="actions">
-  <button id="open-browser" class="btn">Open in Browser</button>
-  <button id="refresh" class="btn sec">Refresh</button>
-  ${issue.state === "open" ? '<button id="change-state" class="btn danger">Close Issue</button>' : '<button id="change-state" class="btn success">Re-open Issue</button>'}
-</div>
-<div id="edit-form" class="edit-form" hidden>
-  <div class="field"><label for="edit-title">Title</label><input type="text" id="edit-title" value="${escHtml(issue.title)}"></div>
-  <div class="field"><label for="edit-body">Body</label><textarea id="edit-body" style="height:120px">${escHtml(issue.body || "")}</textarea></div>
-  <div class="edit-actions"><button id="save-edit" class="btn">Save</button><button id="cancel-edit" class="btn sec">Cancel</button></div>
-</div>
-<div class="tabs" role="tablist" aria-label="Issue detail sections">
-  <button id="details-tab" class="tab active" role="tab" aria-selected="true" data-tab="details">Details</button>
-  <button id="history-tab" class="tab" role="tab" aria-selected="false" data-tab="history">History</button>
-</div>
-<div id="tab-details" class="tab-content active" role="tabpanel" aria-labelledby="details-tab">
-  ${bodyHtml ? `<div class="desc-body markdown-body">${bodyHtml}</div>` : '<div class="desc-body dim"><em>(no description)</em></div>'}
-  <section>
-    <h2>Comments (${comments.length})</h2>
-    <div id="comments-list">${commentsHtml}</div>
-    <div class="form-section">
-      <label for="commentBody" class="dim">Add a comment</label>
-      <textarea id="commentBody" style="height:60px" placeholder="Write a comment..."></textarea>
-      <div style="margin-top:8px"><button id="post-comment" class="btn">Post Comment</button></div>
-    </div>
-  </section>
-</div>
-<div id="tab-history" class="tab-content" role="tabpanel" aria-labelledby="history-tab">
-  <div class="timeline">
-    <div class="timeline-entry"><div class="tl-label">Created</div><div class="tl-value">${escHtml(createdDate)}</div></div>
-    <div class="timeline-entry"><div class="tl-label">Last Updated</div><div class="tl-value">${escHtml(updatedDate)}</div></div>
-    <div class="timeline-entry"><div class="tl-label">Closed</div><div class="tl-value">${escHtml(closedDate)}</div></div>
+<header>
+  <div id="title-row" class="title-row">
+    <span class="state-dot ${stateClass}" aria-hidden="true"></span>
+    <span class="title-prefix">Issue #${issue.number}</span>
+    <span id="title-text" class="title-text">${escHtml(issue.title)}</span>
+    <input id="title-input" class="title-input" type="text" aria-label="Issue title" value="${escHtml(issue.title)}">
+    <button id="edit-title" class="icon-btn" title="Edit title" aria-label="Edit issue title">${editIcon}</button>
+    <button id="open-browser" class="icon-btn" title="Open in Browser" aria-label="Open issue in browser">${externalIcon}</button>
+    <button id="refresh" class="icon-btn" title="Refresh issue" aria-label="Refresh issue">${refreshIcon}</button>
   </div>
-</div>
+  <div class="meta-row"><span class="badge ${stateClass}">${stateLabel}</span><span>by <strong>${escHtml(issue.user.login)}</strong></span><span>${escHtml(new Date(issue.created_at).toLocaleDateString())}</span>${labelsHtml}${assigneesHtml}${milestoneHtml}</div>
+</header>
+<section class="section-card"><div class="section-bar"><span>Description</span><button id="edit-body" class="icon-btn" title="Edit description" aria-label="Edit issue description">${editIcon}</button></div><div id="body-view" class="section-content">${bodyHtml ? `<div class="markdown-body">${bodyHtml}</div>` : '<div class="empty">(no description)</div>'}</div><div id="body-editor" class="description-editor" hidden><textarea id="body-input">${escHtml(issue.body || "")}</textarea><div class="editor-actions"><button id="save-body" class="btn">Save</button><button id="cancel-body" class="btn sec">Cancel</button></div></div></section>
+<div class="comments-title">Comments (${comments.length})</div><div>${commentsHtml}</div>
+<div><textarea id="comment-body" aria-label="Add a comment" style="height:70px" placeholder="Write a comment..."></textarea><div class="editor-actions"><button id="post-comment" class="btn">Post Comment</button></div></div>
 <script nonce="${nonce}">
-const vscode = acquireVsCodeApi();
-function post(command, extra) {
-  vscode.postMessage(Object.assign({ command }, extra || {}));
-}
-function showTab(name, button) {
-  document.querySelectorAll('.tab-content').forEach((el) => el.classList.remove('active'));
-  document.querySelectorAll('.tab').forEach((el) => {
-    el.classList.remove('active');
-    el.setAttribute('aria-selected', 'false');
-  });
-  document.getElementById('tab-' + name)?.classList.add('active');
-  button.classList.add('active');
-  button.setAttribute('aria-selected', 'true');
-}
-document.getElementById('edit')?.addEventListener('click', () => {
-  document.getElementById('edit-form').hidden = false;
-  document.getElementById('edit-title')?.focus();
-});
-document.getElementById('cancel-edit')?.addEventListener('click', () => {
-  document.getElementById('edit-form').hidden = true;
-});
-document.getElementById('save-edit')?.addEventListener('click', () => {
-  const title = document.getElementById('edit-title').value;
-  const body = document.getElementById('edit-body').value;
-  post('editIssue', { title, body });
-});
-document.getElementById('open-browser')?.addEventListener('click', () => post('openInBrowser'));
-document.getElementById('refresh')?.addEventListener('click', () => post('refresh'));
-document.getElementById('change-state')?.addEventListener('click', () => post('${issue.state === "open" ? "close" : "reopen"}'));
-document.getElementById('post-comment')?.addEventListener('click', () => {
-  const input = document.getElementById('commentBody');
-  const body = (input.value || '').trim();
-  if (!body) return;
-  post('addComment', { body });
-  input.value = '';
-});
-document.querySelectorAll('[data-tab]').forEach((button) => button.addEventListener('click', () => showTab(button.dataset.tab, button)));
-document.querySelectorAll('.markdown-body a[href]').forEach((link) => link.addEventListener('click', (event) => {
-  event.preventDefault();
-  post('openExternal', { url: link.getAttribute('href') });
-}));
+const vscode=acquireVsCodeApi();let titleCancelled=false;const originalTitle=${JSON.stringify(issue.title)};
+function post(command,extra){vscode.postMessage(Object.assign({command},extra||{}));}
+function setTitleEditing(editing){document.getElementById('title-row').classList.toggle('editing',editing);if(editing){titleCancelled=false;const input=document.getElementById('title-input');input.focus();input.select();}}
+function saveTitle(){if(titleCancelled)return;const input=document.getElementById('title-input');const title=(input.value||'').trim();if(!title){input.value=originalTitle;setTitleEditing(false);return;}if(title===originalTitle){setTitleEditing(false);return;}post('editTitle',{title});}
+function setBodyEditing(editing){document.getElementById('body-view').hidden=editing;document.getElementById('body-editor').hidden=!editing;if(editing)document.getElementById('body-input')?.focus();}
+document.getElementById('edit-title')?.addEventListener('click',()=>setTitleEditing(true));document.getElementById('title-input')?.addEventListener('blur',saveTitle);document.getElementById('title-input')?.addEventListener('keydown',(event)=>{if(event.key==='Escape'){titleCancelled=true;event.currentTarget.value=originalTitle;setTitleEditing(false);}else if(event.key==='Enter'){event.preventDefault();saveTitle();}});
+document.getElementById('open-browser')?.addEventListener('click',()=>post('openInBrowser'));document.getElementById('refresh')?.addEventListener('click',()=>post('refresh'));document.getElementById('edit-body')?.addEventListener('click',()=>setBodyEditing(true));document.getElementById('cancel-body')?.addEventListener('click',()=>setBodyEditing(false));document.getElementById('save-body')?.addEventListener('click',()=>post('editBody',{body:document.getElementById('body-input').value||''}));document.getElementById('post-comment')?.addEventListener('click',()=>{const input=document.getElementById('comment-body');const body=(input.value||'').trim();if(!body)return;post('addComment',{body});input.value='';});document.querySelectorAll('.markdown-body a[href]').forEach((link)=>link.addEventListener('click',(event)=>{event.preventDefault();post('openExternal',{url:link.getAttribute('href')});}));
 </script>
 </body>
 </html>`;
   }
 
-  private dispose(): void {
+  dispose(): void {
     IssueDetailPanel.panels.delete(this.key);
-    for (const disposable of this.disposables) {
-      disposable.dispose();
-    }
+    for (const disposable of this.disposables) disposable.dispose();
     this.disposables = [];
   }
 }
 
 function getNonce(): string {
-  const possible =
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  const characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
   let value = "";
   for (let index = 0; index < 32; index += 1) {
-    value += possible.charAt(Math.floor(Math.random() * possible.length));
+    value += characters.charAt(Math.floor(Math.random() * characters.length));
   }
   return value;
 }
 
 function escHtml(value: string): string {
-  return value
+  return String(value ?? "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
+    .split(String.fromCharCode(34))
+    .join("&quot;")
+    .replace(/'/g, "&#39;");
 }
