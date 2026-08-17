@@ -2,7 +2,10 @@ import * as vscode from "vscode";
 import { GiteaApiClient } from "../../../api/giteaApiClient";
 import { AuthManager } from "../../../auth/authManager";
 import { RepoManager } from "../../../context/repoManager";
-import { PullRequestProvider } from "../../../views/pullRequestProvider";
+import {
+  PullRequestItem,
+  PullRequestProvider,
+} from "../../../views/pullRequestProvider";
 
 /**
  * Sidebar-specific presentation policy layered on the legacy PR tree provider
@@ -39,6 +42,18 @@ export class SidebarPullRequestProvider extends PullRequestProvider {
         // The category aggregates PRs with potentially different review states;
         // keep the category icon neutral and color the individual PR icons only.
         item.iconPath = new vscode.ThemeIcon("folder");
+      }
+    }
+
+    if (element instanceof PullRequestItem && element.pr.body?.trim()) {
+      const detailItem = items.find(
+        (item) => item.command?.command === "gitea.viewPRDetail",
+      );
+      if (detailItem) {
+        const preview = new vscode.MarkdownString(element.pr.body);
+        preview.isTrusted = false;
+        preview.supportHtml = false;
+        detailItem.tooltip = preview;
       }
     }
 
