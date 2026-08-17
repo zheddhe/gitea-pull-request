@@ -97,6 +97,21 @@ suite("PR detail presentation", () => {
     assert.doesNotMatch(source, /id="review-body"/);
   });
 
+  test("enriches review history with inline COMMENT detail and sorting", () => {
+    assert.match(
+      source,
+      /comment\.pull_request_review_id === review\.id/,
+    );
+    assert.match(source, /review-inline-summary/);
+    assert.match(source, /review-inline-message/);
+    assert.match(source, /reviewCommentBodies\[commentIndex\]/);
+    assert.match(source, /data-review-time=/);
+    assert.match(source, /id="review-history-sort"/);
+    assert.match(source, />Oldest first<\/option>/);
+    assert.match(source, />Newest first<\/option>/);
+    assert.match(source, /function sortReviewHistory\(direction\)/);
+  });
+
   test("restores file status color cues and readable file names", () => {
     assert.match(source, /class="file-status \$\{statusClass\}"/);
     assert.match(source, /file-status-added/);
