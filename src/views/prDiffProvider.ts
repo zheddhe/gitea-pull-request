@@ -413,6 +413,8 @@ export class PRDiffProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
       const deletions = this.files.reduce((sum, f) => sum + f.deletions, 0);
       const hasApproved = this.reviews.some((r) => r.state === "APPROVED" && !r.stale);
       const details = new PRDiffDetailItem(this.pr, this.repoInfo);
+      const commitsSection = new PRDiffSectionItem("Commits", "commits", this.commits.length, new vscode.ThemeIcon("git-commit"));
+      const reviewsSection = new PRDiffSectionItem("Reviews", "reviews", this.reviews.length, new vscode.ThemeIcon("comment-discussion"));
 
       if (this.files.length === 0) {
         return [
@@ -420,9 +422,9 @@ export class PRDiffProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
           details,
           new PRDiffBranchItem(this.pr),
           new PRDiffStatsItem(0, 0, 0),
+          commitsSection,
+          reviewsSection,
           new PRDiffEmptyItem(),
-          new PRDiffSectionItem("Commits", "commits", this.commits.length, new vscode.ThemeIcon("git-commit")),
-          new PRDiffSectionItem("Reviews", "reviews", this.reviews.length, new vscode.ThemeIcon("comment-discussion")),
         ];
       }
 
@@ -440,9 +442,9 @@ export class PRDiffProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
         details,
         new PRDiffBranchItem(this.pr),
         new PRDiffStatsItem(additions, deletions, this.files.length),
+        commitsSection,
+        reviewsSection,
         filesSection,
-        new PRDiffSectionItem("Commits", "commits", this.commits.length, new vscode.ThemeIcon("git-commit")),
-        new PRDiffSectionItem("Reviews", "reviews", this.reviews.length, new vscode.ThemeIcon("comment-discussion")),
       ];
     }
 
