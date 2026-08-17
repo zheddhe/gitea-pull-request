@@ -14,7 +14,6 @@ jobs:
 
     permissions:
       contents: write
-      id-token: write
 
     steps:
       - name: Checkout release tag
@@ -71,11 +70,9 @@ jobs:
         with:
           files: ${{ steps.version.outputs.vsix }}
 
-      - name: Publish to VS Code Marketplace
-        run: >-
-          npx --yes @vscode/vsce@3.9.2 publish
-          --oidc
-          --packagePath "${{ steps.version.outputs.vsix }}"
+      # Visual Studio Marketplace publication is intentionally manual for now.
+      # Re-enable automated trusted publishing only after the Marketplace publisher
+      # exposes/configures a trusted publishing policy for this repository/workflow.
 
       - name: Release summary
         run: |
@@ -84,4 +81,4 @@ jobs:
           echo "Version: **v${{ steps.version.outputs.version }}**" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "- VSIX uploaded to the GitHub release" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Published as **zheddhe.gitea-pull-request** through GitHub OIDC trusted publishing" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Visual Studio Marketplace publication: **manual (trusted publishing pending)**" >> "$GITHUB_STEP_SUMMARY"
