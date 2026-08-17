@@ -65,8 +65,7 @@ type ReviewViewMessage =
   | { type: "readyForReview" }
   | { type: "selectMergeMethod"; method: MergeMethod }
   | { type: "merge" }
-  | { type: "checkoutBase" }
-  | { type: "refresh" };
+  | { type: "checkoutBase" };
 
 const MERGE_METHOD_STATE_KEY = "gitea.prReview.mergeMethod";
 
@@ -162,14 +161,6 @@ export class ReviewPullRequestViewProvider
       vscode.window.showWarningMessage(
         "No active Gitea pull request is available for review.",
       );
-      return;
-    }
-
-    if (message.type === "refresh") {
-      log(`[review-view] refresh requested pr=#${active.state.pullRequest.number}`);
-      await this.refreshActivePullRequest(active.repoInfo);
-      const refreshed = this.activeContext();
-      if (refreshed) await this.loadReadiness(refreshed.repoInfo, refreshed.state);
       return;
     }
 
@@ -600,11 +591,30 @@ export class ReviewPullRequestViewProvider
     const warnings = readiness.warnings
       .map((warning) => `<li>${escapeHtml(warning)}</li>`)
       .join("");
-    const checks = (this.readiness.status?.statuses ?? [])
-      .map(
-        (status) =>
-          `<li>${escapeHtml(status.context || "check")} · ${escapeHtml(status.state)}${status.description ? ` — ${escapeHtml(status.description)}` : ""}</li>`,
-      )
+    const statuses = this.readiness.status?.statuses ?? [];
+    const successfulChecks = statuses.filter((status) => status.state === "success").length;
+    const pendingChecks = statuses.filter((status) => status.state === "pending").length;
+    const failedChecks = statuses.filter(
+      (status) => status.state === "failure" || status.state === "error",
+    ).length;
+    const warningChecks = statuses.filter((status) => status.state === "warning").length;
+    const checkSummary = statuses.length > 0
+      ? `${successfulChecks} successful · ${pendingChecks} pending · ${failedChecks} failed${warningChecks ? ` · ${warningChecks} warning` : ""}`
+      : "No commit status checks reported";
+    const checks = statuses
+      .map((status) => {
+        const label = escapeHtml(status.context || "check");
+        const description = status.description
+          ? `<div class="check-description">${escapeHtml(status.description)}</div>`
+          : "";
+        const name = status.target_url
+          ? `<a href="${escapeHtml(status.target_url)}" title="Open check in Gitea">${label}</a>`
+          : label;
+        return `<li class="check check-${status.state}">
+          <span class="check-state">${escapeHtml(checkStateLabel(status.state))}</span>
+          <span class="check-content"><span class="check-name">${name}</span>${description}</span>
+        </li>`;
+      })
       .join("");
 
     this.view.webview.html = `<!doctype html>
@@ -629,6 +639,17 @@ export class ReviewPullRequestViewProvider
   ul { margin: 6px 0; padding-left: 20px; }
   .blocked { color: var(--vscode-errorForeground); }
   .ready { color: var(--vscode-testing-iconPassed); }
+  .checks { list-style: none; padding: 0; margin-top: 8px; }
+  .check { display: grid; grid-template-columns: max-content 1fr; gap: 8px; align-items: start; padding: 6px 0; border-top: 1px solid var(--vscode-panel-border); }
+  .check:first-child { border-top: 0; }
+  .check-state { min-width: 62px; font-size: 0.9em; font-weight: 600; }
+  .check-success .check-state { color: var(--vscode-testing-iconPassed); }
+  .check-pending .check-state, .check-warning .check-state { color: var(--vscode-editorWarning-foreground); }
+  .check-failure .check-state, .check-error .check-state { color: var(--vscode-errorForeground); }
+  .check-name { overflow-wrap: anywhere; }
+  .check-description { color: var(--vscode-descriptionForeground); margin-top: 2px; overflow-wrap: anywhere; }
+  a { color: var(--vscode-textLink-foreground); text-decoration: none; }
+  a:hover { text-decoration: underline; }
 </style>
 </head>
 <body>
@@ -637,13 +658,13 @@ export class ReviewPullRequestViewProvider
     <div class="meta">${escapeHtml(active.repoInfo.label)} · ${escapeHtml(pr.head.ref)} → ${escapeHtml(pr.base.ref)}</div>
   </div>
 
+  <div class="section-title">Review</div>
   <textarea id="reviewBody" placeholder="Leave a comment or review message">${escapeHtml(this.reviewBody)}</textarea>
   <div class="actions">
     <button id="comment"${disabled}>Comment</button>
     <button class="secondary" id="approve"${disabled}>Approve</button>
     <button class="danger" id="requestChanges"${disabled}>Request Changes</button>
     ${wip ? `<button class="secondary" id="readyForReview"${disabled}>Mark Ready for Review</button>` : ""}
-    <button class="secondary" id="refresh"${disabled}>Refresh</button>
   </div>
 
   <div class="section">
@@ -654,7 +675,12 @@ export class ReviewPullRequestViewProvider
     ${blockers ? `<ul class="blocked">${blockers}</ul>` : '<div class="ready">No blocking condition detected from available Gitea signals.</div>'}
     ${warnings ? `<ul class="muted">${warnings}</ul>` : ""}
     ${this.readiness.warning ? `<div class="muted">Some readiness metadata is unavailable: ${escapeHtml(this.readiness.warning)}</div>` : ""}
-    ${checks ? `<ul>${checks}</ul>` : ""}
+  </div>
+
+  <div class="section">
+    <div class="section-title">Checks</div>
+    <div class="muted">${escapeHtml(checkSummary)}</div>
+    ${checks ? `<ul class="checks">${checks}</ul>` : ""}
   </div>
 
   <div class="section">
@@ -673,7 +699,6 @@ export class ReviewPullRequestViewProvider
   document.getElementById('approve').addEventListener('click', () => vscode.postMessage({ type: 'approve', body: body.value }));
   document.getElementById('requestChanges').addEventListener('click', () => vscode.postMessage({ type: 'requestChanges', body: body.value }));
   document.getElementById('readyForReview')?.addEventListener('click', () => vscode.postMessage({ type: 'readyForReview' }));
-  document.getElementById('refresh').addEventListener('click', () => vscode.postMessage({ type: 'refresh' }));
   if (mergeMethod) mergeMethod.addEventListener('change', () => vscode.postMessage({ type: 'selectMergeMethod', method: mergeMethod.value }));
   document.getElementById('merge').addEventListener('click', () => vscode.postMessage({ type: 'merge' }));
   document.getElementById('checkoutBase').addEventListener('click', () => vscode.postMessage({ type: 'checkoutBase' }));
@@ -698,11 +723,28 @@ function mergeMethodLabel(method: MergeMethod): string {
   }
 }
 
+function checkStateLabel(state: string): string {
+  switch (state) {
+    case "success":
+      return "Success";
+    case "pending":
+      return "Pending";
+    case "warning":
+      return "Warning";
+    case "failure":
+      return "Failed";
+    case "error":
+      return "Error";
+    default:
+      return state;
+  }
+}
+
 function escapeHtml(value: string): string {
   return value
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
+    .replace(/\"/g, "&quot;")
     .replace(/'/g, "&#039;");
 }
