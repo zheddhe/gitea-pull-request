@@ -286,10 +286,6 @@
         "icon": "$(git-pull-request-create)"
       },
       {
-        "command": "gitea.createPR",
-        "title": "Gitea: Create Pull Request (Legacy)"
-      },
-      {
         "command": "gitea.mergePR",
         "title": "Gitea: Merge Pull Request"
       },
