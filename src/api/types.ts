@@ -103,6 +103,10 @@ export interface GiteaReviewComment {
   position?: number;
   /** Original/old-file line returned by Gitea when reading a review comment. */
   original_position?: number;
+  /** @deprecated Internal compatibility alias while the detail renderer migrates. */
+  new_position?: number;
+  /** @deprecated Internal compatibility alias while the detail renderer migrates. */
+  old_position?: number;
   created_at: string;
   updated_at: string;
   html_url?: string;
