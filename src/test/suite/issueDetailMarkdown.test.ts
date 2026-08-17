@@ -65,6 +65,16 @@ suite("Issue detail Markdown", () => {
     assert.doesNotMatch(source, />Add a comment</);
   });
 
+  test("edits issue comments locally with the shared Gitea comment API", () => {
+    assert.match(source, /case "editComment"/);
+    assert.match(source, /this\.api\.updateComment\(this\.repoInfo, commentId, body\.trim\(\)\)/);
+    assert.match(source, /class="icon-btn edit-comment"/);
+    assert.match(source, /class="comment-editor"/);
+    assert.match(source, /class="btn save-comment"/);
+    assert.match(source, /class="btn sec cancel-comment"/);
+    assert.match(source, /function setCommentEditing\(id,editing\)/);
+  });
+
   test("removes obsolete issue tabs and history", () => {
     assert.doesNotMatch(source, /class="tabs"/);
     assert.doesNotMatch(source, /class="tab"/);
