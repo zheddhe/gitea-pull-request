@@ -4,7 +4,7 @@ NPM ?= npm
 NPX ?= npx
 CODE ?= code
 VSCE_VERSION ?= 3.9.2
-VSCODE_TEST_VERSION ?= 1.85.0
+VSCODE_TEST_VERSION ?= 1.133.0
 
 PROJECT_NAME := $(shell node -p "require('./package.json').name")
 VERSION := $(shell node -p "require('./package.json').version")
@@ -25,8 +25,8 @@ doctor: ## Check the local tools required to build/package/install the extension
 	@command -v $(NPM) >/dev/null || { echo 'ERROR: npm is required.' >&2; exit 1; }
 	@command -v $(NPX) >/dev/null || { echo 'ERROR: npx is required.' >&2; exit 1; }
 	@node_major=$$(node -p "Number(process.versions.node.split('.')[0])"); \
-		if [ "$$node_major" -lt 22 ]; then \
-			echo "ERROR: Node.js 22+ is required for the pinned @vscode/vsce $(VSCE_VERSION) packaging tool (found $$(node --version))." >&2; \
+		if [ "$$node_major" -ne 24 ]; then \
+			echo "ERROR: Node.js 24.x is the supported build/CI baseline for this release (found $$(node --version))." >&2; \
 			exit 1; \
 		fi
 	@if command -v $(CODE) >/dev/null; then \
@@ -34,7 +34,7 @@ doctor: ## Check the local tools required to build/package/install the extension
 	else \
 		echo "INFO: '$(CODE)' is not on PATH; build/package works, but make install-vsix will not."; \
 	fi
-	@echo "OK: Node $$(node --version), npm $$($(NPM) --version), VSIX output: $(VSIX_FILE)"
+	@echo "OK: Node $$(node --version), npm $$($(NPM) --version), VS Code test baseline $(VSCODE_TEST_VERSION), VSIX output: $(VSIX_FILE)"
 
 lock: ## Create/update package-lock.json after any package.json dependency or metadata change
 	$(NPM) install --package-lock-only --ignore-scripts
