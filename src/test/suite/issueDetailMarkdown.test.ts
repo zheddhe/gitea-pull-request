@@ -7,6 +7,10 @@ suite("Issue detail Markdown", () => {
     path.resolve(__dirname, "../../../src/views/issueDetailPanel.ts"),
     "utf8",
   );
+  const issuesSource = fs.readFileSync(
+    path.resolve(__dirname, "../../../src/views/issuesProvider.ts"),
+    "utf8",
+  );
 
   test("uses the VS Code Markdown renderer for issue content", () => {
     assert.match(source, /"markdown\.api\.render"/);
@@ -68,6 +72,16 @@ suite("Issue detail Markdown", () => {
     assert.doesNotMatch(source, /createdDate/);
     assert.doesNotMatch(source, /updatedDate/);
     assert.doesNotMatch(source, /closedDate/);
+  });
+
+  test("keeps View Details as the first issue child", () => {
+    const builder = issuesSource.indexOf("function buildIssueChildren");
+    const details = issuesSource.indexOf('"View Details"', builder);
+    const labels = issuesSource.indexOf('new vscode.ThemeIcon("tag")', details);
+    const comments = issuesSource.indexOf('new vscode.ThemeIcon("comment-discussion")', details);
+    const browser = issuesSource.indexOf('"Open in Browser"', details);
+    assert.ok(builder >= 0 && details > builder);
+    assert.ok(labels > details && comments > details && browser > details);
   });
 
   test("styles issue detail from VS Code theme tokens", () => {
