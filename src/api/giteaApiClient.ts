@@ -286,10 +286,20 @@ export class GiteaApiClient {
     number: number,
   ): Promise<GiteaReviewComment[]> {
     const { serverUrl, owner, repo } = repoInfo;
-    return this.request<GiteaReviewComment[]>(
-      serverUrl,
-      `/repos/${owner}/${repo}/pulls/${number}/comments`,
+    const reviews = await this.listReviews(repoInfo, number);
+    const commentsByReview = await Promise.all(
+      reviews.map(async (review) => {
+        try {
+          return await this.request<GiteaReviewComment[]>(
+            serverUrl,
+            `/repos/${owner}/${repo}/pulls/${number}/reviews/${review.id}/comments`,
+          );
+        } catch {
+          return [];
+        }
+      }),
     );
+    return commentsByReview.flat();
   }
 
   async listPRFiles(
@@ -466,7 +476,7 @@ export class GiteaApiClient {
     return data.content;
   }
 
-  // ── Issues ───────────────────────────────────────────────────────────────
+  // ── Issues ────────────────────────────────────────────────────────────────
 
   async listIssues(
     repoInfo: RepoInfo,
