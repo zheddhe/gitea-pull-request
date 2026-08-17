@@ -18,6 +18,10 @@ import {
 } from "../views/prDiffProvider";
 import type { GiteaPullRequest } from "../api/types";
 
+type PRDetailTarget =
+  | PullRequestItem
+  | { pr: GiteaPullRequest; repoInfo: RepoInfo };
+
 export function registerPRCommands(
   context: vscode.ExtensionContext,
   api: GiteaApiClient,
@@ -44,12 +48,15 @@ export function registerPRCommands(
 
     vscode.commands.registerCommand(
       "gitea.viewPRDetail",
-      async (item: PullRequestItem) => {
+      async (target: PRDetailTarget) => {
+        const pr = target instanceof PullRequestItem ? target.pr : target.pr;
+        const repoInfo =
+          target instanceof PullRequestItem ? target.repoInfo : target.repoInfo;
         await PRDetailPanel.show(
           context.extensionUri,
           api,
-          item.repoInfo,
-          item.pr,
+          repoInfo,
+          pr,
         );
       },
     ),
@@ -74,12 +81,9 @@ export function registerPRCommands(
         const provider = PRDiffProvider.getActive();
         if (!provider) return;
 
-        // args[0] is either TreeItemCheckboxState (number) or the PRDiffFileItem
-        // args[1] is the PRDiffFileItem when checkbox is clicked
         const fileItem = (args.length > 1 ? args[1] : args[0]) as PRDiffFileItem;
 
         if (args.length > 1 && typeof args[0] === "number") {
-          // Checkbox toggle
           const state = args[0] as vscode.TreeItemCheckboxState;
           if (state === vscode.TreeItemCheckboxState.Checked) {
             provider.markViewed(fileItem.filename);
@@ -87,7 +91,6 @@ export function registerPRCommands(
             provider.markUnviewed(fileItem.filename);
           }
         } else {
-          // Label click — open diff
           await openFileDiff(provider.api, fileItem.repoInfo, fileItem.pr, fileItem.filename);
         }
       },
@@ -102,12 +105,10 @@ export function registerPRCommands(
         const dirItem = (args.length > 1 ? args[1] : args[0]) as PRDiffDirItem;
 
         if (args.length > 1 && typeof args[0] === "number") {
-          // Checkbox toggle
           const state = args[0] as vscode.TreeItemCheckboxState;
           const check = state === vscode.TreeItemCheckboxState.Checked;
           provider.toggleDirViewed(dirItem.dirPath, check);
         }
-        // Label click does nothing (just expands/collapses via VSCode)
       },
     ),
 
@@ -184,7 +185,6 @@ export function registerPRCommands(
         if (arg instanceof PullRequestItem) {
           await addComment(api, arg.repoInfo, arg.pr.number, prProvider);
         } else {
-          // invoked from command palette — pick a repo then enter PR number
           const repoInfo = await pickRepo(repoManager, auth);
           if (!repoInfo) {
             return;
@@ -202,8 +202,6 @@ export function registerPRCommands(
     ),
   );
 }
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
 
 async function pickRepo(
   repoManager: RepoManager,
@@ -244,7 +242,6 @@ async function checkoutPR(
     vscode.window.showErrorMessage("No git repository found in workspace.");
     return;
   }
-  // Prefer the git repo matching the detected Gitea repo's root path
   const repo = repoInfo
     ? (allRepos.find(
         (r: { rootUri: vscode.Uri }) => r.rootUri.fsPath === repoInfo.rootPath,
@@ -490,11 +487,9 @@ async function openFileDiff(
       api.getFileContents(repoInfo, pr.head.ref, filename),
     ]);
 
-    // Handle cases where the file doesn't exist on one branch (added/deleted)
     const baseText = baseContent.status === "fulfilled" ? baseContent.value : "";
     const headText = headContent.status === "fulfilled" ? headContent.value : "";
 
-    // Check if either side looks binary (contains null bytes)
     const hasNullByte = (s: string) => s.includes("\0");
     if (hasNullByte(baseText) || hasNullByte(headText)) {
       vscode.window.showInformationMessage(`File '${filename}' appears to be binary — skipping diff.`);
