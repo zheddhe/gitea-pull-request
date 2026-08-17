@@ -88,7 +88,7 @@ The generated package is written under `.artifacts/vsix/`.
 4. Follow the existing code style — ESLint 9 flat config + `tsc --strict`.
 5. Keep the scope of changes small and focused — one feature/fix per PR.
 6. Update `README.md` if you add user-facing functionality.
-7. Open the PR against the `master` branch.
+7. Open the PR against the `main` branch.
 
 ### Adding a New API Method
 

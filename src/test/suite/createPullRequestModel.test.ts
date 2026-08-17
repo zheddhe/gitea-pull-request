@@ -33,24 +33,24 @@ suite("CreatePullRequestModel", () => {
   test("branch refresh preserves valid base and head", () => {
     assert.deepStrictEqual(
       reconcileBranchSelection(
-        ["master", "feature/current", "feature/new"],
-        "master",
+        ["main", "feature/current", "feature/new"],
+        "main",
         "feature/current",
         "feature/current",
       ),
-      { baseBranch: "master", headBranch: "feature/current" },
+      { baseBranch: "main", headBranch: "feature/current" },
     );
   });
 
   test("branch refresh falls back coherently when selected refs disappear", () => {
     assert.deepStrictEqual(
       reconcileBranchSelection(
-        ["master", "feature/current", "feature/new"],
+        ["main", "feature/current", "feature/new"],
         "deleted-base",
         "deleted-head",
         "feature/current",
       ),
-      { baseBranch: "master", headBranch: "feature/current" },
+      { baseBranch: "main", headBranch: "feature/current" },
     );
 
     assert.deepStrictEqual(
