@@ -218,4 +218,50 @@ suite("Activity Bar topology", () => {
     assert.match(source, /async refreshBranches\(\): Promise<void>/);
     assert.match(source, /await this\.api\.listBranches\(repoInfo\)/);
   });
+
+  test("removes Webview controls superseded by native title actions", () => {
+    const createSource = fs.readFileSync(
+      path.resolve(
+        __dirname,
+        "../../../src/features/pullRequests/views/createPullRequestView.ts",
+      ),
+      "utf8",
+    );
+    const reviewSource = fs.readFileSync(
+      path.resolve(
+        __dirname,
+        "../../../src/features/pullRequests/views/reviewPullRequestView.ts",
+      ),
+      "utf8",
+    );
+    const postMergeSource = fs.readFileSync(
+      path.resolve(
+        __dirname,
+        "../../../src/features/pullRequests/views/postMergePullRequestView.ts",
+      ),
+      "utf8",
+    );
+
+    assert.doesNotMatch(createSource, /id="cancel"/);
+    assert.doesNotMatch(reviewSource, /id="refresh"/);
+    assert.doesNotMatch(postMergeSource, /id="done"/);
+    assert.match(postMergeSource, /id="refresh"/);
+  });
+
+  test("Review keeps checks PR-centric without duplicating the CI browser", () => {
+    const source = fs.readFileSync(
+      path.resolve(
+        __dirname,
+        "../../../src/features/pullRequests/views/reviewPullRequestView.ts",
+      ),
+      "utf8",
+    );
+
+    assert.match(source, /<div class="section-title">Checks<\/div>/);
+    assert.match(source, /status\.target_url/);
+    assert.match(source, /successfulChecks/);
+    assert.match(source, /pendingChecks/);
+    assert.match(source, /failedChecks/);
+    assert.doesNotMatch(source, /listWorkflowRuns/);
+  });
 });
