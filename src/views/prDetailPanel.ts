@@ -140,11 +140,22 @@ export class PRDetailPanel {
       case "reopenPR":
         await this.setPRState("open");
         break;
-      case "editPR":
-        await this.editPR(
-          (message.title as string) ?? "",
-          (message.body as string) ?? "",
-          message.base as string | undefined,
+      case "editTitle":
+        await this.updatePullRequest(
+          { title: ((message.title as string) ?? "").trim() },
+          "title updated",
+        );
+        break;
+      case "editBody":
+        await this.updatePullRequest(
+          { body: (message.body as string) ?? "" },
+          "description updated",
+        );
+        break;
+      case "updateBase":
+        await this.updatePullRequest(
+          { base: (message.base as string) ?? this.pr.base.ref },
+          "target branch updated",
         );
         break;
       case "refresh":
@@ -185,16 +196,18 @@ export class PRDetailPanel {
     }
   }
 
-  private async editPR(title: string, body: string, base?: string): Promise<void> {
-    if (!title.trim()) {
+  private async updatePullRequest(
+    params: { title?: string; body?: string; base?: string },
+    successLabel: string,
+  ): Promise<void> {
+    if (params.title !== undefined && !params.title.trim()) {
       vscode.window.showWarningMessage("Title cannot be empty.");
       return;
     }
-    const params: { title?: string; body?: string; base?: string } = {
-      title: title.trim(),
-      body,
-    };
-    if (base && base !== this.pr.base.ref) params.base = base;
+    if (params.base !== undefined && !params.base.trim()) {
+      vscode.window.showWarningMessage("Target branch cannot be empty.");
+      return;
+    }
     try {
       this.pr = await this.api.updatePullRequest(
         this.repoInfo,
@@ -203,7 +216,9 @@ export class PRDetailPanel {
       );
       this.panel.title = `PR #${this.pr.number}: ${this.pr.title}`;
       await this.update(this.pr);
-      vscode.window.showInformationMessage(`PR #${this.pr.number} updated.`);
+      vscode.window.showInformationMessage(
+        `PR #${this.pr.number} ${successLabel}.`,
+      );
     } catch (error) {
       vscode.window.showErrorMessage(`Failed: ${(error as Error).message}`);
     }
@@ -431,7 +446,11 @@ export class PRDetailPanel {
   ): string {
     const isOpen = pr.state === "open" && !pr.merged;
     const stateLabel = pr.merged ? "Merged" : isOpen ? "Open" : "Closed";
-    const stateClass = pr.merged ? "state-merged" : isOpen ? "state-open" : "state-closed";
+    const stateClass = pr.merged
+      ? "state-merged"
+      : isOpen
+        ? "state-open"
+        : "state-closed";
     const nonce = getNonce();
 
     const activeReviews = reviews
@@ -458,6 +477,9 @@ export class PRDetailPanel {
           ? "Changes Requested"
           : "Pending";
 
+    const totalAdditions = files.reduce((sum, file) => sum + file.additions, 0);
+    const totalDeletions = files.reduce((sum, file) => sum + file.deletions, 0);
+
     const labelsHtml =
       pr.labels
         ?.map(
@@ -476,6 +498,7 @@ export class PRDetailPanel {
       : "";
 
     const branchOptions = branches
+      .filter((branch) => branch !== pr.head.ref)
       .map(
         (branch) =>
           `<option value="${escHtml(branch)}"${branch === pr.base.ref ? " selected" : ""}>${escHtml(branch)}</option>`,
@@ -484,7 +507,10 @@ export class PRDetailPanel {
 
     const commentsHtml = comments.length
       ? comments
-          .map((comment, index) => `<article class="comment"><header class="comment-header"><img src="${escHtml(comment.user.avatar_url)}" class="avatar" alt=""><strong>${escHtml(comment.user.login)}</strong><span class="time">${escHtml(new Date(comment.created_at).toLocaleString())}</span></header><div class="comment-body markdown-body">${commentBodies[index] ?? ""}</div></article>`)
+          .map(
+            (comment, index) =>
+              `<article class="comment"><header class="comment-header"><img src="${escHtml(comment.user.avatar_url)}" class="avatar" alt=""><strong>${escHtml(comment.user.login)}</strong><span class="time">${escHtml(new Date(comment.created_at).toLocaleString())}</span></header><div class="comment-body markdown-body">${commentBodies[index] ?? ""}</div></article>`,
+          )
           .join("")
       : '<p class="empty">No comments yet.</p>';
 
@@ -501,7 +527,10 @@ export class PRDetailPanel {
 
     const commitsHtml = commits.length
       ? commits
-          .map((commit) => `<article class="commit-entry"><code class="sha">${escHtml(commit.sha.slice(0, 8))}</code><span class="commit-message">${escHtml(commit.commit.message.split("\n")[0])}</span><span class="commit-author">${escHtml(commit.commit.author.name)}</span></article>`)
+          .map(
+            (commit) =>
+              `<article class="commit-entry"><code class="sha">${escHtml(commit.sha.slice(0, 8))}</code><span class="commit-message">${escHtml(commit.commit.message.split("\n")[0])}</span><span class="commit-author">${escHtml(commit.commit.author.name)}</span></article>`,
+          )
           .join("")
       : '<p class="empty">No commits.</p>';
 
@@ -518,6 +547,8 @@ export class PRDetailPanel {
       })
       .join("");
 
+    const discussionIcon = `<svg class="tab-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M2 2h12v9H7.2L4 13.7V11H2V2zm1 1v7h2v1.55L6.8 10H13V3H3z"/></svg>`;
+
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -528,14 +559,14 @@ export class PRDetailPanel {
 <style>
 :root{--surface:var(--vscode-editor-background);--surface-subtle:var(--vscode-textBlockQuote-background,var(--vscode-editor-inactiveSelectionBackground));--fg:var(--vscode-foreground);--muted:var(--vscode-descriptionForeground);--border:var(--vscode-panel-border,var(--vscode-widget-border));--focus:var(--vscode-focusBorder);--link:var(--vscode-textLink-foreground);--input-bg:var(--vscode-input-background);--input-fg:var(--vscode-input-foreground);--input-border:var(--vscode-input-border,transparent);--button-bg:var(--vscode-button-background);--button-fg:var(--vscode-button-foreground);--button-hover:var(--vscode-button-hoverBackground);--button-secondary-bg:var(--vscode-button-secondaryBackground);--button-secondary-fg:var(--vscode-button-secondaryForeground);--button-secondary-hover:var(--vscode-button-secondaryHoverBackground);--success:var(--vscode-testing-iconPassed,var(--vscode-charts-green));--danger:var(--vscode-testing-iconFailed,var(--vscode-errorForeground));--warning:var(--vscode-editorWarning-foreground,var(--vscode-charts-yellow));--info:var(--vscode-charts-blue,var(--vscode-textLink-foreground));--merged:var(--vscode-charts-purple,var(--vscode-symbolIcon-typeParameterForeground));--mono:var(--vscode-editor-font-family);--base-size:var(--vscode-font-size,13px)}
 *{box-sizing:border-box}html,body{margin:0;padding:0;background:var(--surface);color:var(--fg)}body{font-family:var(--vscode-font-family);font-size:var(--base-size);line-height:1.45;padding:16px 20px}button,input,textarea,select{font:inherit}button{color:inherit}a{color:var(--link)}
-.title-row{display:flex;align-items:center;gap:10px;margin-bottom:5px}.title-row h1{font-size:1.22em;line-height:1.3;font-weight:600;margin:0;overflow-wrap:anywhere}.state-dot{width:8px;height:8px;border-radius:50%;flex:0 0 8px;background:currentColor}.state-open{color:var(--success)}.state-closed{color:var(--danger)}.state-merged{color:var(--merged)}
+.title-row{display:flex;align-items:center;gap:10px;margin-bottom:5px;min-width:0}.title-row h1{font-size:1.22em;line-height:1.3;font-weight:600;margin:0;overflow-wrap:anywhere}.state-dot{width:8px;height:8px;border-radius:50%;flex:0 0 8px;background:currentColor}.state-open{color:var(--success)}.state-closed{color:var(--danger)}.state-merged{color:var(--merged)}
 .meta-row,.context-row{display:flex;align-items:center;flex-wrap:wrap;gap:6px 9px;color:var(--muted);font-size:.92em}.meta-row{margin-bottom:5px}.context-row{margin-bottom:12px}.meta-row strong{color:var(--fg)}.badge{display:inline-flex;align-items:center;border:1px solid currentColor;border-radius:999px;padding:1px 7px;font-size:.78em;font-weight:600;text-transform:uppercase}.label{display:inline-flex;align-items:center;border:1px solid var(--label-color);border-radius:999px;padding:1px 7px;font-size:.78em;background:color-mix(in srgb,var(--label-color) 18%,transparent)}
-.branch-tag{font-family:var(--mono);font-size:.92em;background:var(--surface-subtle);border:1px solid var(--border);border-radius:2px;padding:1px 6px;color:var(--fg)}.review-state{display:inline-flex;align-items:center;border:1px solid currentColor;border-radius:999px;padding:1px 7px;font-size:.82em;font-weight:600}.review-approved{color:var(--success)}.review-changes-requested{color:var(--danger)}.review-pending{color:var(--warning)}
-.actions{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}.btn{border:1px solid transparent;border-radius:2px;padding:4px 10px;min-height:26px;cursor:pointer;background:var(--button-bg);color:var(--button-fg)}.btn:hover{background:var(--button-hover)}.btn.sec{background:var(--button-secondary-bg);color:var(--button-secondary-fg)}.btn.sec:hover{background:var(--button-secondary-hover)}.btn.danger{background:var(--button-secondary-bg);color:var(--danger);border-color:color-mix(in srgb,var(--danger) 55%,transparent)}.btn.success{background:var(--button-secondary-bg);color:var(--success);border-color:color-mix(in srgb,var(--success) 55%,transparent)}.btn.small{padding:2px 8px;min-height:22px;font-size:.9em}.btn:focus-visible,.tab:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,.file-header:focus-visible,a:focus-visible{outline:1px solid var(--focus);outline-offset:2px}
-.edit-form,.review-submit{background:var(--surface-subtle);border:1px solid var(--border);border-radius:3px;padding:12px;margin-bottom:14px}.edit-form{border-color:var(--focus)}.field{margin-bottom:10px}.field label,.form-section label{display:block;margin-bottom:4px;font-size:.92em;font-weight:600}.edit-actions,.review-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.review-batch-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;padding-top:8px;border-top:1px solid var(--border)}.review-batch-hint{color:var(--muted);font-size:.9em}.submit-inline{display:none}.submit-inline.visible{display:inline-flex}textarea,input[type="text"],select{background:var(--input-bg);color:var(--input-fg);border:1px solid var(--input-border);border-radius:2px;padding:6px 8px}textarea,input[type="text"]{width:100%}textarea{resize:vertical;line-height:1.45}
-.tabs{display:flex;gap:2px;border-bottom:1px solid var(--border);margin:0 0 14px}.tab{background:transparent;border:0;border-bottom:2px solid transparent;color:var(--muted);cursor:pointer;padding:6px 10px}.tab.active{color:var(--fg);border-bottom-color:var(--focus);font-weight:600}.tab-content{display:none}.tab-content.active{display:block}
+.branch-tag{font-family:var(--mono);font-size:.92em;background:var(--surface-subtle);border:1px solid var(--border);border-radius:2px;padding:1px 6px;color:var(--fg)}.review-state{display:inline-flex;align-items:center;border:1px solid currentColor;border-radius:999px;padding:1px 7px;font-size:.82em;font-weight:600}.review-approved{color:var(--success)}.review-changes-requested{color:var(--danger)}.review-pending{color:var(--warning)}.context-separator{color:var(--border)}.context-stat{display:inline-flex;gap:3px}.context-stat strong{font-weight:600}.additions{color:var(--success)}.deletions{color:var(--danger)}
+.actions{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}.btn{border:1px solid transparent;border-radius:2px;padding:4px 10px;min-height:26px;cursor:pointer;background:var(--button-bg);color:var(--button-fg)}.btn:hover{background:var(--button-hover)}.btn.sec{background:var(--button-secondary-bg);color:var(--button-secondary-fg)}.btn.sec:hover{background:var(--button-secondary-hover)}.btn.danger{background:var(--button-secondary-bg);color:var(--danger);border-color:color-mix(in srgb,var(--danger) 55%,transparent)}.btn.success{background:var(--button-secondary-bg);color:var(--success);border-color:color-mix(in srgb,var(--success) 55%,transparent)}.btn.small{padding:2px 8px;min-height:22px;font-size:.9em}.btn.ghost{background:transparent;color:var(--muted);border-color:var(--border)}.btn:focus-visible,.tab:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,.file-header:focus-visible,a:focus-visible{outline:1px solid var(--focus);outline-offset:2px}
+.local-editor{background:var(--surface-subtle);border:1px solid var(--focus);border-radius:3px;padding:10px 12px;margin:6px 0 12px}.local-editor .editor-actions{display:flex;gap:6px;margin-top:8px}.title-editor{max-width:760px}.body-toolbar{display:flex;justify-content:flex-end;margin-bottom:7px}.body-editor textarea{min-height:140px}
+.review-submit{background:var(--surface-subtle);border:1px solid var(--border);border-radius:3px;padding:12px;margin-bottom:14px}.field{margin-bottom:10px}.field label,.form-section label{display:block;margin-bottom:4px;font-size:.92em;font-weight:600}.review-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.review-batch-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;padding-top:8px;border-top:1px solid var(--border)}.review-batch-hint{color:var(--muted);font-size:.9em}.submit-inline{display:none}.submit-inline.visible{display:inline-flex}textarea,input[type="text"],select{background:var(--input-bg);color:var(--input-fg);border:1px solid var(--input-border);border-radius:2px;padding:6px 8px}textarea,input[type="text"]{width:100%}textarea{resize:vertical;line-height:1.45}
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--border);margin:0 0 14px}.tab{display:inline-flex;align-items:center;gap:6px;background:transparent;border:0;border-bottom:2px solid transparent;color:var(--muted);cursor:pointer;padding:6px 10px}.tab.active{color:var(--fg);border-bottom-color:var(--focus);font-weight:600}.tab-icon{width:15px;height:15px;flex:0 0 15px}.tab-content{display:none}.tab-content.active{display:block}
 .markdown-card{background:var(--surface-subtle);border:1px solid var(--border);border-radius:3px;padding:12px 14px;margin-bottom:14px;overflow-wrap:anywhere}.markdown-body{font-size:1em;line-height:1.5}.markdown-body h1,.markdown-body h2,.markdown-body h3,.markdown-body h4,.markdown-body h5,.markdown-body h6{font-weight:600;line-height:1.3;margin:1.05em 0 .45em}.markdown-body h1:first-child,.markdown-body h2:first-child,.markdown-body h3:first-child{margin-top:0}.markdown-body h1{font-size:1.28em;border-bottom:1px solid var(--border);padding-bottom:.25em}.markdown-body h2{font-size:1.16em}.markdown-body h3{font-size:1.06em}.markdown-body h4,.markdown-body h5,.markdown-body h6{font-size:1em}.markdown-body p{margin:.55em 0}.markdown-body ul,.markdown-body ol{margin:.55em 0;padding-left:1.65em}.markdown-body li{margin:.22em 0}.markdown-body blockquote{border-left:3px solid var(--vscode-textBlockQuote-border,var(--border));padding:.25em .8em;margin:.7em 0;color:var(--muted)}.markdown-body code{font-family:var(--mono);font-size:.92em;background:var(--vscode-textCodeBlock-background,var(--surface-subtle));padding:.08em .3em}.markdown-body pre{font-family:var(--mono);font-size:.92em;background:var(--vscode-textCodeBlock-background,var(--surface-subtle));border:1px solid var(--border);padding:9px 11px;overflow:auto}.markdown-body pre code{background:transparent;padding:0}.markdown-body table{border-collapse:collapse;display:block;overflow:auto}.markdown-body th,.markdown-body td{border:1px solid var(--border);padding:5px 8px}.markdown-body img{max-width:100%}.markdown-body input[type="checkbox"]{width:auto;margin-right:6px;accent-color:var(--success)}
-.stats-row{display:flex;gap:16px;flex-wrap:wrap;border:1px solid var(--border);border-radius:3px;padding:8px 12px;margin-bottom:14px}.stat{display:flex;gap:5px}.stat-label{color:var(--muted)}.additions{color:var(--success)}.deletions{color:var(--danger)}
 .section-heading{font-size:1em;font-weight:600;margin:14px 0 8px}.comment,.review{border:1px solid var(--border);border-radius:3px;margin-bottom:10px;overflow:hidden}.comment-header,.review-header{display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--surface-subtle);border-bottom:1px solid var(--border)}.avatar{width:20px;height:20px;border-radius:50%}.time{margin-left:auto;color:var(--muted);font-size:.92em}.comment-body,.review-body{padding:10px 12px}.review{border-left-width:3px}.review-approved{border-left-color:var(--success)}.review-request_changes{border-left-color:var(--danger)}.review-comment,.review-commented{border-left-color:var(--info)}.review-badge{font-size:.78em;border:1px solid currentColor;border-radius:999px;padding:1px 6px;text-transform:capitalize}.review-badge-approved{color:var(--success)}.review-badge-request_changes{color:var(--danger)}.review-badge-comment,.review-badge-commented{color:var(--info)}
 .form-section{margin-top:14px}.empty,.muted{color:var(--muted)}.empty{font-style:italic}.commit-entry{display:grid;grid-template-columns:max-content minmax(0,1fr) max-content;gap:10px;padding:7px 4px;border-bottom:1px solid var(--border);align-items:baseline}.sha{font-family:var(--mono);font-size:.9em;background:var(--surface-subtle);padding:1px 5px}.commit-message{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.commit-author{color:var(--muted);font-size:.92em}
 .files-summary{color:var(--muted);font-size:.92em;margin:10px 0}.file-block{border:1px solid var(--border);border-radius:3px;margin-bottom:7px;overflow:hidden}.file-header{width:100%;display:flex;align-items:center;gap:8px;border:0;background:var(--surface-subtle);padding:7px 10px;cursor:pointer;text-align:left}.file-path{font-family:var(--mono);font-size:.92em;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}.file-status{display:inline-flex;width:17px;height:17px;align-items:center;justify-content:center;border:1px solid currentColor;border-radius:2px;font-size:.72em;font-weight:600}.file-status-added{color:var(--success)}.file-status-deleted{color:var(--danger)}.file-status-modified,.file-status-changed{color:var(--warning)}.file-status-renamed{color:var(--info)}.file-stats{font-size:.9em}.chevron{color:var(--muted);font-size:1.2em;transition:transform .15s}.file-header[aria-expanded="true"] .chevron{transform:rotate(90deg)}.file-diff{overflow:auto;border-top:1px solid var(--border)}
@@ -545,11 +576,26 @@ export class PRDetailPanel {
 </style>
 </head>
 <body>
-<header><div class="title-row"><span class="state-dot ${stateClass}" aria-hidden="true"></span><h1>Pull Request #${pr.number} ${escHtml(pr.title)}</h1><button id="edit" class="btn small">Edit</button></div><div class="meta-row"><span class="badge ${stateClass}">${stateLabel}</span><span>by <strong>${escHtml(pr.user.login)}</strong></span><span>${escHtml(new Date(pr.created_at).toLocaleDateString())}</span>${labelsHtml}${assigneesHtml}${milestoneHtml}</div><div class="context-row"><span class="branch-tag">${escHtml(pr.head.ref)}</span><span>→</span><span class="branch-tag">${escHtml(pr.base.ref)}</span><span class="review-state review-${reviewStatus}">${reviewLabel}</span></div></header>
+<header>
+  <div class="title-row"><span class="state-dot ${stateClass}" aria-hidden="true"></span><h1>Pull Request #${pr.number} ${escHtml(pr.title)}</h1><button id="edit-title" class="btn small">Edit</button></div>
+  <div id="title-editor" class="local-editor title-editor" hidden><input id="title-input" type="text" value="${escHtml(pr.title)}"><div class="editor-actions"><button id="save-title" class="btn">Save</button><button id="cancel-title" class="btn sec">Cancel</button></div></div>
+  <div class="meta-row"><span class="badge ${stateClass}">${stateLabel}</span><span>by <strong>${escHtml(pr.user.login)}</strong></span><span>${escHtml(new Date(pr.created_at).toLocaleDateString())}</span>${labelsHtml}${assigneesHtml}${milestoneHtml}</div>
+  <div class="context-row">
+    <span class="review-state review-${reviewStatus}">${reviewLabel}</span>
+    <span class="branch-tag">${escHtml(pr.head.ref)}</span><span>→</span><span class="branch-tag">${escHtml(pr.base.ref)}</span>
+    ${isOpen ? '<button id="edit-base" class="btn small ghost">Change base</button>' : ""}
+    <span class="context-separator">·</span><span class="context-stat">Additions <strong class="additions">+${totalAdditions}</strong></span><span class="context-stat">Deletions <strong class="deletions">-${totalDeletions}</strong></span><span class="context-stat">Files <strong>${files.length}</strong></span>
+  </div>
+  <div id="base-editor" class="local-editor" hidden><label for="base-input"><strong>Target branch</strong></label><select id="base-input">${branchOptions}</select><div class="editor-actions"><button id="save-base" class="btn">Update base</button><button id="cancel-base" class="btn sec">Cancel</button></div></div>
+</header>
 <div class="actions"><button id="open-browser" class="btn">Open in Browser</button><button id="checkout" class="btn sec">Checkout</button><button id="refresh" class="btn sec">Refresh</button>${isOpen ? `<select id="merge-method" aria-label="Merge method"><option value="merge">Merge commit</option><option value="rebase">Rebase</option><option value="squash">Squash</option></select><button id="merge" class="btn success">Merge PR</button><button id="change-state" class="btn danger">Close PR</button>` : pr.state === "closed" && !pr.merged ? '<button id="change-state" class="btn success">Re-open</button>' : ""}</div>
-<div id="edit-form" class="edit-form" hidden><div class="field"><label for="edit-title">Title</label><input id="edit-title" type="text" value="${escHtml(pr.title)}"></div><div class="field"><label for="edit-body">Body</label><textarea id="edit-body" style="height:120px">${escHtml(pr.body || "")}</textarea></div><div class="field"><label for="edit-base">Base Branch</label><select id="edit-base">${branchOptions}</select></div><div class="edit-actions"><button id="save-edit" class="btn">Save</button><button id="cancel-edit" class="btn sec">Cancel</button></div></div>
-<nav class="tabs" role="tablist" aria-label="Pull request detail sections"><button class="tab active" id="details-tab" data-tab="details" role="tab" aria-selected="true">Details</button><button class="tab" id="reviews-tab" data-tab="reviews" role="tab" aria-selected="false">Reviews (${activeReviews.length})</button><button class="tab" id="commits-tab" data-tab="commits" role="tab" aria-selected="false">Commits (${commits.length})</button></nav>
-<section id="tab-details" class="tab-content active" role="tabpanel" aria-labelledby="details-tab">${bodyHtml ? `<div class="markdown-card markdown-body">${bodyHtml}</div>` : '<div class="markdown-card empty">(no description)</div>'}${pr.commits != null || pr.additions != null ? `<div class="stats-row">${pr.commits != null ? `<div class="stat"><span class="stat-label">Commits</span><strong>${pr.commits}</strong></div>` : ""}${pr.additions != null ? `<div class="stat"><span class="stat-label">Additions</span><strong class="additions">+${pr.additions}</strong></div>` : ""}${pr.deletions != null ? `<div class="stat"><span class="stat-label">Deletions</span><strong class="deletions">-${pr.deletions}</strong></div>` : ""}${pr.changed_files != null ? `<div class="stat"><span class="stat-label">Files</span><strong>${pr.changed_files}</strong></div>` : ""}</div>` : ""}<h2 class="section-heading">Comments (${comments.length})</h2><div>${commentsHtml}</div><div class="form-section"><label for="comment-body">Add a comment</label><textarea id="comment-body" style="height:70px" placeholder="Write a comment..."></textarea><div class="edit-actions"><button id="post-comment" class="btn">Post Comment</button></div></div></section>
+<nav class="tabs" role="tablist" aria-label="Pull request detail sections"><button class="tab active" id="discussion-tab" data-tab="discussion" role="tab" aria-selected="true">${discussionIcon}<span>Discussion (${comments.length})</span></button><button class="tab" id="reviews-tab" data-tab="reviews" role="tab" aria-selected="false">Reviews (${activeReviews.length})</button><button class="tab" id="commits-tab" data-tab="commits" role="tab" aria-selected="false">Commits (${commits.length})</button></nav>
+<section id="tab-discussion" class="tab-content active" role="tabpanel" aria-labelledby="discussion-tab">
+  <div class="body-toolbar"><button id="edit-body" class="btn small ghost">Edit description</button></div>
+  <div id="body-view">${bodyHtml ? `<div class="markdown-card markdown-body">${bodyHtml}</div>` : '<div class="markdown-card empty">(no description)</div>'}</div>
+  <div id="body-editor" class="local-editor body-editor" hidden><textarea id="body-input">${escHtml(pr.body || "")}</textarea><div class="editor-actions"><button id="save-body" class="btn">Save</button><button id="cancel-body" class="btn sec">Cancel</button></div></div>
+  <h2 class="section-heading">Comments (${comments.length})</h2><div>${commentsHtml}</div><div class="form-section"><label for="comment-body">Add a comment</label><textarea id="comment-body" style="height:70px" placeholder="Write a comment..."></textarea><div class="editor-actions"><button id="post-comment" class="btn">Post Comment</button></div></div>
+</section>
 <section id="tab-reviews" class="tab-content" role="tabpanel" aria-labelledby="reviews-tab"><div class="review-submit"><strong>Submit Review <span id="pending-count" class="muted"></span></strong><textarea id="review-body" style="height:70px;margin-top:8px" placeholder="Overall review comment (optional)..."></textarea><div class="review-actions">${isOpen ? '<button class="btn success" data-review-event="APPROVED">Approve</button><button class="btn danger" data-review-event="REQUEST_CHANGES">Request Changes</button>' : ""}<button class="btn" data-review-event="COMMENT">Comment</button></div><div class="review-batch-actions"><button id="submit-inline" class="btn sec submit-inline">Submit inline comments</button><span id="review-batch-hint" class="review-batch-hint">Inline comments are queued until you submit a review.</span></div></div><div class="files-summary">${files.length} file(s) changed · Select a diff line to add an inline review comment</div>${filesHtml}<h2 class="section-heading">Submitted Reviews</h2>${reviewsHtml}</section>
 <section id="tab-commits" class="tab-content" role="tabpanel" aria-labelledby="commits-tab">${commitsHtml}</section>
 <script nonce="${nonce}">
@@ -558,7 +604,11 @@ function post(command,extra){vscode.postMessage(Object.assign({command},extra||{
 function showTab(name,button){document.querySelectorAll('.tab-content').forEach((el)=>el.classList.remove('active'));document.querySelectorAll('.tab').forEach((el)=>{el.classList.remove('active');el.setAttribute('aria-selected','false');});document.getElementById('tab-'+name)?.classList.add('active');button.classList.add('active');button.setAttribute('aria-selected','true');}
 function submitReview(event){post('submitReview',{event,body:document.getElementById('review-body').value||'',comments:pendingComments.filter(Boolean)});}
 function updatePendingCount(){const count=pendingComments.filter(Boolean).length;const el=document.getElementById('pending-count');const submit=document.getElementById('submit-inline');const hint=document.getElementById('review-batch-hint');if(el)el.textContent=count?'('+count+' pending inline comment'+(count===1?'':'s')+')':'';if(submit)submit.classList.toggle('visible',count>0);if(hint)hint.textContent=count?count+' inline comment'+(count===1?' is':'s are')+' ready to submit.':'Inline comments are queued until you submit a review.';}
-document.getElementById('edit')?.addEventListener('click',()=>{document.getElementById('edit-form').hidden=false;document.getElementById('edit-title')?.focus();});document.getElementById('cancel-edit')?.addEventListener('click',()=>{document.getElementById('edit-form').hidden=true;});document.getElementById('save-edit')?.addEventListener('click',()=>{post('editPR',{title:document.getElementById('edit-title').value,body:document.getElementById('edit-body').value,base:document.getElementById('edit-base').value});document.getElementById('edit-form').hidden=true;});document.getElementById('open-browser')?.addEventListener('click',()=>post('openInBrowser'));document.getElementById('checkout')?.addEventListener('click',()=>post('checkout'));document.getElementById('refresh')?.addEventListener('click',()=>post('refresh'));document.getElementById('merge')?.addEventListener('click',()=>post('merge',{method:document.getElementById('merge-method').value}));document.getElementById('change-state')?.addEventListener('click',()=>post('${isOpen ? "closePR" : "reopenPR"}'));document.getElementById('post-comment')?.addEventListener('click',()=>{const input=document.getElementById('comment-body');const body=(input.value||'').trim();if(!body)return;post('addComment',{body});input.value='';});document.querySelectorAll('[data-tab]').forEach((button)=>button.addEventListener('click',()=>showTab(button.dataset.tab,button)));document.querySelectorAll('[data-review-event]').forEach((button)=>button.addEventListener('click',()=>submitReview(button.dataset.reviewEvent)));document.getElementById('submit-inline')?.addEventListener('click',()=>submitReview('COMMENT'));document.querySelectorAll('[data-file-toggle]').forEach((button)=>button.addEventListener('click',()=>{const index=button.dataset.fileToggle;const diff=document.getElementById('file-diff-'+index);const expanded=button.getAttribute('aria-expanded')==='true';button.setAttribute('aria-expanded',String(!expanded));if(diff)diff.hidden=expanded;}));document.querySelectorAll('.clickable-line').forEach((row)=>row.addEventListener('click',()=>{const key=row.dataset.fileIndex+'-'+row.dataset.pos;const form=document.getElementById('comment-form-'+key);if(!form)return;if(openFormKey&&openFormKey!==key){const previous=document.getElementById('comment-form-'+openFormKey);if(previous)previous.hidden=true;}form.hidden=!form.hidden;openFormKey=form.hidden?null:key;if(!form.hidden)form.querySelector('textarea')?.focus();}));document.querySelectorAll('.cancel-inline').forEach((button)=>button.addEventListener('click',(event)=>{event.stopPropagation();button.closest('tr').hidden=true;openFormKey=null;}));document.querySelectorAll('.add-inline').forEach((button)=>button.addEventListener('click',(event)=>{event.stopPropagation();const row=button.closest('tr');const input=row.querySelector('textarea');const body=(input.value||'').trim();if(!body)return;const index=pendingComments.length;pendingComments.push({path:row.dataset.path,new_position:parseInt(row.dataset.newLine||'0',10),old_position:parseInt(row.dataset.oldLine||'0',10),body});const pending=document.createElement('tr');pending.innerHTML='<td colspan="3"><div class="pending-review-comment"><span class="pending-body"></span><button class="remove-pending" title="Remove">×</button></div></td>';pending.querySelector('.pending-body').textContent=body;pending.querySelector('.remove-pending').addEventListener('click',()=>{pendingComments[index]=null;pending.remove();updatePendingCount();});row.after(pending);row.hidden=true;input.value='';openFormKey=null;updatePendingCount();}));document.querySelectorAll('.markdown-body a[href]').forEach((link)=>link.addEventListener('click',(event)=>{event.preventDefault();post('openExternal',{url:link.getAttribute('href')});}));updatePendingCount();
+function toggleEditor(id,show,focusId){const editor=document.getElementById(id);if(editor)editor.hidden=!show;if(show&&focusId)document.getElementById(focusId)?.focus();}
+document.getElementById('edit-title')?.addEventListener('click',()=>toggleEditor('title-editor',true,'title-input'));document.getElementById('cancel-title')?.addEventListener('click',()=>toggleEditor('title-editor',false));document.getElementById('save-title')?.addEventListener('click',()=>{const title=(document.getElementById('title-input').value||'').trim();if(title)post('editTitle',{title});});
+document.getElementById('edit-body')?.addEventListener('click',()=>{document.getElementById('body-view').hidden=true;toggleEditor('body-editor',true,'body-input');});document.getElementById('cancel-body')?.addEventListener('click',()=>{toggleEditor('body-editor',false);document.getElementById('body-view').hidden=false;});document.getElementById('save-body')?.addEventListener('click',()=>post('editBody',{body:document.getElementById('body-input').value||''}));
+document.getElementById('edit-base')?.addEventListener('click',()=>toggleEditor('base-editor',true,'base-input'));document.getElementById('cancel-base')?.addEventListener('click',()=>toggleEditor('base-editor',false));document.getElementById('save-base')?.addEventListener('click',()=>post('updateBase',{base:document.getElementById('base-input').value}));
+document.getElementById('open-browser')?.addEventListener('click',()=>post('openInBrowser'));document.getElementById('checkout')?.addEventListener('click',()=>post('checkout'));document.getElementById('refresh')?.addEventListener('click',()=>post('refresh'));document.getElementById('merge')?.addEventListener('click',()=>post('merge',{method:document.getElementById('merge-method').value}));document.getElementById('change-state')?.addEventListener('click',()=>post('${isOpen ? "closePR" : "reopenPR"}'));document.getElementById('post-comment')?.addEventListener('click',()=>{const input=document.getElementById('comment-body');const body=(input.value||'').trim();if(!body)return;post('addComment',{body});input.value='';});document.querySelectorAll('[data-tab]').forEach((button)=>button.addEventListener('click',()=>showTab(button.dataset.tab,button)));document.querySelectorAll('[data-review-event]').forEach((button)=>button.addEventListener('click',()=>submitReview(button.dataset.reviewEvent)));document.getElementById('submit-inline')?.addEventListener('click',()=>submitReview('COMMENT'));document.querySelectorAll('[data-file-toggle]').forEach((button)=>button.addEventListener('click',()=>{const index=button.dataset.fileToggle;const diff=document.getElementById('file-diff-'+index);const expanded=button.getAttribute('aria-expanded')==='true';button.setAttribute('aria-expanded',String(!expanded));if(diff)diff.hidden=expanded;}));document.querySelectorAll('.clickable-line').forEach((row)=>row.addEventListener('click',()=>{const key=row.dataset.fileIndex+'-'+row.dataset.pos;const form=document.getElementById('comment-form-'+key);if(!form)return;if(openFormKey&&openFormKey!==key){const previous=document.getElementById('comment-form-'+openFormKey);if(previous)previous.hidden=true;}form.hidden=!form.hidden;openFormKey=form.hidden?null:key;if(!form.hidden)form.querySelector('textarea')?.focus();}));document.querySelectorAll('.cancel-inline').forEach((button)=>button.addEventListener('click',(event)=>{event.stopPropagation();button.closest('tr').hidden=true;openFormKey=null;}));document.querySelectorAll('.add-inline').forEach((button)=>button.addEventListener('click',(event)=>{event.stopPropagation();const row=button.closest('tr');const input=row.querySelector('textarea');const body=(input.value||'').trim();if(!body)return;const index=pendingComments.length;pendingComments.push({path:row.dataset.path,new_position:parseInt(row.dataset.newLine||'0',10),old_position:parseInt(row.dataset.oldLine||'0',10),body});const pending=document.createElement('tr');pending.innerHTML='<td colspan="3"><div class="pending-review-comment"><span class="pending-body"></span><button class="remove-pending" title="Remove">×</button></div></td>';pending.querySelector('.pending-body').textContent=body;pending.querySelector('.remove-pending').addEventListener('click',()=>{pendingComments[index]=null;pending.remove();updatePendingCount();});row.after(pending);row.hidden=true;input.value='';openFormKey=null;updatePendingCount();}));document.querySelectorAll('.markdown-body a[href]').forEach((link)=>link.addEventListener('click',(event)=>{event.preventDefault();post('openExternal',{url:link.getAttribute('href')});}));updatePendingCount();
 </script>
 </body>
 </html>`;
