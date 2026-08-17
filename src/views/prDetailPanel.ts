@@ -11,22 +11,16 @@ import type {
 } from "../api/types";
 import { log } from "../debug/outputChannel";
 
-// ── Raw diff parser ──────────────────────────────────────────────────────────
-
-/** Parse a unified diff string into a map of filename → patch string */
 function parseRawDiff(raw: string): Map<string, string> {
   const map = new Map<string, string>();
   const fileBlocks = raw.split(/^diff --git /m).slice(1);
   for (const block of fileBlocks) {
     const firstLine = block.split("\n")[0];
-    const mB = firstLine.match(/ b\/(.+)$/);
-    if (!mB) {
-      continue;
-    }
-    const filename = mB[1].trim();
-    const hunkIdx = block.indexOf("\n@@");
-    const patch = hunkIdx >= 0 ? block.slice(hunkIdx + 1) : "";
-    map.set(filename, patch);
+    const match = firstLine.match(/ b\/(.+)$/);
+    if (!match) continue;
+    const filename = match[1].trim();
+    const hunkIndex = block.indexOf("\n@@");
+    map.set(filename, hunkIndex >= 0 ? block.slice(hunkIndex + 1) : "");
   }
   return map;
 }
@@ -40,46 +34,36 @@ interface DiffLine {
 }
 
 function parsePatch(patch: string): DiffLine[] {
-  if (!patch?.trim()) {
-    return [];
-  }
+  if (!patch?.trim()) return [];
   const result: DiffLine[] = [];
-  let oldLine = 0,
-    newLine = 0,
-    pos = 0;
+  let oldLine = 0;
+  let newLine = 0;
+  let pos = 0;
   for (const raw of patch.split("\n")) {
-    pos++;
+    pos += 1;
     if (raw.startsWith("@@")) {
-      const m = raw.match(/@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
-      if (m) {
-        oldLine = parseInt(m[1]) - 1;
-        newLine = parseInt(m[2]) - 1;
+      const match = raw.match(/@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+      if (match) {
+        oldLine = parseInt(match[1], 10) - 1;
+        newLine = parseInt(match[2], 10) - 1;
       }
       result.push({ type: "hunk", content: raw, pos });
     } else if (raw.startsWith("+")) {
-      newLine++;
+      newLine += 1;
       result.push({ type: "add", content: raw.slice(1), newLine, pos });
     } else if (raw.startsWith("-")) {
-      oldLine++;
+      oldLine += 1;
       result.push({ type: "del", content: raw.slice(1), oldLine, pos });
     } else if (raw.startsWith("\\")) {
       result.push({ type: "meta", content: raw, pos });
     } else if (raw !== "") {
-      oldLine++;
-      newLine++;
-      result.push({
-        type: "ctx",
-        content: raw.slice(1),
-        oldLine,
-        newLine,
-        pos,
-      });
+      oldLine += 1;
+      newLine += 1;
+      result.push({ type: "ctx", content: raw.slice(1), oldLine, newLine, pos });
     }
   }
   return result;
 }
-
-// ── Panel class ──────────────────────────────────────────────────────────────
 
 export class PRDetailPanel {
   private static panels = new Map<number, PRDetailPanel>();
@@ -116,25 +100,25 @@ export class PRDetailPanel {
     private pr: GiteaPullRequest,
   ) {
     this.panel = panel;
-
+    void this.extensionUri;
     panel.onDidDispose(() => this.dispose(), null, this.disposables);
     panel.webview.onDidReceiveMessage(
-      (msg) => this.handleMessage(msg),
+      (message) => this.handleMessage(message),
       null,
       this.disposables,
     );
   }
 
-  private async handleMessage(msg: {
+  private async handleMessage(message: {
     command: string;
     [key: string]: unknown;
   }): Promise<void> {
-    switch (msg.command) {
+    switch (message.command) {
       case "submitReview":
         await this.submitReviewWithComments(
-          msg.event as "APPROVED" | "REQUEST_CHANGES" | "COMMENT",
-          (msg.body as string) ?? "",
-          (msg.comments as Array<{
+          message.event as "APPROVED" | "REQUEST_CHANGES" | "COMMENT",
+          (message.body as string) ?? "",
+          (message.comments as Array<{
             path: string;
             new_position: number;
             old_position: number;
@@ -143,11 +127,11 @@ export class PRDetailPanel {
         );
         break;
       case "addComment":
-        await this.addPRComment((msg.body as string) ?? "");
+        await this.addPRComment((message.body as string) ?? "");
         break;
       case "merge":
         await this.merge(
-          (msg.method as "merge" | "rebase" | "squash") ?? "merge",
+          (message.method as "merge" | "rebase" | "squash") ?? "merge",
         );
         break;
       case "closePR":
@@ -158,9 +142,9 @@ export class PRDetailPanel {
         break;
       case "editPR":
         await this.editPR(
-          (msg.title as string) ?? "",
-          (msg.body as string) ?? "",
-          msg.base as string | undefined,
+          (message.title as string) ?? "",
+          (message.body as string) ?? "",
+          message.base as string | undefined,
         );
         break;
       case "refresh":
@@ -168,7 +152,10 @@ export class PRDetailPanel {
         await this.update(this.pr);
         break;
       case "openInBrowser":
-        vscode.env.openExternal(vscode.Uri.parse(this.pr.html_url));
+        await vscode.env.openExternal(vscode.Uri.parse(this.pr.html_url));
+        break;
+      case "openExternal":
+        await this.openExternal((message.url as string) ?? "");
         break;
       case "checkout":
         await vscode.commands.executeCommand(
@@ -178,19 +165,27 @@ export class PRDetailPanel {
         );
         break;
       case "debug":
-        log("PR webview: " + (msg.body as string));
+        log("PR webview: " + (message.body as string));
         break;
       default:
-        log("PR unknown message: " + msg.command);
-        break;
+        log("PR unknown message: " + message.command);
     }
   }
 
-  private async editPR(
-    title: string,
-    body: string,
-    base?: string,
-  ): Promise<void> {
+  private async openExternal(rawUrl: string): Promise<void> {
+    try {
+      const resolved = new URL(rawUrl, this.pr.html_url);
+      if (resolved.protocol !== "http:" && resolved.protocol !== "https:") {
+        throw new Error("Unsupported URL scheme");
+      }
+      await vscode.env.openExternal(vscode.Uri.parse(resolved.toString()));
+    } catch (error) {
+      log(`PR link rejected: ${rawUrl} (${(error as Error).message})`);
+      vscode.window.showWarningMessage("Unsupported pull request link.");
+    }
+  }
+
+  private async editPR(title: string, body: string, base?: string): Promise<void> {
     if (!title.trim()) {
       vscode.window.showWarningMessage("Title cannot be empty.");
       return;
@@ -199,9 +194,7 @@ export class PRDetailPanel {
       title: title.trim(),
       body,
     };
-    if (base && base !== this.pr.base.ref) {
-      params.base = base;
-    }
+    if (base && base !== this.pr.base.ref) params.base = base;
     try {
       this.pr = await this.api.updatePullRequest(
         this.repoInfo,
@@ -210,42 +203,32 @@ export class PRDetailPanel {
       );
       this.panel.title = `PR #${this.pr.number}: ${this.pr.title}`;
       await this.update(this.pr);
-      vscode.window.showInformationMessage(
-        `PR #${this.pr.number} updated.`,
-      );
-    } catch (err) {
-      vscode.window.showErrorMessage(`Failed: ${(err as Error).message}`);
+      vscode.window.showInformationMessage(`PR #${this.pr.number} updated.`);
+    } catch (error) {
+      vscode.window.showErrorMessage(`Failed: ${(error as Error).message}`);
     }
   }
 
   private async setPRState(state: "open" | "closed"): Promise<void> {
     try {
       if (state === "closed") {
-        const ok = await vscode.window.showWarningMessage(
+        const confirmation = await vscode.window.showWarningMessage(
           `Close PR #${this.pr.number}?`,
           { modal: true },
           "Confirm",
         );
-        if (ok !== "Confirm") {
-          return;
-        }
-        this.pr = await this.api.closePullRequest(
-          this.repoInfo,
-          this.pr.number,
-        );
+        if (confirmation !== "Confirm") return;
+        this.pr = await this.api.closePullRequest(this.repoInfo, this.pr.number);
       } else {
-        this.pr = await this.api.reopenPullRequest(
-          this.repoInfo,
-          this.pr.number,
-        );
+        this.pr = await this.api.reopenPullRequest(this.repoInfo, this.pr.number);
       }
       this.panel.title = `PR #${this.pr.number}: ${this.pr.title}`;
       await this.update(this.pr);
       vscode.window.showInformationMessage(
         `PR #${this.pr.number} ${state === "closed" ? "closed" : "re-opened"}.`,
       );
-    } catch (err) {
-      vscode.window.showErrorMessage(`Failed: ${(err as Error).message}`);
+    } catch (error) {
+      vscode.window.showErrorMessage(`Failed: ${(error as Error).message}`);
     }
   }
 
@@ -267,9 +250,6 @@ export class PRDetailPanel {
         body,
         comments,
       );
-      this.panel.webview.postMessage({
-        command: "reviewSubmitted",
-      });
       const label =
         event === "APPROVED"
           ? "Approved"
@@ -281,50 +261,45 @@ export class PRDetailPanel {
       );
       this.pr = await this.api.getPullRequest(this.repoInfo, this.pr.number);
       await this.update(this.pr);
-    } catch (err) {
+    } catch (error) {
       vscode.window.showErrorMessage(
-        `Failed to submit review: ${(err as Error).message}`,
+        `Failed to submit review: ${(error as Error).message}`,
       );
     }
   }
 
   private async addPRComment(body: string): Promise<void> {
-    if (!body.trim()) {
-      return;
-    }
+    if (!body.trim()) return;
     try {
       await this.api.addPRComment(this.repoInfo, this.pr.number, body);
       this.pr = await this.api.getPullRequest(this.repoInfo, this.pr.number);
       await this.update(this.pr);
-    } catch (err) {
-      vscode.window.showErrorMessage(`Failed: ${(err as Error).message}`);
+    } catch (error) {
+      vscode.window.showErrorMessage(`Failed: ${(error as Error).message}`);
     }
   }
 
   private async merge(method: "merge" | "rebase" | "squash"): Promise<void> {
-    const ok = await vscode.window.showWarningMessage(
+    const confirmation = await vscode.window.showWarningMessage(
       `Merge PR #${this.pr.number} using "${method}"?`,
       { modal: true },
       "Confirm",
     );
-    if (ok !== "Confirm") {
-      return;
-    }
+    if (confirmation !== "Confirm") return;
     try {
       await this.api.mergePullRequest(this.repoInfo, this.pr.number, method);
       vscode.window.showInformationMessage(`PR #${this.pr.number} merged.`);
       this.pr = await this.api.getPullRequest(this.repoInfo, this.pr.number);
       await this.update(this.pr);
-    } catch (err) {
+    } catch (error) {
       vscode.window.showErrorMessage(
-        `Failed to merge: ${(err as Error).message}`,
+        `Failed to merge: ${(error as Error).message}`,
       );
     }
   }
 
   async update(pr: GiteaPullRequest): Promise<void> {
     log("PR update: #" + pr.number);
-    this.panel.webview.postMessage({ command: "loading" });
     try {
       const [comments, reviews, files, commits, reviewComments, rawDiff, branches] =
         await Promise.all([
@@ -340,10 +315,21 @@ export class PRDetailPanel {
         ]);
 
       const patchMap = parseRawDiff(rawDiff);
-      const enrichedFiles = files.map((f) => ({
-        ...f,
-        patch: patchMap.get(f.filename) ?? f.patch ?? "",
+      const enrichedFiles = files.map((file) => ({
+        ...file,
+        patch: patchMap.get(file.filename) ?? file.patch ?? "",
       }));
+      const markdownSources = [
+        pr.body ?? "",
+        ...comments.map((comment) => comment.body ?? ""),
+        ...reviews.map((review) => review.body ?? ""),
+      ];
+      const renderedMarkdown = await Promise.all(
+        markdownSources.map((source) => this.renderMarkdown(source)),
+      );
+      const bodyHtml = renderedMarkdown[0] ?? "";
+      const commentBodies = renderedMarkdown.slice(1, 1 + comments.length);
+      const reviewBodies = renderedMarkdown.slice(1 + comments.length);
 
       this.panel.webview.html = this.renderHtml(
         pr,
@@ -353,15 +339,33 @@ export class PRDetailPanel {
         commits,
         reviewComments,
         branches,
+        bodyHtml,
+        commentBodies,
+        reviewBodies,
       );
-    } catch (err) {
-      this.panel.webview.html = `<!DOCTYPE html><html><body style="padding:20px;color:var(--vscode-foreground,#ccc);background:var(--vscode-editor-background,#1e1e1e)"><h2>Error loading PR</h2><p>${escHtml((err as Error).message)}</p></body></html>`;
+    } catch (error) {
+      this.panel.webview.html = `<!DOCTYPE html><html><body style="padding:20px;color:var(--vscode-foreground);background:var(--vscode-editor-background);font-family:var(--vscode-font-family)"><h2>Error loading PR</h2><p>${escHtml((error as Error).message)}</p></body></html>`;
+    }
+  }
+
+  private async renderMarkdown(markdown: string): Promise<string> {
+    if (!markdown.trim()) return "";
+    try {
+      const rendered = await vscode.commands.executeCommand<string>(
+        "markdown.api.render",
+        markdown,
+      );
+      if (typeof rendered === "string") return rendered;
+      throw new Error("VS Code Markdown renderer returned no HTML");
+    } catch (error) {
+      log(`PR Markdown renderer fallback: ${(error as Error).message}`);
+      return `<pre>${escHtml(markdown)}</pre>`;
     }
   }
 
   private buildDiffRows(
     patch: string,
-    fi: number,
+    fileIndex: number,
     filename: string,
     reviewComments: GiteaReviewComment[],
   ): string {
@@ -369,69 +373,45 @@ export class PRDetailPanel {
     if (lines.length === 0) {
       return `<tr><td colspan="3" class="empty-diff">No diff available (binary file or content unchanged)</td></tr>`;
     }
-
-    const rcMap = new Map<string, GiteaReviewComment[]>();
-    for (const c of reviewComments.filter((r) => r.path === filename)) {
-      const key = `${c.new_position ?? 0}:${c.old_position ?? 0}`;
-      rcMap.set(key, [...(rcMap.get(key) ?? []), c]);
+    const commentMap = new Map<string, GiteaReviewComment[]>();
+    for (const comment of reviewComments.filter((item) => item.path === filename)) {
+      const key = `${comment.new_position ?? 0}:${comment.old_position ?? 0}`;
+      commentMap.set(key, [...(commentMap.get(key) ?? []), comment]);
     }
-
     let rows = "";
-    for (const ln of lines) {
-      const rowCls =
-        ln.type === "add"
+    for (const line of lines) {
+      const rowClass =
+        line.type === "add"
           ? "diff-add"
-          : ln.type === "del"
+          : line.type === "del"
             ? "diff-del"
-            : ln.type === "hunk"
+            : line.type === "hunk"
               ? "diff-hunk"
               : "diff-ctx";
-      const isClickable =
-        ln.type === "add" || ln.type === "del" || ln.type === "ctx";
-      const oldNum = ln.oldLine != null ? String(ln.oldLine) : "";
-      const newNum = ln.newLine != null ? String(ln.newLine) : "";
+      const clickable = ["add", "del", "ctx"].includes(line.type);
+      const oldNumber = line.oldLine ?? "";
+      const newNumber = line.newLine ?? "";
       const prefix =
-        ln.type === "add"
+        line.type === "add"
           ? "+"
-          : ln.type === "del"
+          : line.type === "del"
             ? "-"
-            : ln.type === "hunk"
+            : line.type === "hunk"
               ? ""
               : "\u00a0";
-      const displayContent =
-        ln.type === "hunk"
-          ? escHtml(ln.content)
-          : escHtml(prefix) + escHtml(ln.content);
-      const lineKey = `cf-${fi}-${ln.pos}`;
-
-      if (isClickable) {
-        const data = `data-fi="${fi}" data-pos="${ln.pos}" data-path="${escHtml(filename)}" data-nl="${ln.newLine ?? 0}" data-ol="${ln.oldLine ?? 0}"`;
-        rows +=
-          `<tr class="${rowCls} clickable-line" onclick="clickLine(this)" title="Click to add inline comment" ${data}>` +
-          `<td class="ln ln-add-btn"><span class="add-line-btn">+</span>${oldNum}</td>` +
-          `<td class="ln">${newNum}</td>` +
-          `<td class="lc"><pre>${displayContent}</pre></td></tr>`;
-        rows +=
-          `<tr class="cf-row" id="${lineKey}" data-path="${escHtml(filename)}" data-nl="${ln.newLine ?? 0}" data-ol="${ln.oldLine ?? 0}" style="display:none">` +
-          `<td colspan="3"><div class="cf-inner">` +
-          `<textarea class="cf-ta" placeholder="Leave a review comment on this line..."></textarea>` +
-          `<div class="cf-acts"><button class="btn" onclick="addInlineComment(this)">Add Review Comment</button>` +
-          `<button class="btn sec" onclick="cancelLine(this)">Cancel</button></div>` +
-          `</div></td></tr>`;
-      } else {
-        rows +=
-          `<tr class="${rowCls}">` +
-          `<td class="ln">${oldNum}</td><td class="ln">${newNum}</td>` +
-          `<td class="lc"><pre>${displayContent}</pre></td></tr>`;
+      const content =
+        line.type === "hunk"
+          ? escHtml(line.content)
+          : escHtml(prefix) + escHtml(line.content);
+      const key = `${fileIndex}-${line.pos}`;
+      const data = `data-file-index="${fileIndex}" data-pos="${line.pos}" data-path="${escHtml(filename)}" data-new-line="${line.newLine ?? 0}" data-old-line="${line.oldLine ?? 0}"`;
+      rows += `<tr class="${rowClass}${clickable ? " clickable-line" : ""}" ${clickable ? data : ""}><td class="ln">${oldNumber}</td><td class="ln">${newNumber}</td><td class="lc"><pre>${content}</pre></td></tr>`;
+      if (clickable) {
+        rows += `<tr class="comment-form-row" id="comment-form-${key}" data-path="${escHtml(filename)}" data-new-line="${line.newLine ?? 0}" data-old-line="${line.oldLine ?? 0}" hidden><td colspan="3"><div class="inline-comment-form"><textarea placeholder="Leave a review comment on this line..."></textarea><div class="inline-actions"><button class="btn add-inline">Add Review Comment</button><button class="btn sec cancel-inline">Cancel</button></div></div></td></tr>`;
       }
-
-      const rcKey = `${ln.newLine ?? 0}:${ln.oldLine ?? 0}`;
-      for (const c of rcMap.get(rcKey) ?? []) {
-        rows +=
-          `<tr class="rc-row"><td colspan="3"><div class="rc">` +
-          `<div class="rc-hdr"><strong>${escHtml(c.user.login)}</strong>` +
-          `<span class="dim ml8">${new Date(c.created_at).toLocaleString()}</span></div>` +
-          `<div class="rc-body">${escHtml(c.body)}</div></div></td></tr>`;
+      const reviewKey = `${line.newLine ?? 0}:${line.oldLine ?? 0}`;
+      for (const comment of commentMap.get(reviewKey) ?? []) {
+        rows += `<tr class="existing-review-comment"><td colspan="3"><div class="review-comment-card"><div class="review-comment-header"><strong>${escHtml(comment.user.login)}</strong><span class="muted">${escHtml(new Date(comment.created_at).toLocaleString())}</span></div><div class="review-comment-body">${escHtml(comment.body)}</div></div></td></tr>`;
       }
     }
     return rows;
@@ -445,616 +425,140 @@ export class PRDetailPanel {
     commits: GiteaCommit[],
     reviewComments: GiteaReviewComment[],
     branches: string[],
+    bodyHtml: string,
+    commentBodies: string[],
+    reviewBodies: string[],
   ): string {
     const isOpen = pr.state === "open" && !pr.merged;
-    const stateBg = pr.merged ? "#6f42c1" : isOpen ? "#2da44e" : "#cf222e";
     const stateLabel = pr.merged ? "Merged" : isOpen ? "Open" : "Closed";
+    const stateClass = pr.merged ? "state-merged" : isOpen ? "state-open" : "state-closed";
+    const stateIcon = pr.merged ? "◆" : "●";
+    const nonce = getNonce();
 
-    // Compute the latest review status from non-stale reviews sorted by submitted_at
-    const nonStaleReviews = reviews
-      .filter((r) => !r.stale)
-      .sort((a, b) => new Date(a.submitted_at).getTime() - new Date(b.submitted_at).getTime());
-    let reviewStatus: "approved" | "changes-requested" | "pending" = "pending";
-    if (nonStaleReviews.length > 0) {
-      const latest = nonStaleReviews[nonStaleReviews.length - 1].state;
-      if (latest === "APPROVED") {
-        reviewStatus = "approved";
-      } else if (latest === "REQUEST_CHANGES") {
-        reviewStatus = "changes-requested";
-      }
-      // COMMENT, REQUEST_REVIEW, REJECTED, pending all map to "pending"
-    }
+    const activeReviews = reviews
+      .filter((review) => !review.stale)
+      .sort(
+        (left, right) =>
+          new Date(left.submitted_at).getTime() -
+          new Date(right.submitted_at).getTime(),
+      );
+    const latestReview =
+      activeReviews.length > 0
+        ? activeReviews[activeReviews.length - 1].state
+        : undefined;
+    const reviewStatus =
+      latestReview === "APPROVED"
+        ? "approved"
+        : latestReview === "REQUEST_CHANGES"
+          ? "changes-requested"
+          : "pending";
+    const reviewLabel =
+      reviewStatus === "approved"
+        ? "Approved"
+        : reviewStatus === "changes-requested"
+          ? "Changes Requested"
+          : "Pending";
 
-    const labelsHtml = pr.labels?.length
-      ? pr.labels
-          .map(
-            (l) =>
-              `<span class="label" style="background:#${l.color}">${escHtml(l.name)}</span>`,
-          )
-          .join(" ")
+    const labelsHtml =
+      pr.labels
+        ?.map(
+          (label) =>
+            `<span class="label" style="--label-color:#${escHtml(label.color)}">${escHtml(label.name)}</span>`,
+        )
+        .join("") ?? "";
+    const assignees = pr.assignees?.length
+      ? pr.assignees.map((assignee) => assignee.login).join(", ")
+      : pr.assignee?.login;
+    const assigneesHtml = assignees
+      ? `<span class="muted">Assignees: ${escHtml(assignees)}</span>`
       : "";
-    const assigneesHtml = pr.assignees?.length
-      ? `<span class="mi">👤 ${pr.assignees.map((a) => escHtml(a.login)).join(", ")}</span>`
-      : pr.assignee
-        ? `<span class="mi">👤 ${escHtml(pr.assignee.login)}</span>`
-        : "";
     const milestoneHtml = pr.milestone
-      ? `<span class="mi">🏁 ${escHtml(pr.milestone.title)}</span>`
+      ? `<span class="muted">Milestone: ${escHtml(pr.milestone.title)}</span>`
       : "";
 
     const branchOptions = branches
       .map(
-        (b) =>
-          `<option value="${escHtml(b)}"${b === pr.base.ref ? " selected" : ""}>${escHtml(b)}</option>`,
+        (branch) =>
+          `<option value="${escHtml(branch)}"${branch === pr.base.ref ? " selected" : ""}>${escHtml(branch)}</option>`,
       )
       .join("");
 
-    const stColors: Record<string, string> = {
-      added: "#2da44e",
-      deleted: "#cf222e",
-      modified: "#d97706",
-      renamed: "#0969da",
-      changed: "#d97706",
-    };
+    const commentsHtml = comments.length
+      ? comments
+          .map((comment, index) => `<article class="comment"><header class="comment-header"><img src="${escHtml(comment.user.avatar_url)}" class="avatar" alt=""><strong>${escHtml(comment.user.login)}</strong><span class="time">${escHtml(new Date(comment.created_at).toLocaleString())}</span></header><div class="comment-body markdown-body">${commentBodies[index] ?? ""}</div></article>`)
+          .join("")
+      : '<p class="empty">No comments yet.</p>';
+
+    const reviewsHtml = activeReviews.length
+      ? activeReviews
+          .map((review) => {
+            const sourceIndex = reviews.indexOf(review);
+            const state = review.state.toLowerCase();
+            const label = review.state.replace(/_/g, " ");
+            return `<article class="review review-${state}"><header class="review-header"><strong>${escHtml(review.user.login)}</strong><span class="review-badge review-badge-${state}">${escHtml(label)}</span><span class="time">${escHtml(new Date(review.submitted_at).toLocaleString())}</span></header>${review.body?.trim() ? `<div class="review-body markdown-body">${reviewBodies[sourceIndex] ?? ""}</div>` : ""}</article>`;
+          })
+          .join("")
+      : '<p class="empty">No reviews yet.</p>';
+
+    const commitsHtml = commits.length
+      ? commits
+          .map((commit) => `<article class="commit-entry"><code class="sha">${escHtml(commit.sha.slice(0, 8))}</code><span class="commit-message">${escHtml(commit.commit.message.split("\n")[0])}</span><span class="commit-author">${escHtml(commit.commit.author.name)}</span></article>`)
+          .join("")
+      : '<p class="empty">No commits.</p>';
 
     const filesHtml = files
-      .map((f, fi) => {
-        const stColor = stColors[f.status] ?? "#888";
+      .map((file, fileIndex) => {
+        const statusClass = `file-status-${file.status}`;
         const diffRows = this.buildDiffRows(
-          f.patch,
-          fi,
-          f.filename,
+          file.patch,
+          fileIndex,
+          file.filename,
           reviewComments,
         );
-        const fileLabel = f.filename.split("/").pop() ?? f.filename;
-        const fileDir = f.filename.includes("/")
-          ? f.filename.slice(0, f.filename.lastIndexOf("/") + 1)
-          : "";
-        return (
-          `<div class="file-block" id="fb-${fi}">` +
-          `<div class="file-header" onclick="toggleFile(${fi}, event)">` +
-          `<input type="checkbox" class="viewed-cb" id="vc-${fi}" title="Mark as viewed"` +
-          ` onchange="markViewed(${fi},this.checked)" onclick="event.stopPropagation()">` +
-          `<span class="fsb" style="background:${stColor}">${f.status[0].toUpperCase()}</span>` +
-          `<span class="file-path"><span class="file-dir">${escHtml(fileDir)}</span><span class="file-name">${escHtml(fileLabel)}</span></span>` +
-          `<span class="fst ml-auto"><span class="add-s">+${f.additions}</span>&nbsp;<span class="del-s">-${f.deletions}</span></span>` +
-          `<span class="viewed-badge">Viewed ✓</span>` +
-          `<span class="toggle-icon" id="ti-${fi}">▶</span>` +
-          `</div>` +
-          `<div class="fdw" id="fd-${fi}" style="display:none">` +
-          `<table class="diff-table"><tbody>${diffRows}</tbody></table></div></div>`
-        );
+        return `<section class="file-block" id="file-${fileIndex}"><button class="file-header" data-file-toggle="${fileIndex}" aria-expanded="false"><span class="file-status ${statusClass}">${escHtml(file.status.slice(0, 1).toUpperCase())}</span><span class="file-path">${escHtml(file.filename)}</span><span class="file-stats"><span class="additions">+${file.additions}</span> <span class="deletions">-${file.deletions}</span></span><span class="chevron">›</span></button><div class="file-diff" id="file-diff-${fileIndex}" hidden><table class="diff-table"><tbody>${diffRows}</tbody></table></div></section>`;
       })
       .join("");
-
-    const reviewsHtml =
-      reviews.length === 0
-        ? '<p class="empty">No reviews yet.</p>'
-        : reviews
-            .filter((r) => !r.stale)
-            .map(
-              (r) =>
-                `<div class="review review-${r.state.toLowerCase()}">` +
-                `<div class="review-hdr"><strong>${escHtml(r.user.login)}</strong>&nbsp;` +
-                `<span class="badge badge-${r.state.toLowerCase()}">${escHtml(r.state.replace("_", " "))}</span>` +
-                `<span class="dim ml8">${new Date(r.submitted_at).toLocaleString()}</span></div>` +
-                (r.body?.trim()
-                  ? `<div class="review-body" data-raw="${escAttr(r.body)}"></div>`
-                  : "") +
-                `</div>`,
-            )
-            .join("");
-
-    const commitsHtml =
-      commits.length === 0
-        ? '<p class="empty">No commits.</p>'
-        : commits
-            .map(
-              (c) =>
-                `<div class="commit-entry">` +
-                `<code class="sha">${escHtml(c.sha.slice(0, 8))}</code>` +
-                `<span class="commit-msg">${escHtml(c.commit.message.split("\n")[0])}</span>` +
-                `<span class="dim">${escHtml(c.commit.author.name)}</span></div>`,
-            )
-            .join("");
-
-    const commentsJson = JSON.stringify(comments).replace(/</g, "\\u003c").replace(/>/g, "\\u003e");
-    const bodyJson = JSON.stringify(pr.body || "").replace(/</g, "\\u003c").replace(/>/g, "\\u003e");
-    const titleJson = JSON.stringify(pr.title).replace(/</g, "\\u003c").replace(/>/g, "\\u003e");
-    const baseJson = JSON.stringify(pr.base.ref).replace(/</g, "\\u003c").replace(/>/g, "\\u003e");
-    const headJson = JSON.stringify(pr.head.ref).replace(/</g, "\\u003c").replace(/>/g, "\\u003e");
-    const branchOptsJson = JSON.stringify(branchOptions).replace(/</g, "\\u003c").replace(/>/g, "\\u003e");
-    const filesJson = JSON.stringify(files.map(f => ({ filename: f.filename, patch: f.patch, status: f.status, additions: f.additions, deletions: f.deletions }))).replace(/</g, "\\u003c").replace(/>/g, "\\u003e");
-    const reviewCommentsJson = JSON.stringify(reviewComments).replace(/</g, "\\u003c").replace(/>/g, "\\u003e");
-    const isOpenJson = JSON.stringify(isOpen);
 
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: data: vscode-resource:; style-src 'unsafe-inline'; script-src 'unsafe-inline';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: data: vscode-resource:; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>PR #${pr.number}</title>
-
 <style>
-:root {
-  --bg: var(--vscode-editor-background,#1e1e1e);
-  --fg: var(--vscode-editor-foreground,#d4d4d4);
-  --border: var(--vscode-panel-border,#3c3c3c);
-  --dim: var(--vscode-descriptionForeground,#888);
-  --input-bg: var(--vscode-input-background,#3c3c3c);
-  --input-fg: var(--vscode-input-foreground,#d4d4d4);
-  --input-border: var(--vscode-input-border,#555);
-  --btn-bg: var(--vscode-button-background,#0e639c);
-  --btn-fg: var(--vscode-button-foreground,#fff);
-  --btn-hover: var(--vscode-button-hoverBackground,#1177bb);
-  --btn2-bg: var(--vscode-button-secondaryBackground,#3a3d41);
-  --btn2-fg: var(--vscode-button-secondaryForeground,#ccc);
-  --btn2-hover: var(--vscode-button-secondaryHoverBackground,#45494e);
-  --focus: var(--vscode-focusBorder,#007fd4);
-  --block-bg: var(--vscode-textBlockQuote-background,#252526);
-  --mono: var(--vscode-editor-font-family,'Menlo','Consolas','Courier New',monospace);
-}
-*{box-sizing:border-box;margin:0;padding:0}
-body{font-family:var(--vscode-font-family,-apple-system,sans-serif);font-size:13px;color:var(--fg);background:var(--bg);padding:14px 20px}
-h1{font-size:1.18em;margin-bottom:6px;line-height:1.4;font-weight:600}
-h2{font-size:.92em;font-weight:600;margin-bottom:8px}
-code{background:var(--block-bg);padding:1px 5px;border-radius:3px;font-size:.85em;font-family:var(--mono)}
-.badge{display:inline-block;padding:2px 9px;border-radius:10px;font-size:.72em;font-weight:700;color:#fff;text-transform:uppercase;letter-spacing:.02em}
-.badge-approved{background:#2da44e}.badge-request_changes{background:#cf222e}
-.badge-comment,.badge-commented{background:#0969da}
-.label{display:inline-block;padding:1px 8px;border-radius:10px;font-size:.72em;font-weight:600;color:#fff;margin-right:3px}
-.meta-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:.82em;color:var(--dim);margin-bottom:12px}
-.mi{color:var(--dim)}.dim{color:var(--dim)}.ml8{margin-left:8px}.ml-auto{margin-left:auto}
-.branch-row{display:flex;align-items:center;gap:7px;margin-bottom:12px;font-size:.87em}
-.branch-tag{background:var(--block-bg);border:1px solid var(--border);border-radius:4px;padding:2px 8px;font-family:var(--mono);font-size:.85em}
-.stats-row{display:flex;flex-wrap:wrap;gap:18px;padding:8px 14px;background:var(--block-bg);border:1px solid var(--border);border-radius:5px;margin-bottom:12px}
-.stat{display:flex;flex-direction:column;gap:2px}
-.stat-lbl{color:var(--dim);font-size:.75em;text-transform:uppercase;letter-spacing:.04em}
-.stat-val{font-weight:700;font-size:1.05em}
-.actions{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:14px;align-items:center}
-.btn{background:var(--btn-bg);color:var(--btn-fg);border:none;padding:5px 12px;border-radius:4px;cursor:pointer;font-size:.87em;font-family:inherit;white-space:nowrap}
-.btn:hover{background:var(--btn-hover)}
-.btn.sec{background:var(--btn2-bg);color:var(--btn2-fg)}.btn.sec:hover{background:var(--btn2-hover)}
-.btn.danger{background:#b91c1c;color:#fff}.btn.danger:hover{background:#dc2626}
-.btn.success{background:#15803d;color:#fff}.btn.success:hover{background:#16a34a}
-.btn.sm{font-size:.75em;padding:3px 8px}
-.tabs{display:flex;gap:1px;border-bottom:1px solid var(--border);margin:0 0 14px}
-.tab{background:none;border:none;border-bottom:2px solid transparent;color:var(--dim);cursor:pointer;padding:7px 13px;font-size:.88em;font-family:inherit}
-.tab:hover{color:var(--fg)}.tab.active{color:var(--fg);border-bottom-color:var(--focus);font-weight:600}
-.tab-content{display:none}.tab-content.active{display:block}
-.comment{border:1px solid var(--border);border-radius:6px;margin-bottom:10px;overflow:hidden}
-.comment-hdr{display:flex;align-items:center;gap:8px;padding:7px 12px;background:var(--block-bg);border-bottom:1px solid var(--border);font-size:.84em}
-.comment-body{padding:10px 12px;line-height:1.5;overflow:hidden;word-break:break-word}
-.comment-body p{margin:0 0 0.5em}.comment-body p:last-child{margin:0}
-.comment-body code{background:var(--block-bg);padding:1px 5px;border-radius:3px;font-family:var(--mono);font-size:.85em}
-.comment-body pre{background:var(--block-bg);padding:8px 12px;border-radius:4px;overflow-x:auto;margin:0.5em 0}
-.comment-body pre code{background:none;padding:0}
-.comment-body ul,.comment-body ol{padding-left:1.5em;margin:0.5em 0}
-.comment-body blockquote{border-left:3px solid var(--border);padding-left:12px;margin:0.5em 0;color:var(--dim)}
-.comment-body a{color:var(--focus)}
-.comment-body img{max-width:100%;height:auto}
-.avatar{width:20px;height:20px;border-radius:50%}
-.time{margin-left:auto;color:var(--dim)}
-.review{border-left:3px solid var(--border);padding:8px 12px;margin-bottom:8px;border-radius:0 4px 4px 0;background:var(--block-bg)}
-.review-hdr{display:flex;align-items:center;gap:6px;margin-bottom:4px}
-.review-body{line-height:1.5;font-size:.88em;margin-top:6px;overflow:hidden;word-break:break-word}
-.review-body p{margin:0 0 0.5em}.review-body p:last-child{margin:0}
-.review-body code{background:var(--block-bg);padding:1px 5px;border-radius:3px;font-family:var(--mono);font-size:.85em}
-.review-body pre{background:var(--block-bg);padding:8px 12px;border-radius:4px;overflow-x:auto;margin:0.5em 0}
-.review-body pre code{background:none;padding:0}
-.review-body ul,.review-body ol{padding-left:1.5em;margin:0.5em 0}
-.review-body blockquote{border-left:3px solid var(--border);padding-left:12px;margin:0.5em 0;color:var(--dim)}
-.review-approved{border-left-color:#2da44e}
-.review-request_changes{border-left-color:#cf222e}
-.review-comment,.review-commented{border-left-color:#0969da}
-.commit-entry{display:flex;align-items:center;gap:9px;padding:5px 0;border-bottom:1px solid var(--border);font-size:.87em}
-.commit-entry:last-child{border-bottom:none}
-.sha{background:var(--block-bg);padding:1px 6px;border-radius:3px;font-size:.8em;font-family:var(--mono);flex-shrink:0}
-.commit-msg{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.empty{color:var(--dim);font-style:italic;padding:6px 0}
-.form-section{margin-top:14px}
-textarea{width:100%;background:var(--input-bg);color:var(--input-fg);border:1px solid var(--input-border);border-radius:4px;padding:7px;font-family:inherit;font-size:.9em;resize:vertical}
-textarea:focus{outline:1px solid var(--focus)}
-select{background:var(--input-bg);color:var(--input-fg);border:1px solid var(--input-border);padding:5px 10px;border-radius:4px;font-family:inherit;font-size:.87em}
-input[type="text"]{width:100%;background:var(--input-bg);color:var(--input-fg);border:1px solid var(--input-border);border-radius:4px;padding:6px 8px;font-family:inherit;font-size:.9em;box-sizing:border-box}
-input[type="text"]:focus{outline:1px solid var(--focus)}
-.desc-body{line-height:1.6;background:var(--block-bg);border:1px solid var(--border);border-radius:5px;padding:12px;margin-bottom:14px;overflow:hidden;word-break:break-word}
-.desc-body p{margin:0 0 0.5em}.desc-body p:last-child{margin:0}
-.desc-body code{background:var(--block-bg);padding:1px 5px;border-radius:3px;font-family:var(--mono);font-size:.85em}
-.desc-body pre{background:rgba(0,0,0,0.2);padding:8px 12px;border-radius:4px;overflow-x:auto;margin:0.5em 0}
-.desc-body pre code{background:none;padding:0}
-.desc-body ul,.desc-body ol{padding-left:1.5em;margin:0.5em 0}
-.desc-body blockquote{border-left:3px solid var(--border);padding-left:12px;margin:0.5em 0;color:var(--dim)}
-.desc-body a{color:var(--focus)}
-.desc-body img{max-width:100%;height:auto}
-.md-toggle-row{display:flex;align-items:center;gap:8px;margin-bottom:6px}
-.md-toggle-row .dim{font-size:.8em}
-
-/* ── edit form ── */
-.edit-form{background:var(--block-bg);border:1px solid var(--focus);border-radius:6px;padding:14px;margin-bottom:14px}
-.edit-form label{display:block;font-size:.82em;font-weight:600;margin-bottom:3px;color:var(--dim);text-transform:uppercase;letter-spacing:.04em}
-.edit-form .field{margin-bottom:10px}
-.edit-form .field:last-of-type{margin-bottom:0}
-.edit-actions{display:flex;gap:8px;margin-top:10px}
-
-/* ── review panel ── */
-.review-submit-bar{background:var(--block-bg);border:1px solid var(--border);border-radius:6px;padding:12px 14px;margin-bottom:14px}
-.rsb-title{font-weight:600;font-size:.93em;margin-bottom:8px;display:flex;align-items:center;gap:10px}
-#pc-count{color:var(--focus);font-size:.82em}
-.rsb-acts{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
-.files-summary{font-size:.82em;color:var(--dim);margin-bottom:10px}
-
-/* ── diff file blocks ── */
-.file-block{border:1px solid var(--border);border-radius:6px;margin-bottom:6px;overflow:hidden;transition:opacity .2s}
-.file-block.viewed{opacity:.45}
-.file-header{display:flex;align-items:center;gap:8px;padding:7px 12px;background:var(--block-bg);cursor:pointer;user-select:none;font-size:.86em;gap:8px}
-.file-header:hover{background:color-mix(in srgb,var(--block-bg) 85%,var(--fg) 15%)}
-.viewed-cb{flex-shrink:0;cursor:pointer;accent-color:var(--focus)}
-.fsb{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:3px;font-size:.68em;font-weight:700;color:#fff;flex-shrink:0}
-.file-path{flex:1;overflow:hidden;display:flex;align-items:baseline;gap:0;min-width:0}
-.file-dir{color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--mono);font-size:.82em;flex-shrink:1;min-width:0}
-.file-name{font-family:var(--mono);font-size:.85em;font-weight:500;white-space:nowrap;flex-shrink:0}
-.fst{flex-shrink:0;font-size:.8em}
-.add-s{color:#2da44e;font-weight:600}.del-s{color:#cf222e;font-weight:600}
-.viewed-badge{font-size:.7em;color:#2da44e;border:1px solid #2da44e;padding:1px 5px;border-radius:8px;display:none;flex-shrink:0;white-space:nowrap}
-.file-block.viewed .viewed-badge{display:inline-block}
-.toggle-icon{color:var(--dim);font-size:.78em;flex-shrink:0;transition:transform .15s}
-.fdw{overflow-x:auto;border-top:1px solid var(--border);background:var(--bg)}
-
-/* ── diff table ── */
-.diff-table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:12px;line-height:1.45;table-layout:fixed}
-.diff-table col.col-old{width:44px}.diff-table col.col-new{width:44px}.diff-table col.col-code{width:auto}
-td.ln{width:44px;text-align:right;padding:0 6px;color:var(--dim);background:var(--block-bg);border-right:1px solid var(--border);user-select:none;font-size:11px;vertical-align:top;white-space:nowrap}
-td.ln-add-btn{position:relative}
-.add-line-btn{display:none;position:absolute;left:2px;top:50%;transform:translateY(-50%);background:var(--focus);color:#fff;border:none;border-radius:2px;font-size:9px;width:12px;height:12px;line-height:1;cursor:pointer;align-items:center;justify-content:center;font-family:inherit;font-weight:700;padding:0}
-.clickable-line:hover .add-line-btn{display:flex}
-td.lc{padding:0 8px;white-space:pre;overflow:hidden;word-break:break-all;vertical-align:top}
-td.lc pre{margin:0;padding:0;font-family:inherit;font-size:inherit;white-space:pre;tab-size:4;word-break:normal}
-.diff-add td.lc{background:rgba(46,160,67,.13)}
-.diff-add td.ln{background:rgba(46,160,67,.07)}
-.diff-del td.lc{background:rgba(248,81,73,.13)}
-.diff-del td.ln{background:rgba(248,81,73,.07)}
-.diff-hunk td{background:rgba(9,105,218,.09);color:#7db3e8}
-.diff-hunk td.lc pre{font-style:italic;font-size:11px}
-.clickable-line{cursor:pointer}
-.clickable-line:hover td.lc{background-color:rgba(255,255,255,.04)}
-.empty-diff{padding:10px 14px;color:var(--dim);font-style:italic;font-size:.87em}
-
-/* ── inline comment form ── */
-.cf-row td{padding:0;background:var(--bg)}
-.cf-inner{padding:10px 14px;border-top:1px solid var(--border);background:linear-gradient(135deg,rgba(0,127,212,.04),transparent)}
-.cf-ta{height:75px;margin-bottom:8px}
-.cf-acts{display:flex;gap:8px}
-
-/* ── existing review comments ── */
-.rc-row td{padding:0}
-.rc{padding:9px 14px;border-top:1px dashed var(--border);border-left:3px solid var(--focus);background:rgba(0,127,212,.05)}
-.rc-hdr{display:flex;align-items:center;margin-bottom:4px;font-size:.84em}
-.rc-body{white-space:pre-wrap;font-size:.87em;line-height:1.5}
-
-/* ── pending comment cards ── */
-.pc-row td{padding:0}
-.pc{padding:8px 14px;border-top:1px dashed var(--border);border-left:3px dashed #d97706;background:rgba(217,119,6,.05);display:flex;align-items:flex-start;gap:8px}
-.pc-tag{font-size:.68em;background:#d97706;color:#fff;padding:1px 6px;border-radius:8px;flex-shrink:0;margin-top:1px;white-space:nowrap}
-.pc-body{flex:1;font-size:.85em;white-space:pre-wrap;line-height:1.4}
-.pc-rm{background:none;border:none;color:var(--dim);cursor:pointer;font-size:.85em;flex-shrink:0;padding:0 2px}
-.pc-rm:hover{color:var(--fg)}
+:root{--surface:var(--vscode-editor-background);--surface-subtle:var(--vscode-textBlockQuote-background,var(--vscode-editor-inactiveSelectionBackground));--fg:var(--vscode-foreground);--muted:var(--vscode-descriptionForeground);--border:var(--vscode-panel-border,var(--vscode-widget-border));--focus:var(--vscode-focusBorder);--link:var(--vscode-textLink-foreground);--input-bg:var(--vscode-input-background);--input-fg:var(--vscode-input-foreground);--input-border:var(--vscode-input-border,transparent);--button-bg:var(--vscode-button-background);--button-fg:var(--vscode-button-foreground);--button-hover:var(--vscode-button-hoverBackground);--button-secondary-bg:var(--vscode-button-secondaryBackground);--button-secondary-fg:var(--vscode-button-secondaryForeground);--button-secondary-hover:var(--vscode-button-secondaryHoverBackground);--success:var(--vscode-testing-iconPassed,var(--vscode-charts-green));--danger:var(--vscode-testing-iconFailed,var(--vscode-errorForeground));--warning:var(--vscode-editorWarning-foreground,var(--vscode-charts-yellow));--info:var(--vscode-charts-blue,var(--vscode-textLink-foreground));--merged:var(--vscode-charts-purple,var(--vscode-symbolIcon-typeParameterForeground));--mono:var(--vscode-editor-font-family);--base-size:var(--vscode-font-size,13px)}
+*{box-sizing:border-box}html,body{margin:0;padding:0;background:var(--surface);color:var(--fg)}body{font-family:var(--vscode-font-family);font-size:var(--base-size);line-height:1.45;padding:16px 20px}button,input,textarea,select{font:inherit}button{color:inherit}a{color:var(--link)}
+.title-row{display:flex;align-items:center;gap:10px;margin-bottom:5px}.title-row h1{font-size:1.22em;line-height:1.3;font-weight:600;margin:0;overflow-wrap:anywhere}.state-icon{font-size:.86em}.state-open{color:var(--success)}.state-closed{color:var(--danger)}.state-merged{color:var(--merged)}
+.meta-row,.context-row{display:flex;align-items:center;flex-wrap:wrap;gap:6px 9px;color:var(--muted);font-size:.92em}.meta-row{margin-bottom:5px}.context-row{margin-bottom:12px}.meta-row strong{color:var(--fg)}.badge{display:inline-flex;align-items:center;border:1px solid currentColor;border-radius:999px;padding:1px 7px;font-size:.78em;font-weight:600;text-transform:uppercase}.label{display:inline-flex;align-items:center;border:1px solid var(--label-color);border-radius:999px;padding:1px 7px;font-size:.78em;background:color-mix(in srgb,var(--label-color) 18%,transparent)}
+.branch-tag{font-family:var(--mono);font-size:.92em;background:var(--surface-subtle);border:1px solid var(--border);border-radius:2px;padding:1px 6px;color:var(--fg)}.review-state{display:inline-flex;align-items:center;gap:5px;font-weight:500}.review-dot{font-size:.9em}.review-approved{color:var(--success)}.review-changes-requested{color:var(--danger)}.review-pending{color:var(--warning)}
+.actions{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}.btn{border:1px solid transparent;border-radius:2px;padding:4px 10px;min-height:26px;cursor:pointer;background:var(--button-bg);color:var(--button-fg)}.btn:hover{background:var(--button-hover)}.btn.sec{background:var(--button-secondary-bg);color:var(--button-secondary-fg)}.btn.sec:hover{background:var(--button-secondary-hover)}.btn.danger{background:var(--button-secondary-bg);color:var(--danger);border-color:color-mix(in srgb,var(--danger) 55%,transparent)}.btn.success{background:var(--button-secondary-bg);color:var(--success);border-color:color-mix(in srgb,var(--success) 55%,transparent)}.btn.small{padding:2px 8px;min-height:22px;font-size:.9em}.btn:focus-visible,.tab:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,.file-header:focus-visible,a:focus-visible{outline:1px solid var(--focus);outline-offset:2px}
+.edit-form,.review-submit{background:var(--surface-subtle);border:1px solid var(--border);border-radius:3px;padding:12px;margin-bottom:14px}.edit-form{border-color:var(--focus)}.field{margin-bottom:10px}.field label,.form-section label{display:block;margin-bottom:4px;font-size:.92em;font-weight:600}.edit-actions,.review-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}textarea,input[type="text"],select{background:var(--input-bg);color:var(--input-fg);border:1px solid var(--input-border);border-radius:2px;padding:6px 8px}textarea,input[type="text"]{width:100%}textarea{resize:vertical;line-height:1.45}
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--border);margin:0 0 14px}.tab{background:transparent;border:0;border-bottom:2px solid transparent;color:var(--muted);cursor:pointer;padding:6px 10px}.tab.active{color:var(--fg);border-bottom-color:var(--focus);font-weight:600}.tab-content{display:none}.tab-content.active{display:block}
+.markdown-card{background:var(--surface-subtle);border:1px solid var(--border);border-radius:3px;padding:12px 14px;margin-bottom:14px;overflow-wrap:anywhere}.markdown-body{font-size:1em;line-height:1.5}.markdown-body h1,.markdown-body h2,.markdown-body h3,.markdown-body h4,.markdown-body h5,.markdown-body h6{font-weight:600;line-height:1.3;margin:1.05em 0 .45em}.markdown-body h1:first-child,.markdown-body h2:first-child,.markdown-body h3:first-child{margin-top:0}.markdown-body h1{font-size:1.28em;border-bottom:1px solid var(--border);padding-bottom:.25em}.markdown-body h2{font-size:1.16em}.markdown-body h3{font-size:1.06em}.markdown-body h4,.markdown-body h5,.markdown-body h6{font-size:1em}.markdown-body p{margin:.55em 0}.markdown-body ul,.markdown-body ol{margin:.55em 0;padding-left:1.65em}.markdown-body li{margin:.22em 0}.markdown-body blockquote{border-left:3px solid var(--vscode-textBlockQuote-border,var(--border));padding:.25em .8em;margin:.7em 0;color:var(--muted)}.markdown-body code{font-family:var(--mono);font-size:.92em;background:var(--vscode-textCodeBlock-background,var(--surface-subtle));padding:.08em .3em}.markdown-body pre{font-family:var(--mono);font-size:.92em;background:var(--vscode-textCodeBlock-background,var(--surface-subtle));border:1px solid var(--border);padding:9px 11px;overflow:auto}.markdown-body pre code{background:transparent;padding:0}.markdown-body table{border-collapse:collapse;display:block;overflow:auto}.markdown-body th,.markdown-body td{border:1px solid var(--border);padding:5px 8px}.markdown-body img{max-width:100%}.markdown-body input[type="checkbox"]{width:auto;margin-right:6px;accent-color:var(--success)}
+.stats-row{display:flex;gap:16px;flex-wrap:wrap;border:1px solid var(--border);border-radius:3px;padding:8px 12px;margin-bottom:14px}.stat{display:flex;gap:5px}.stat-label{color:var(--muted)}.additions{color:var(--success)}.deletions{color:var(--danger)}
+.section-heading{font-size:1em;font-weight:600;margin:14px 0 8px}.comment,.review{border:1px solid var(--border);border-radius:3px;margin-bottom:10px;overflow:hidden}.comment-header,.review-header{display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--surface-subtle);border-bottom:1px solid var(--border)}.avatar{width:20px;height:20px;border-radius:50%}.time{margin-left:auto;color:var(--muted);font-size:.92em}.comment-body,.review-body{padding:10px 12px}.review{border-left-width:3px}.review-approved{border-left-color:var(--success)}.review-request_changes{border-left-color:var(--danger)}.review-comment,.review-commented{border-left-color:var(--info)}.review-badge{font-size:.78em;border:1px solid currentColor;border-radius:999px;padding:1px 6px;text-transform:capitalize}.review-badge-approved{color:var(--success)}.review-badge-request_changes{color:var(--danger)}.review-badge-comment,.review-badge-commented{color:var(--info)}
+.form-section{margin-top:14px}.empty,.muted{color:var(--muted)}.empty{font-style:italic}.commit-entry{display:grid;grid-template-columns:max-content minmax(0,1fr) max-content;gap:10px;padding:7px 4px;border-bottom:1px solid var(--border);align-items:baseline}.sha{font-family:var(--mono);font-size:.9em;background:var(--surface-subtle);padding:1px 5px}.commit-message{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.commit-author{color:var(--muted);font-size:.92em}
+.files-summary{color:var(--muted);font-size:.92em;margin:10px 0}.file-block{border:1px solid var(--border);border-radius:3px;margin-bottom:7px;overflow:hidden}.file-header{width:100%;display:flex;align-items:center;gap:8px;border:0;background:var(--surface-subtle);padding:7px 10px;cursor:pointer;text-align:left}.file-path{font-family:var(--mono);font-size:.92em;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}.file-status{display:inline-flex;width:17px;height:17px;align-items:center;justify-content:center;border:1px solid currentColor;border-radius:2px;font-size:.72em;font-weight:600}.file-status-added{color:var(--success)}.file-status-deleted{color:var(--danger)}.file-status-modified,.file-status-changed{color:var(--warning)}.file-status-renamed{color:var(--info)}.file-stats{font-size:.9em}.chevron{color:var(--muted);font-size:1.2em;transition:transform .15s}.file-header[aria-expanded="true"] .chevron{transform:rotate(90deg)}.file-diff{overflow:auto;border-top:1px solid var(--border)}
+.diff-table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:.9em;line-height:1.45;table-layout:fixed}.ln{width:44px;text-align:right;padding:0 6px;color:var(--muted);background:var(--surface-subtle);border-right:1px solid var(--border);user-select:none}.lc{padding:0 8px;white-space:pre;overflow:hidden}.lc pre{margin:0;font:inherit;white-space:pre}.diff-add .lc{background:color-mix(in srgb,var(--success) 12%,transparent)}.diff-del .lc{background:color-mix(in srgb,var(--danger) 12%,transparent)}.diff-hunk td{background:color-mix(in srgb,var(--info) 10%,transparent);color:var(--info)}.clickable-line{cursor:pointer}.clickable-line:hover .lc{background:var(--vscode-list-hoverBackground)}.empty-diff{padding:10px;color:var(--muted)}
+.comment-form-row td,.existing-review-comment td{padding:0}.inline-comment-form{padding:10px 12px;background:var(--surface-subtle)}.inline-actions{display:flex;gap:6px;margin-top:6px}.review-comment-card{padding:8px 12px;border-left:3px solid var(--info);background:var(--surface-subtle)}.review-comment-header{display:flex;gap:8px}.review-comment-body{white-space:pre-wrap;margin-top:3px}.pending-review-comment{display:flex;gap:8px;padding:8px 12px;border-left:3px dashed var(--warning);background:var(--surface-subtle)}.pending-review-comment .pending-body{flex:1;white-space:pre-wrap}.remove-pending{background:none;border:0;color:var(--muted);cursor:pointer}
+@media(max-width:700px){body{padding:12px}.time{margin-left:0;width:100%}.commit-entry{grid-template-columns:max-content minmax(0,1fr)}.commit-author{grid-column:2}}
 </style>
 </head>
 <body>
-
-<div class="title-row" style="display:flex;align-items:baseline;gap:10px;margin-bottom:4px">
-  <span class="pr-icon" style="font-size:1.18em;color:${reviewStatus === 'approved' ? '#2da44e' : reviewStatus === 'changes-requested' ? '#cf222e' : '#d97706'}">⎔</span>
-  <h1 id="pr-title" style="margin-left:0">#${pr.number}: ${escHtml(pr.title)}</h1>
-  <button class="btn sm" onclick="startEdit()">✏️ Edit</button>
-</div>
-
-<div class="branch-row" style="margin-bottom:8px">
-  <span class="branch-tag">${escHtml(pr.head.ref)}</span>
-  <span class="dim">→</span>
-  <span class="branch-tag">${escHtml(pr.base.ref)}</span>
-  <span class="merge-status" style="color:${reviewStatus === 'approved' ? '#2da44e' : reviewStatus === 'changes-requested' ? '#cf222e' : '#d97706'}">
-    <span class="merge-icon">⎔</span>
-    <span class="dim">${reviewStatus === 'approved' ? 'Approved' : reviewStatus === 'changes-requested' ? 'Changes Requested' : 'Pending'}</span>
-  </span>
-</div>
-
-<div class="meta-row">
-  <span class="badge" style="background:${stateBg}">${stateLabel}</span>
-  by <strong>${escHtml(pr.user.login)}</strong>
-  <span class="dim">${new Date(pr.created_at).toLocaleDateString()}</span>
-  ${labelsHtml}${assigneesHtml}${milestoneHtml}
-</div>
-
-<div class="actions">
-  <button class="btn" onclick="post('openInBrowser')">🔗 Open in Browser</button>
-  <button class="btn" onclick="post('checkout')">⎇ Checkout</button>
-  <button class="btn" onclick="post('refresh')">↺ Refresh</button>
-  ${
-    isOpen
-      ? `<select id="mergeMethod"><option value="merge">Merge commit</option><option value="rebase">Rebase</option><option value="squash">Squash</option></select>
-  <button class="btn success" onclick="post('merge',{method:document.getElementById('mergeMethod').value})">↑ Merge PR</button>
-  <button class="btn danger" onclick="post('closePR')">✕ Close PR</button>`
-      : ""
-  }
-  ${pr.state === "closed" && !pr.merged ? `<button class="btn success" onclick="post('reopenPR')">↺ Re-open</button>` : ""}
-</div>
-
-<div id="edit-form" class="edit-form" style="display:none">
-  <div class="field">
-    <label>Title</label>
-    <input type="text" id="edit-title" value="${escHtml(pr.title)}">
-  </div>
-  <div class="field">
-    <label>Body</label>
-    <textarea id="edit-body" style="height:120px">${escHtml(pr.body || "")}</textarea>
-  </div>
-  <div class="field">
-    <label>Base Branch</label>
-    <select id="edit-base">${branchOptions}</select>
-  </div>
-  <div class="edit-actions">
-    <button class="btn" onclick="saveEdit()">Save</button>
-    <button class="btn sec" onclick="cancelEdit()">Cancel</button>
-  </div>
-</div>
-
-<div class="tabs">
-  <button class="tab active" onclick="showTab('details',this)">Details</button>
-  <button class="tab" onclick="showTab('reviews',this)">🔍 Reviews (${reviews.length})</button>
-  <button class="tab" onclick="showTab('commits',this)">📦 Commits (${commits.length})</button>
-</div>
-
-<div id="tab-details" class="tab-content active">
-  ${
-    pr.body?.trim()
-      ? `<div id="body-content" class="desc-body"></div>`
-      : `<div class="desc-body" style="color:var(--dim);font-style:italic">(no description)</div>`
-  }
-  ${
-    pr.commits != null || pr.additions != null
-      ? `<div class="stats-row">
-  ${pr.commits != null ? `<div class="stat"><span class="stat-lbl">Commits</span><span class="stat-val">${pr.commits}</span></div>` : ""}
-  ${pr.additions != null ? `<div class="stat"><span class="stat-lbl">Additions</span><span class="stat-val" style="color:#2da44e">+${pr.additions}</span></div>` : ""}
-  ${pr.deletions != null ? `<div class="stat"><span class="stat-lbl">Deletions</span><span class="stat-val" style="color:#cf222e">-${pr.deletions}</span></div>` : ""}
-  ${pr.changed_files != null ? `<div class="stat"><span class="stat-lbl">Files</span><span class="stat-val">${pr.changed_files}</span></div>` : ""}
-</div>`
-      : ""
-  }
-  <div style="margin-top:14px">
-    <h2>Comments (${comments.length})</h2>
-    <div id="comments-list"></div>
-    <div class="form-section">
-      <textarea id="commentBody" style="height:60px" placeholder="Write a comment..."></textarea>
-      <div style="margin-top:8px"><button class="btn" onclick="submitComment()">Post Comment</button></div>
-    </div>
-  </div>
-</div>
-
-<div id="tab-reviews" class="tab-content">
-  <div class="review-submit-bar">
-    <div class="rsb-title">Submit Review <span id="pc-count"></span></div>
-    <textarea id="rv-body" style="height:60px" placeholder="Overall review comment (optional)..."></textarea>
-    <div class="rsb-acts">
-      ${
-        isOpen
-          ? `<button class="btn success" onclick="submitReview('APPROVED')">✅ Approve</button>
-      <button class="btn danger" onclick="submitReview('REQUEST_CHANGES')">⚠️ Request Changes</button>`
-          : ""
-      }
-      <button class="btn" onclick="submitReview('COMMENT')">💬 Comment</button>
-    </div>
-  </div>
-  <div class="files-summary">${files.length} file(s) changed &nbsp;·&nbsp; Click any diff line to add an inline comment</div>
-  ${filesHtml}
-  <h2 style="margin-top:16px">Submitted Reviews</h2>
-  ${reviewsHtml}
-</div>
-
-<div id="tab-commits" class="tab-content">${commitsHtml}</div>
-
-<script>
-const vscode = acquireVsCodeApi();
-function debugLog(msg) { vscode.postMessage({ command: 'debug', body: msg }); }
-window.onerror = function(msg, url, line, col, err) {
-  try {
-    var e = err ? (err.stack || err.message) : msg + ' line ' + line;
-    debugLog('ERROR: ' + e);
-  } catch(x) {}
-  return false;
-};
-debugLog('PR webview loaded - step1');
-const bodyText = ${bodyJson};
-const commentsData = ${commentsJson};
-debugLog('PR webview loaded - step2');
-let pendingComments = [];
-let openFormKey = null;
-
-function esc(s) {
-  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-
-function post(cmd, extra) {
-  debugLog('post: ' + cmd + (extra ? ' with extra' : ''));
-  vscode.postMessage(Object.assign({ command: cmd }, extra || {}));
-}
-
-function showTab(name, btn) {
-  debugLog('showTab: ' + name);
-  document.querySelectorAll('.tab-content').forEach(function(el) { el.classList.remove('active'); });
-  document.querySelectorAll('.tab').forEach(function(el) { el.classList.remove('active'); });
-  document.getElementById('tab-' + name).classList.add('active');
-  btn.classList.add('active');
-}
-
-function renderBody() {
-  try {
-    var el = document.getElementById('body-content');
-    if (!el) { debugLog('renderBody: no body-content element'); return; }
-    el.innerHTML = '<pre style="margin:0;white-space:pre-wrap">' + esc(bodyText) + '</pre>';
-    debugLog('renderBody done, body length=' + (bodyText ? bodyText.length : 0));
-  } catch(e) { debugLog('renderBody error: ' + e.message); }
-}
-
-function renderComments() {
-  try {
-    var container = document.getElementById('comments-list');
-    if (!container) { debugLog('renderComments: no comments-list element'); return; }
-    if (commentsData.length === 0) {
-      container.innerHTML = '<p class="empty">No comments yet.</p>';
-      debugLog('renderComments: no comments');
-      return;
-    }
-    var html = '';
-    for (var i = 0; i < commentsData.length; i++) {
-      var c = commentsData[i];
-      html += '<div class="comment" id="comment-' + c.id + '">' +
-        '<div class="comment-hdr">' +
-        '<img src="' + esc(c.user.avatar_url) + '" class="avatar" alt="">' +
-        '<strong>' + esc(c.user.login) + '</strong>' +
-        '<span class="time">' + new Date(c.created_at).toLocaleString() + '</span>' +
-        '</div>' +
-        '<div class="comment-body"><pre style="margin:0;white-space:pre-wrap">' + esc(c.body) + '</pre></div>' +
-        '</div>';
-    }
-    container.innerHTML = html;
-    debugLog('renderComments done, count=' + commentsData.length);
-  } catch(e) { debugLog('renderComments error: ' + e.message); }
-}
-
-function startEdit() {
-  debugLog('startEdit');
-  document.getElementById('edit-form').style.display = 'block';
-}
-
-function cancelEdit() {
-  debugLog('cancelEdit');
-  document.getElementById('edit-form').style.display = 'none';
-}
-
-function saveEdit() {
-  var title = document.getElementById('edit-title').value;
-  var body = document.getElementById('edit-body').value;
-  var base = document.getElementById('edit-base').value;
-  post('editPR', { title: title, body: body, base: base });
-  document.getElementById('edit-form').style.display = 'none';
-}
-
-function submitComment() {
-  var el = document.getElementById('commentBody');
-  var body = (el.value || '').trim();
-  if (!body) return;
-  post('addComment', { body: body });
-  el.value = '';
-}
-
-function toggleFile(fi, e) {
-  if (e && e.target && (e.target.type === 'checkbox')) return;
-  var w = document.getElementById('fd-' + fi);
-  var ic = document.getElementById('ti-' + fi);
-  var nowHidden = w.style.display === 'none';
-  w.style.display = nowHidden ? '' : 'none';
-  ic.textContent = nowHidden ? '▼' : '▶';
-}
-
-function markViewed(fi, checked) {
-  document.getElementById('fb-' + fi).classList.toggle('viewed', checked);
-  if (checked) {
-    var w = document.getElementById('fd-' + fi);
-    var ic = document.getElementById('ti-' + fi);
-    if (w) { w.style.display = 'none'; }
-    if (ic) { ic.textContent = '▶'; }
-  }
-}
-
-function clickLine(tr) {
-  var key = tr.dataset.fi + '-' + tr.dataset.pos;
-  var form = document.getElementById('cf-' + key);
-  if (!form) return;
-  if (openFormKey && openFormKey !== key) {
-    var prev = document.getElementById('cf-' + openFormKey);
-    if (prev) prev.style.display = 'none';
-  }
-  var show = form.style.display === 'none';
-  form.style.display = show ? 'table-row' : 'none';
-  openFormKey = show ? key : null;
-  if (show) { setTimeout(function() { var ta = form.querySelector('textarea'); if (ta) ta.focus(); }, 40); }
-}
-
-function cancelLine(btn) {
-  btn.closest('tr').style.display = 'none';
-  openFormKey = null;
-}
-
-function addInlineComment(btn) {
-  var row = btn.closest('tr.cf-row');
-  var ta = row.querySelector('textarea');
-  var body = (ta.value || '').trim();
-  if (!body) return;
-  var path = row.dataset.path;
-  var newPos = parseInt(row.dataset.nl || '0');
-  var oldPos = parseInt(row.dataset.ol || '0');
-  var idx = pendingComments.length;
-  pendingComments.push({ path: path, new_position: newPos, old_position: oldPos, body: body });
-  var pcHtml = '<tr class="pc-row"><td colspan="3"><div class="pc">' +
-    '<span class="pc-tag">Pending</span>' +
-    '<span class="pc-body">' + esc(body) + '</span>' +
-    '<button class="pc-rm" title="Remove" onclick="removeComment(' + idx + ',this)">✕</button>' +
-    '</div></td></tr>';
-  row.insertAdjacentHTML('afterend', pcHtml);
-  row.style.display = 'none';
-  ta.value = '';
-  openFormKey = null;
-  updatePCCount();
-}
-
-function removeComment(idx, btn) {
-  pendingComments[idx] = null;
-  btn.closest('tr').remove();
-  updatePCCount();
-}
-
-function updatePCCount() {
-  var n = pendingComments.filter(Boolean).length;
-  var el = document.getElementById('pc-count');
-  if (el) el.textContent = n > 0 ? '(' + n + ' pending inline comment' + (n !== 1 ? 's' : '') + ')' : '';
-}
-
-function submitReview(event) {
-  var body = (document.getElementById('rv-body').value || '');
-  var comments = pendingComments.filter(Boolean);
-  post('submitReview', { event: event, body: body, comments: comments });
-}
-
-function renderReviews() {
-  try {
-    document.querySelectorAll('.review-body').forEach(function(el) {
-      var raw = el.getAttribute('data-raw');
-      if (raw) el.innerHTML = '<pre style="margin:0;white-space:pre-wrap">' + esc(raw) + '</pre>';
-    });
-    debugLog('renderReviews done');
-  } catch(e) { debugLog('renderReviews error: ' + e.message); }
-}
-
-window.addEventListener("message", function(event) {
-  var message = event.data;
-  debugLog('message received: ' + (message ? message.command : 'null'));
-  if (!message || !message.command) return;
-  if (message.command === "loading") {
-    document.body.style.opacity = "0.7";
-  } else if (message.command === "reviewSubmitted") {
-    pendingComments.length = 0;
-    document.querySelectorAll(".pc-row").forEach(function(row) { row.remove(); });
-    var reviewBody = document.getElementById("rv-body");
-    if (reviewBody) reviewBody.value = "";
-    updatePCCount();
-  }
-});
-
-renderBody();
-renderComments();
-renderReviews();
+<header><div class="title-row"><span class="state-icon ${stateClass}" aria-hidden="true">${stateIcon}</span><h1>#${pr.number}: ${escHtml(pr.title)}</h1><button id="edit" class="btn small">Edit</button></div><div class="meta-row"><span class="badge ${stateClass}">${stateLabel}</span><span>by <strong>${escHtml(pr.user.login)}</strong></span><span>${escHtml(new Date(pr.created_at).toLocaleDateString())}</span>${labelsHtml}${assigneesHtml}${milestoneHtml}</div><div class="context-row"><span class="branch-tag">${escHtml(pr.head.ref)}</span><span>→</span><span class="branch-tag">${escHtml(pr.base.ref)}</span><span class="review-state review-${reviewStatus}"><span class="review-dot">●</span>${reviewLabel}</span></div></header>
+<div class="actions"><button id="open-browser" class="btn">Open in Browser</button><button id="checkout" class="btn sec">Checkout</button><button id="refresh" class="btn sec">Refresh</button>${isOpen ? `<select id="merge-method" aria-label="Merge method"><option value="merge">Merge commit</option><option value="rebase">Rebase</option><option value="squash">Squash</option></select><button id="merge" class="btn success">Merge PR</button><button id="change-state" class="btn danger">Close PR</button>` : pr.state === "closed" && !pr.merged ? '<button id="change-state" class="btn success">Re-open</button>' : ""}</div>
+<div id="edit-form" class="edit-form" hidden><div class="field"><label for="edit-title">Title</label><input id="edit-title" type="text" value="${escHtml(pr.title)}"></div><div class="field"><label for="edit-body">Body</label><textarea id="edit-body" style="height:120px">${escHtml(pr.body || "")}</textarea></div><div class="field"><label for="edit-base">Base Branch</label><select id="edit-base">${branchOptions}</select></div><div class="edit-actions"><button id="save-edit" class="btn">Save</button><button id="cancel-edit" class="btn sec">Cancel</button></div></div>
+<nav class="tabs" role="tablist" aria-label="Pull request detail sections"><button class="tab active" id="details-tab" data-tab="details" role="tab" aria-selected="true">Details</button><button class="tab" id="reviews-tab" data-tab="reviews" role="tab" aria-selected="false">Reviews (${activeReviews.length})</button><button class="tab" id="commits-tab" data-tab="commits" role="tab" aria-selected="false">Commits (${commits.length})</button></nav>
+<section id="tab-details" class="tab-content active" role="tabpanel" aria-labelledby="details-tab">${bodyHtml ? `<div class="markdown-card markdown-body">${bodyHtml}</div>` : '<div class="markdown-card empty">(no description)</div>'}${pr.commits != null || pr.additions != null ? `<div class="stats-row">${pr.commits != null ? `<div class="stat"><span class="stat-label">Commits</span><strong>${pr.commits}</strong></div>` : ""}${pr.additions != null ? `<div class="stat"><span class="stat-label">Additions</span><strong class="additions">+${pr.additions}</strong></div>` : ""}${pr.deletions != null ? `<div class="stat"><span class="stat-label">Deletions</span><strong class="deletions">-${pr.deletions}</strong></div>` : ""}${pr.changed_files != null ? `<div class="stat"><span class="stat-label">Files</span><strong>${pr.changed_files}</strong></div>` : ""}</div>` : ""}<h2 class="section-heading">Comments (${comments.length})</h2><div>${commentsHtml}</div><div class="form-section"><label for="comment-body">Add a comment</label><textarea id="comment-body" style="height:70px" placeholder="Write a comment..."></textarea><div class="edit-actions"><button id="post-comment" class="btn">Post Comment</button></div></div></section>
+<section id="tab-reviews" class="tab-content" role="tabpanel" aria-labelledby="reviews-tab"><div class="review-submit"><strong>Submit Review <span id="pending-count" class="muted"></span></strong><textarea id="review-body" style="height:70px;margin-top:8px" placeholder="Overall review comment (optional)..."></textarea><div class="review-actions">${isOpen ? '<button class="btn success" data-review-event="APPROVED">Approve</button><button class="btn danger" data-review-event="REQUEST_CHANGES">Request Changes</button>' : ""}<button class="btn" data-review-event="COMMENT">Comment</button></div></div><div class="files-summary">${files.length} file(s) changed · Select a diff line to add an inline review comment</div>${filesHtml}<h2 class="section-heading">Submitted Reviews</h2>${reviewsHtml}</section>
+<section id="tab-commits" class="tab-content" role="tabpanel" aria-labelledby="commits-tab">${commitsHtml}</section>
+<script nonce="${nonce}">
+const vscode=acquireVsCodeApi();let pendingComments=[];let openFormKey=null;
+function post(command,extra){vscode.postMessage(Object.assign({command},extra||{}));}
+function showTab(name,button){document.querySelectorAll('.tab-content').forEach((el)=>el.classList.remove('active'));document.querySelectorAll('.tab').forEach((el)=>{el.classList.remove('active');el.setAttribute('aria-selected','false');});document.getElementById('tab-'+name)?.classList.add('active');button.classList.add('active');button.setAttribute('aria-selected','true');}
+function updatePendingCount(){const count=pendingComments.filter(Boolean).length;const el=document.getElementById('pending-count');if(el)el.textContent=count?'('+count+' pending inline comment'+(count===1?'':'s')+')':'';}
+document.getElementById('edit')?.addEventListener('click',()=>{document.getElementById('edit-form').hidden=false;document.getElementById('edit-title')?.focus();});document.getElementById('cancel-edit')?.addEventListener('click',()=>{document.getElementById('edit-form').hidden=true;});document.getElementById('save-edit')?.addEventListener('click',()=>{post('editPR',{title:document.getElementById('edit-title').value,body:document.getElementById('edit-body').value,base:document.getElementById('edit-base').value});document.getElementById('edit-form').hidden=true;});document.getElementById('open-browser')?.addEventListener('click',()=>post('openInBrowser'));document.getElementById('checkout')?.addEventListener('click',()=>post('checkout'));document.getElementById('refresh')?.addEventListener('click',()=>post('refresh'));document.getElementById('merge')?.addEventListener('click',()=>post('merge',{method:document.getElementById('merge-method').value}));document.getElementById('change-state')?.addEventListener('click',()=>post('${isOpen ? "closePR" : "reopenPR"}'));document.getElementById('post-comment')?.addEventListener('click',()=>{const input=document.getElementById('comment-body');const body=(input.value||'').trim();if(!body)return;post('addComment',{body});input.value='';});document.querySelectorAll('[data-tab]').forEach((button)=>button.addEventListener('click',()=>showTab(button.dataset.tab,button)));document.querySelectorAll('[data-review-event]').forEach((button)=>button.addEventListener('click',()=>post('submitReview',{event:button.dataset.reviewEvent,body:document.getElementById('review-body').value||'',comments:pendingComments.filter(Boolean)})));document.querySelectorAll('[data-file-toggle]').forEach((button)=>button.addEventListener('click',()=>{const index=button.dataset.fileToggle;const diff=document.getElementById('file-diff-'+index);const expanded=button.getAttribute('aria-expanded')==='true';button.setAttribute('aria-expanded',String(!expanded));if(diff)diff.hidden=expanded;}));document.querySelectorAll('.clickable-line').forEach((row)=>row.addEventListener('click',()=>{const key=row.dataset.fileIndex+'-'+row.dataset.pos;const form=document.getElementById('comment-form-'+key);if(!form)return;if(openFormKey&&openFormKey!==key){const previous=document.getElementById('comment-form-'+openFormKey);if(previous)previous.hidden=true;}form.hidden=!form.hidden;openFormKey=form.hidden?null:key;if(!form.hidden)form.querySelector('textarea')?.focus();}));document.querySelectorAll('.cancel-inline').forEach((button)=>button.addEventListener('click',(event)=>{event.stopPropagation();button.closest('tr').hidden=true;openFormKey=null;}));document.querySelectorAll('.add-inline').forEach((button)=>button.addEventListener('click',(event)=>{event.stopPropagation();const row=button.closest('tr');const input=row.querySelector('textarea');const body=(input.value||'').trim();if(!body)return;const index=pendingComments.length;pendingComments.push({path:row.dataset.path,new_position:parseInt(row.dataset.newLine||'0',10),old_position:parseInt(row.dataset.oldLine||'0',10),body});const pending=document.createElement('tr');pending.innerHTML='<td colspan="3"><div class="pending-review-comment"><span class="pending-body"></span><button class="remove-pending" title="Remove">×</button></div></td>';pending.querySelector('.pending-body').textContent=body;pending.querySelector('.remove-pending').addEventListener('click',()=>{pendingComments[index]=null;pending.remove();updatePendingCount();});row.after(pending);row.hidden=true;input.value='';openFormKey=null;updatePendingCount();}));document.querySelectorAll('.markdown-body a[href]').forEach((link)=>link.addEventListener('click',(event)=>{event.preventDefault();post('openExternal',{url:link.getAttribute('href')});}));
 </script>
 </body>
 </html>`;
@@ -1062,31 +566,26 @@ renderReviews();
 
   dispose(): void {
     PRDetailPanel.panels.delete(this.pr.number);
-    this.panel.dispose();
-    for (const d of this.disposables) {
-      d.dispose();
-    }
+    for (const disposable of this.disposables) disposable.dispose();
     this.disposables = [];
   }
 }
 
-function escHtml(s: string): string {
-  return String(s ?? "")
+function getNonce(): string {
+  const characters =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  let value = "";
+  for (let index = 0; index < 32; index += 1) {
+    value += characters.charAt(Math.floor(Math.random() * characters.length));
+  }
+  return value;
+}
+
+function escHtml(value: string): string {
+  return String(value ?? "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
-}
-
-function escAttr(s: string): string {
-  return String(s ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;")
-    .replace(/\n/g, "\\n")
-    .replace(/\r/g, "\\r")
-    .replace(/\t/g, "\\t");
 }
