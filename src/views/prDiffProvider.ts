@@ -57,6 +57,25 @@ class PRDiffRootItem extends vscode.TreeItem {
   }
 }
 
+class PRDiffDetailItem extends vscode.TreeItem {
+  constructor(pr: GiteaPullRequest, repoInfo: RepoInfo) {
+    super("View Details", vscode.TreeItemCollapsibleState.None);
+    this.id = "prDiffDetails";
+    this.iconPath = new vscode.ThemeIcon("eye");
+    this.command = {
+      command: "gitea.viewPRDetail",
+      title: "View PR Details",
+      arguments: [{ pr, repoInfo }],
+    };
+    if (pr.body?.trim()) {
+      const preview = new vscode.MarkdownString(pr.body);
+      preview.isTrusted = false;
+      preview.supportHtml = false;
+      this.tooltip = preview;
+    }
+  }
+}
+
 class PRDiffBranchItem extends vscode.TreeItem {
   constructor(pr: GiteaPullRequest) {
     super(`${pr.head.ref} → ${pr.base.ref}`, vscode.TreeItemCollapsibleState.None);
@@ -393,10 +412,12 @@ export class PRDiffProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
       const additions = this.files.reduce((sum, f) => sum + f.additions, 0);
       const deletions = this.files.reduce((sum, f) => sum + f.deletions, 0);
       const hasApproved = this.reviews.some((r) => r.state === "APPROVED" && !r.stale);
+      const details = new PRDiffDetailItem(this.pr, this.repoInfo);
 
       if (this.files.length === 0) {
         return [
           new PRDiffRootItem(this.pr, hasApproved),
+          details,
           new PRDiffBranchItem(this.pr),
           new PRDiffStatsItem(0, 0, 0),
           new PRDiffEmptyItem(),
@@ -416,6 +437,7 @@ export class PRDiffProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
 
       return [
         new PRDiffRootItem(this.pr, hasApproved),
+        details,
         new PRDiffBranchItem(this.pr),
         new PRDiffStatsItem(additions, deletions, this.files.length),
         filesSection,
