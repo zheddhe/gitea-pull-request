@@ -567,7 +567,7 @@ export class ReviewPullRequestViewProvider
     }
 
     const pr = active.state.pullRequest;
-    this.view.title = `Review Pull Request #${pr.number}`;
+    this.view.title = `Review Pull Request #${pr.number} (${active.repoInfo.label})`;
 
     const stateLabel = pr.merged
       ? "Merged"
@@ -637,14 +637,17 @@ export class ReviewPullRequestViewProvider
 <style>
   body { padding: 12px; color: var(--vscode-foreground); font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); }
   .header { margin-bottom: 12px; }
-  .title { font-weight: 600; margin-bottom: 4px; }
-  .meta, .muted { color: var(--vscode-descriptionForeground); }
+  .branch-context { display: flex; flex-wrap: wrap; gap: 4px 6px; color: var(--vscode-descriptionForeground); }
+  .branch-context strong { color: var(--vscode-foreground); font-weight: 600; }
+  .muted { color: var(--vscode-descriptionForeground); }
   textarea, select { box-sizing: border-box; width: 100%; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, transparent); padding: 6px 8px; }
   textarea { min-height: 110px; resize: vertical; }
   .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
-  button { border: 0; padding: 6px 12px; color: var(--vscode-button-foreground); background: var(--vscode-button-background); cursor: pointer; }
+  button { border: 1px solid transparent; padding: 6px 12px; color: var(--vscode-button-foreground); background: var(--vscode-button-background); cursor: pointer; }
   button.secondary { color: var(--vscode-button-secondaryForeground); background: var(--vscode-button-secondaryBackground); }
-  button.danger { color: var(--vscode-errorForeground); background: var(--vscode-button-secondaryBackground); }
+  button.success-outline { color: var(--vscode-testing-iconPassed); background: var(--vscode-button-secondaryBackground); border-color: var(--vscode-testing-iconPassed); }
+  button.danger-outline { color: var(--vscode-errorForeground); background: var(--vscode-button-secondaryBackground); border-color: var(--vscode-errorForeground); }
+  button.outline { color: var(--vscode-foreground); background: var(--vscode-button-secondaryBackground); border-color: var(--vscode-widget-border, var(--vscode-panel-border)); }
   button:disabled, select:disabled { opacity: 0.55; cursor: default; }
   .section { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--vscode-panel-border); }
   .section-title { font-weight: 600; margin-bottom: 6px; }
@@ -666,16 +669,15 @@ export class ReviewPullRequestViewProvider
 </head>
 <body>
   <div class="header">
-    <div class="title">#${pr.number} ${escapeHtml(pr.title)}</div>
-    <div class="meta">${escapeHtml(active.repoInfo.label)} · ${escapeHtml(pr.head.ref)} → ${escapeHtml(pr.base.ref)}</div>
+    <div class="branch-context"><strong>Source branch</strong><span>${escapeHtml(pr.head.ref)}</span><span>→</span><strong>Base branch</strong><span>${escapeHtml(pr.base.ref)}</span></div>
   </div>
 
   <div class="section-title">Review</div>
   <textarea id="reviewBody" placeholder="Leave a comment or review message">${escapeHtml(this.reviewBody)}</textarea>
   <div class="actions">
     <button id="comment"${disabled}>Comment</button>
-    <button class="secondary" id="approve"${disabled}>Approve</button>
-    <button class="danger" id="requestChanges"${disabled}>Request Changes</button>
+    <button class="success-outline" id="approve"${disabled}>Approve</button>
+    <button class="danger-outline" id="requestChanges"${disabled}>Request Changes</button>
     ${wip ? `<button class="secondary" id="readyForReview"${disabled}>Mark Ready for Review</button>` : ""}
   </div>
 
@@ -700,7 +702,7 @@ export class ReviewPullRequestViewProvider
     <select id="mergeMethod"${this.busy || supported.length === 0 ? " disabled" : ""}>${methodOptions}</select>
     <div class="actions">
       <button id="merge"${mergeDisabled ? " disabled" : ""}>Merge</button>
-      <button class="secondary" id="checkoutBase"${disabled}>Checkout '${escapeHtml(pr.base.ref)}'</button>
+      <button class="outline" id="checkoutBase"${disabled}>Checkout '${escapeHtml(pr.base.ref)}'</button>
     </div>
   </div>
 <script>
