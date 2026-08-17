@@ -14,8 +14,6 @@ interface RepoPRState {
   loading: boolean;
 }
 
-// ── Tree items ────────────────────────────────────────────────────────────────
-
 export class RepoGroupItem extends vscode.TreeItem {
   constructor(
     public readonly repoInfo: RepoInfo,
@@ -98,7 +96,6 @@ export class PullRequestItem extends vscode.TreeItem {
         new vscode.ThemeColor("gitDecoration.deletedResourceForeground"),
       );
     }
-    // Color by latest review status: green = approved, red = changes requested, orange = pending
     const color =
       reviewState === "APPROVED" ? "charts.green"
       : reviewState === "REQUEST_CHANGES" ? "charts.red"
@@ -134,8 +131,6 @@ export class LoadMorePRItem extends vscode.TreeItem {
     };
   }
 }
-
-// ── Provider ──────────────────────────────────────────────────────────────────
 
 export class PullRequestProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
   private _onDidChangeTreeData = new vscode.EventEmitter<
@@ -184,7 +179,6 @@ export class PullRequestProvider implements vscode.TreeDataProvider<vscode.TreeI
   }
 
   async getChildren(element?: vscode.TreeItem): Promise<vscode.TreeItem[]> {
-    // ── Root: one group node per detected repo ───────────────────────────
     if (!element) {
       const repos = this.repoManager.getRepos();
       if (repos.length === 0) {
@@ -204,7 +198,6 @@ export class PullRequestProvider implements vscode.TreeDataProvider<vscode.TreeI
       return items;
     }
 
-    // ── Repo group: category folders for that repo ─────────────────────────
     if (element instanceof RepoGroupItem) {
       const { repoInfo } = element;
       const session = await this.auth.getSession(repoInfo.serverUrl);
@@ -220,7 +213,6 @@ export class PullRequestProvider implements vscode.TreeDataProvider<vscode.TreeI
       return this.getRepoCategories(repoInfo, session.username);
     }
 
-    // ── Category: filtered PRs ─────────────────────────────────────────────
     if (element instanceof CategoryItem) {
       return element.prs.map((pr) => {
         const reviewState = this.reviewStateCache.get(
@@ -230,7 +222,6 @@ export class PullRequestProvider implements vscode.TreeDataProvider<vscode.TreeI
       });
     }
 
-    // ── PR detail children ────────────────────────────────────────────────
     if (element instanceof PullRequestItem) {
       return buildPRChildren(element);
     }
@@ -266,21 +257,12 @@ export class PullRequestProvider implements vscode.TreeDataProvider<vscode.TreeI
       return [empty];
     }
 
-    // Categorize PRs
     const allPrs = state.prs;
     const waitingPrs = allPrs.filter((pr) => {
-      // A PR is "waiting for my review" if:
-      // - I'm assigned to it (assignee or in assignees list)
-      // - AND it hasn't been approved by me yet
       const isAssigned =
         pr.assignee?.login === username ||
         pr.assignees?.some((a) => a.login === username);
       if (!isAssigned) return false;
-
-      // Check reviews — if I've already approved, it's not waiting
-      // We don't have review data here, so we use a heuristic:
-      // If there are any reviews and none are APPROVED, assume waiting
-      // (The detail view will show the actual review status)
       return true;
     });
     const createdPrs = allPrs.filter((pr) => pr.user.login === username);
@@ -355,7 +337,6 @@ export class PullRequestProvider implements vscode.TreeDataProvider<vscode.TreeI
       state.prs =
         state.page === 1 ? result.items : [...state.prs, ...result.items];
       state.hasMore = result.hasMore;
-      // Cache review states for icon coloring
       await this.cacheReviewStates(repoInfo, state.prs);
     } catch (err) {
       vscode.window.showErrorMessage(
@@ -369,11 +350,6 @@ export class PullRequestProvider implements vscode.TreeDataProvider<vscode.TreeI
     }
   }
 
-  /**
-   * Pre-fetch review states for a batch of PRs so the sidebar icons
-   * reflect the latest review status (green = approved, red = changes
-   * requested, orange = pending).
-   */
   private async cacheReviewStates(
     repoInfo: RepoInfo,
     prs: GiteaPullRequest[],
@@ -397,8 +373,6 @@ export class PullRequestProvider implements vscode.TreeDataProvider<vscode.TreeI
   }
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
 function relativeTime(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
   const mins = Math.floor(diff / 60000);
@@ -413,8 +387,26 @@ function relativeTime(iso: string): string {
 }
 
 function buildPRChildren(item: PullRequestItem): vscode.TreeItem[] {
-  const { pr, repoInfo } = item;
+  const { pr } = item;
   const children: vscode.TreeItem[] = [];
+
+  const detailItem = new PRChildItem(
+    "View Details",
+    undefined,
+    new vscode.ThemeIcon("eye"),
+  );
+  detailItem.command = {
+    command: "gitea.viewPRDetail",
+    title: "View PR Details",
+    arguments: [item],
+  };
+  if (pr.body?.trim()) {
+    const preview = new vscode.MarkdownString(pr.body);
+    preview.isTrusted = false;
+    preview.supportHtml = false;
+    detailItem.tooltip = preview;
+  }
+  children.push(detailItem);
 
   children.push(
     new PRChildItem(
@@ -482,18 +474,6 @@ function buildPRChildren(item: PullRequestItem): vscode.TreeItem[] {
     arguments: [item],
   };
   children.push(openItem);
-
-  const detailItem = new PRChildItem(
-    "View Details",
-    undefined,
-    new vscode.ThemeIcon("eye"),
-  );
-  detailItem.command = {
-    command: "gitea.viewPRDetail",
-    title: "View PR Details",
-    arguments: [item],
-  };
-  children.push(detailItem);
 
   return children;
 }
