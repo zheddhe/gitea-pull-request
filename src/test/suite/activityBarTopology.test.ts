@@ -232,7 +232,7 @@ suite("Activity Bar topology", () => {
     assert.match(source, /await this\.api\.listBranches\(repoInfo\)/);
   });
 
-  test("Create view uses source-to-base identification and native metadata pickers", () => {
+  test("Create view uses compact branch identification and native metadata pickers", () => {
     const source = fs.readFileSync(
       path.resolve(
         __dirname,
@@ -241,10 +241,16 @@ suite("Activity Bar topology", () => {
       "utf8",
     );
     const sourceBranch = source.indexOf("Source branch");
-    const arrow = source.indexOf("↓", sourceBranch);
-    const baseBranch = source.indexOf("Base branch", arrow);
+    const baseBranch = source.indexOf("Base branch", sourceBranch);
     assert.match(source, /Branch identification/);
-    assert.ok(sourceBranch >= 0 && arrow > sourceBranch && baseBranch > arrow);
+    assert.ok(sourceBranch >= 0 && baseBranch > sourceBranch);
+    assert.doesNotMatch(source, /merge-arrow/);
+    assert.doesNotMatch(source, />↓</);
+    assert.match(source, /General information/);
+    assert.match(source, /title: ""/);
+    assert.match(source, /placeholder="Pull request title"/);
+    assert.match(source, /placeholder="Pull request description"/);
+    assert.match(source, /select, input, textarea \{ width: 100%; font: inherit;/);
     assert.match(source, /class="form-card"/);
     assert.match(source, /class="metadata-list"/);
     assert.match(source, /class="chip"/);
@@ -348,6 +354,8 @@ suite("Activity Bar topology", () => {
     assert.match(createSource, /aria-label="Pull request title"/);
     assert.match(createSource, /aria-label="Pull request description"/);
     assert.match(reviewSource, /<textarea id="reviewBody"/);
+    assert.match(reviewSource, /textarea,select\{box-sizing:border-box;width:100%;font:inherit/);
+    assert.doesNotMatch(reviewSource, /branch-arrow/);
     assert.match(reviewSource, /<select id="mergeMethod"/);
     assert.match(reviewSource, /data-check-url=/);
   });
