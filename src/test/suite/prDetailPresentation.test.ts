@@ -50,6 +50,39 @@ suite("PR detail presentation", () => {
     assert.match(source, /<h1>Pull Request #\$\{pr\.number\} \$\{escHtml\(pr\.title\)\}<\/h1>/);
   });
 
+  test("shows review state first with branch and file stats in the common context row", () => {
+    assert.match(source, /const totalAdditions = files\.reduce/);
+    assert.match(source, /const totalDeletions = files\.reduce/);
+    const contextStart = source.indexOf('<div class="context-row">');
+    const review = source.indexOf('class="review-state', contextStart);
+    const head = source.indexOf('pr.head.ref', review);
+    const additions = source.indexOf('Additions <strong', head);
+    const files = source.indexOf('Files <strong>${files.length}', additions);
+    assert.ok(contextStart >= 0 && review > contextStart);
+    assert.ok(head > review && additions > head && files > additions);
+    assert.doesNotMatch(source, /class="stats-row"/);
+  });
+
+  test("uses a Discussion tab with comment count and iconography", () => {
+    assert.match(source, /const discussionIcon = `<svg/);
+    assert.match(source, /id="discussion-tab"/);
+    assert.match(source, /Discussion \(\$\{comments\.length\}\)/);
+    assert.match(source, /id="tab-discussion"/);
+    assert.doesNotMatch(source, /id="details-tab"/);
+  });
+
+  test("splits title, body and target-branch updates into independent workflows", () => {
+    assert.match(source, /case "editTitle"/);
+    assert.match(source, /case "editBody"/);
+    assert.match(source, /case "updateBase"/);
+    assert.match(source, /id="title-editor"/);
+    assert.match(source, /id="body-editor"/);
+    assert.match(source, /id="base-editor"/);
+    assert.match(source, /id="edit-body"/);
+    assert.match(source, /id="edit-base"/);
+    assert.doesNotMatch(source, /case "editPR"/);
+  });
+
   test("makes queued inline review comments explicitly submittable", () => {
     assert.match(source, /id="submit-inline"/);
     assert.match(source, /Submit inline comments/);
