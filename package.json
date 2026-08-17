@@ -36,8 +36,7 @@
     "vscode": "^1.133.0"
   },
   "categories": [
-    "SCM Providers",
-    "Other"
+    "SCM Providers"
   ],
   "activationEvents": [
     "onStartupFinished"
