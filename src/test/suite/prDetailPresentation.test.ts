@@ -34,19 +34,17 @@ suite("PR detail presentation", () => {
     assert.doesNotMatch(source, /postMessage\(\{ command: "loading" \}\)/);
   });
 
-  test("keeps PR state, review state and branch context distinct", () => {
-    assert.match(source, /state-merged/);
-    assert.match(source, /state-open/);
-    assert.match(source, /state-closed/);
+  test("places review status in the PR title and keeps branches out of detail", () => {
+    const dot = source.indexOf('class="state-dot');
+    const review = source.indexOf('class="review-state', dot);
+    const title = source.indexOf('class="title-prefix"', review);
+    assert.ok(dot >= 0 && review > dot && title > review);
     assert.match(source, /review-approved/);
     assert.match(source, /review-changes-requested/);
     assert.match(source, /review-pending/);
-    assert.match(source, /class="review-row"/);
-    assert.match(source, /class="branch-row"/);
-    assert.match(source, /<span class="context-label">Review<\/span>/);
-    assert.match(source, /<span class="context-label">Source branch<\/span>/);
-    assert.match(source, /<span class="context-label">Base branch<\/span>/);
-    assert.match(source, /assigned to <strong>/);
+    assert.doesNotMatch(source, /class="branch-row"/);
+    assert.doesNotMatch(source, /id="base-select"/);
+    assert.doesNotMatch(source, /post\('updateBase'/);
   });
 
   test("keeps the title prefix fixed while editing only the title value", () => {
@@ -74,13 +72,6 @@ suite("PR detail presentation", () => {
     assert.doesNotMatch(source, /id="change-state"/);
   });
 
-  test("uses the base branch itself as an inline selector", () => {
-    assert.match(source, /id="base-select"/);
-    assert.match(source, /class="branch-select"/);
-    assert.match(source, /aria-label="Base branch"/);
-    assert.match(source, /post\('updateBase',\{base\}\)/);
-  });
-
   test("keeps diff statistics out of PR detail", () => {
     assert.doesNotMatch(source, /totalAdditions/);
     assert.doesNotMatch(source, /totalDeletions/);
@@ -89,76 +80,68 @@ suite("PR detail presentation", () => {
     assert.doesNotMatch(source, /Files <strong>/);
   });
 
-  test("opens Reviews by default and aligns review action order", () => {
+  test("opens Reviews by default with only inline comment submission actions", () => {
     assert.match(source, /class="tab active" id="reviews-tab"/);
     assert.match(source, /id="tab-reviews" class="tab-content active"/);
-    assert.match(source, /<div class="review-submit"><strong>Review<\/strong>/);
-    const reviewActions = source.indexOf('class="review-actions"');
-    const comment = source.indexOf('data-review-event="COMMENT"', reviewActions);
-    const approve = source.indexOf('data-review-event="APPROVED"', comment);
-    const request = source.indexOf('data-review-event="REQUEST_CHANGES"', approve);
-    assert.ok(reviewActions >= 0 && comment > reviewActions);
-    assert.ok(approve > comment && request > approve);
+    assert.match(source, /id="submit-inline"/);
+    assert.match(source, /submitInlineReview/);
+    assert.match(source, /Pending inline comments: 0/);
+    assert.doesNotMatch(source, /data-review-event=/);
+    assert.doesNotMatch(source, /id="review-body"/);
+    assert.doesNotMatch(source, />Approve<\/button>/);
+    assert.doesNotMatch(source, />Request Changes<\/button>/);
   });
 
-  test("shows only a compact pending inline comment counter", () => {
-    assert.match(source, /id="pending-inline-label"/);
-    assert.match(source, /Pending inline comments: 0/);
-    assert.match(source, /Pending inline comments: '\+count/);
-    assert.doesNotMatch(source, /Inline comments are queued until you submit a review/);
-    assert.doesNotMatch(source, /file\(s\) changed · Select a diff line/);
+  test("restores file status color cues in the Reviews tab", () => {
+    assert.match(source, /class="file-status \$\{statusClass\}"/);
+    assert.match(source, /file-status-added/);
+    assert.match(source, /file-status-deleted/);
+    assert.match(source, /file-status-modified/);
+    assert.match(source, /diff-add \.lc/);
+    assert.match(source, /diff-del \.lc/);
   });
 
   test("uses aligned Description and Comments section bars", () => {
     assert.match(source, /class="section-bar"><span>Description<\/span>/);
     assert.match(source, /id="edit-body" class="icon-btn"/);
-    assert.match(source, /class="section-bar"><span>Comments \(\$\{comments\.length\}\)<\/span>/);
+    assert.match(
+      source,
+      /class="section-bar"><span>Comments \(\$\{comments\.length\}\)<\/span>/,
+    );
     assert.match(source, /id="body-editor" class="description-editor"/);
     assert.match(source, /placeholder="Write a comment\.\.\."/);
   });
 
-  test("keeps View Details first and prioritizes commits and reviews before files", () => {
-    const pullDetails = pullRequestsSource.indexOf('"View Details"');
-    const pullBranch = pullRequestsSource.indexOf(
-      "`${pr.head.ref} → ${pr.base.ref}`",
-      pullDetails,
-    );
-    assert.ok(pullDetails >= 0 && pullBranch > pullDetails);
-
-    const changesDetails = changesSource.indexOf(
-      "details,",
-      changesSource.indexOf("return ["),
-    );
-    const commits = changesSource.indexOf("commitsSection", changesDetails);
+  test("removes View Details from Changes tree while keeping data section order", () => {
+    assert.doesNotMatch(changesSource, /class PRDiffDetailItem/);
+    assert.doesNotMatch(changesSource, /new PRDiffDetailItem/);
+    const branch = changesSource.indexOf("new PRDiffBranchItem");
+    const commits = changesSource.indexOf("commitsSection", branch);
     const reviews = changesSource.indexOf("reviewsSection", commits);
     const files = changesSource.indexOf("filesSection", reviews);
-    assert.ok(changesDetails >= 0 && commits > changesDetails);
-    assert.ok(reviews > commits && files > reviews);
+    assert.ok(branch >= 0 && commits > branch && reviews > commits && files > reviews);
   });
 
-  test("centralizes operational actions in sidebar Review", () => {
+  test("makes sidebar Review the branch management hub", () => {
     assert.match(
       reviewSource,
       /Review Pull Request #\$\{pr\.number\} \(\$\{active\.repoInfo\.label\}\)/,
     );
-    const checks = reviewSource.indexOf('<div class="section-title">Checks</div>');
-    const review = reviewSource.indexOf('<div class="section-title">Review</div>', checks);
-    const branches = reviewSource.indexOf(
-      '<div class="section-title">Branch management</div>',
-      review,
-    );
-    const actions = reviewSource.indexOf(
-      '<div class="section-title">Actions</div>',
-      branches,
-    );
-    assert.ok(checks >= 0 && review > checks && branches > review && actions > branches);
+    const branches = reviewSource.indexOf('<span>Branch management</span>');
+    const readiness = reviewSource.indexOf('<span>Merge readiness</span>', branches);
+    const checks = reviewSource.indexOf('<span>Checks</span>', readiness);
+    const review = reviewSource.indexOf('<span>Review</span>', checks);
+    const actions = reviewSource.indexOf('<span>Actions</span>', review);
+    assert.ok(branches >= 0 && readiness > branches && checks > readiness);
+    assert.ok(review > checks && actions > review);
+    assert.match(reviewSource, /id="baseBranch"/);
+    assert.match(reviewSource, /type: "updateBase"/);
+    assert.match(reviewSource, /message\.type === "updateBase"/);
     assert.match(reviewSource, /id="checkoutSource"/);
     assert.match(reviewSource, /id="checkoutBase"/);
+    assert.match(reviewSource, /class="section-icon"/);
+    assert.match(reviewSource, />Merge PR<\/button>/);
     assert.match(reviewSource, /id="closePR"/);
-    assert.match(reviewSource, /message\.type === "checkoutSource"/);
-    assert.match(reviewSource, /message\.type === "checkoutBase"/);
-    assert.match(reviewSource, /message\.type === "closePR"/);
-    assert.match(reviewSource, /closePullRequest\(/);
   });
 
   test("keeps native Markdown preview on PR View Details hover", () => {
