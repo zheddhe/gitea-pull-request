@@ -97,11 +97,15 @@ suite("PR detail presentation", () => {
     assert.doesNotMatch(source, /id="review-body"/);
   });
 
+  test("preserves active PR detail tab across refresh renders", () => {
+    assert.match(source, /const savedState=vscode\.getState\(\)\|\|\{\}/);
+    assert.match(source, /vscode\.setState\(Object\.assign\(\{\},vscode\.getState\(\)\|\|\{\},\{activeTab:name\}\)\)/);
+    assert.match(source, /const restoredTab=typeof savedState\.activeTab==='string'\?savedState\.activeTab:'inline-reviews'/);
+    assert.match(source, /showTab\(restoredTab,restoredButton,false\)/);
+  });
+
   test("enriches review history with inline COMMENT detail and sorting", () => {
-    assert.match(
-      source,
-      /comment\.pull_request_review_id === review\.id/,
-    );
+    assert.match(source, /comment\.pull_request_review_id === review\.id/);
     assert.match(source, /review-inline-summary/);
     assert.match(source, /review-inline-message/);
     assert.match(source, /reviewCommentBodies\[commentIndex\]/);
