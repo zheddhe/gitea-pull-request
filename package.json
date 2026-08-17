@@ -214,6 +214,11 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "gitea.refreshPostMerge",
+        "title": "Gitea: Refresh Post-Merge Branch State",
+        "icon": "$(refresh)"
+      },
+      {
         "command": "gitea.refreshCI",
         "title": "Gitea: Refresh CI Runs",
         "icon": "$(refresh)"
@@ -378,9 +383,14 @@
           "group": "navigation@2"
         },
         {
-          "command": "gitea.finishPostMerge",
+          "command": "gitea.refreshPostMerge",
           "when": "view == gitea.postMergePullRequest && gitea.prSession.merged",
           "group": "navigation@1"
+        },
+        {
+          "command": "gitea.finishPostMerge",
+          "when": "view == gitea.postMergePullRequest && gitea.prSession.merged",
+          "group": "navigation@2"
         },
         {
           "command": "gitea.refreshCI",
@@ -502,7 +512,6 @@
     "@types/mocha": "^10.0.0",
     "@types/node": "^20.0.0",
     "@types/vscode": "^1.85.0",
-    "@typescript-eslint/eslint-plugin": "^8.0.0",
     "@vscode/test-electron": "^2.3.0",
     "eslint": "^9.0.0",
     "mocha": "^11.0.0",
