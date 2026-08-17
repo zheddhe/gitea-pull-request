@@ -294,4 +294,60 @@ suite("Activity Bar topology", () => {
     assert.match(source, /failedChecks/);
     assert.doesNotMatch(source, /listWorkflowRuns/);
   });
+
+  test("Issues expose a keyboard-native Open/Closed filter", () => {
+    const providerSource = fs.readFileSync(
+      path.resolve(__dirname, "../../../src/views/issuesProvider.ts"),
+      "utf8",
+    );
+    const commandSource = fs.readFileSync(
+      path.resolve(__dirname, "../../../src/commands/issueCommands.ts"),
+      "utf8",
+    );
+
+    assert.match(providerSource, /class IssueScopeItem extends vscode\.TreeItem/);
+    assert.match(providerSource, /command: "gitea\.configureIssueFilter"/);
+    assert.match(providerSource, /new vscode\.ThemeIcon\("filter"\)/);
+    assert.match(providerSource, /getFilter\(\): IssueFilter/);
+    assert.match(commandSource, /"gitea\.configureIssueFilter"/);
+    assert.match(commandSource, /showQuickPick<IssueFilterQuickPickItem>/);
+    assert.match(commandSource, /issuesProvider\.setFilter\(choice\.filter\)/);
+  });
+
+  test("PR Webviews keep primary interactions keyboard-native", () => {
+    const createSource = fs.readFileSync(
+      path.resolve(
+        __dirname,
+        "../../../src/features/pullRequests/views/createPullRequestView.ts",
+      ),
+      "utf8",
+    );
+    const reviewSource = fs.readFileSync(
+      path.resolve(
+        __dirname,
+        "../../../src/features/pullRequests/views/reviewPullRequestView.ts",
+      ),
+      "utf8",
+    );
+    const postMergeSource = fs.readFileSync(
+      path.resolve(
+        __dirname,
+        "../../../src/features/pullRequests/views/postMergePullRequestView.ts",
+      ),
+      "utf8",
+    );
+
+    for (const source of [createSource, reviewSource, postMergeSource]) {
+      assert.match(source, /<button/);
+      assert.doesNotMatch(source, /tabindex="-1"/);
+      assert.doesNotMatch(source, /onmousedown=/);
+    }
+    assert.match(createSource, /<label for="base">/);
+    assert.match(createSource, /<label for="head">/);
+    assert.match(createSource, /<label for="title">/);
+    assert.match(createSource, /<label for="body">/);
+    assert.match(reviewSource, /<textarea id="reviewBody"/);
+    assert.match(reviewSource, /<select id="mergeMethod"/);
+    assert.match(reviewSource, /data-check-url=/);
+  });
 });
