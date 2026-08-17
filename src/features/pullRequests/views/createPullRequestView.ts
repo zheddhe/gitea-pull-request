@@ -7,7 +7,6 @@ import { PullRequestProvider } from "../../../views/pullRequestProvider";
 import {
   draftTitle,
   reconcileBranchSelection,
-  suggestTitleFromBranch,
   validBranchPair,
 } from "../domain/createPullRequestModel";
 import { PullRequestSessionService } from "../services/pullRequestSessionService";
@@ -129,7 +128,7 @@ export class CreatePullRequestViewProvider
       branches,
       baseBranch,
       headBranch,
-      title: suggestTitleFromBranch(headBranch),
+      title: "",
       body: "",
       assignees: [],
       reviewers: [],
@@ -499,14 +498,12 @@ export class CreatePullRequestViewProvider
   .section:first-of-type { margin-top: 0; border-top: 0; padding-top: 0; }
   .section-title { display: flex; align-items: center; gap: 7px; margin-bottom: 8px; font-weight: 600; }
   label { display: block; margin: 0 0 4px; font-weight: 600; }
-  select, input, textarea { width: 100%; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, transparent); padding: 6px 8px; }
+  select, input, textarea { width: 100%; font: inherit; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, transparent); padding: 6px 8px; }
   select:focus-visible, input:focus-visible, textarea:focus-visible, button:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 2px; }
   textarea { min-height: 110px; resize: vertical; }
   .branch-row { display: grid; grid-template-columns: 110px minmax(0,1fr); gap: 8px; align-items: center; }
   .branch-row + .branch-row { margin-top: 6px; }
   .branch-row label { margin: 0; }
-  .merge-arrow { display: grid; grid-template-columns: 110px minmax(0,1fr); margin: 2px 0; color: var(--vscode-descriptionForeground); }
-  .merge-arrow span { grid-column: 2; padding-left: 8px; }
   .form-card { border: 1px solid var(--vscode-panel-border); border-radius: 3px; overflow: hidden; }
   .form-field { padding: 9px 10px; }
   .form-field + .form-field { border-top: 1px solid var(--vscode-panel-border); }
@@ -519,7 +516,7 @@ export class CreatePullRequestViewProvider
   .chip { display: inline-flex; align-items: center; border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border)); border-radius: 999px; padding: 1px 7px; font-size: .88em; }
   .metadata-empty { color: var(--vscode-descriptionForeground); font-size: .9em; }
   .actions { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
-  button { border: 1px solid transparent; padding: 6px 12px; color: var(--vscode-button-foreground); background: var(--vscode-button-background); cursor: pointer; }
+  button { font: inherit; border: 1px solid transparent; padding: 6px 12px; color: var(--vscode-button-foreground); background: var(--vscode-button-background); cursor: pointer; }
   button.secondary { color: var(--vscode-button-secondaryForeground); background: var(--vscode-button-secondaryBackground); }
   .hint { margin-top: 10px; color: var(--vscode-descriptionForeground); }
 </style>
@@ -530,14 +527,14 @@ export class CreatePullRequestViewProvider
   <section class="section">
     <div class="section-title">Branch identification</div>
     <div class="branch-row"><label for="head">Source branch</label><select id="head">${branchOptions(headBranch)}</select></div>
-    <div class="merge-arrow" aria-hidden="true"><span>↓</span></div>
     <div class="branch-row"><label for="base">Base branch</label><select id="base">${branchOptions(baseBranch)}</select></div>
   </section>
 
   <section class="section">
+    <div class="section-title">General information</div>
     <div class="form-card">
       <div class="form-field"><input id="title" aria-label="Pull request title" value="${escapeHtml(title)}" placeholder="Pull request title"></div>
-      <div class="form-field"><textarea id="body" aria-label="Pull request description" placeholder="Describe the changes">${escapeHtml(body)}</textarea></div>
+      <div class="form-field"><textarea id="body" aria-label="Pull request description" placeholder="Pull request description">${escapeHtml(body)}</textarea></div>
     </div>
   </section>
 
