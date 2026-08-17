@@ -7,11 +7,12 @@ suite("PR detail presentation", () => {
     path.resolve(__dirname, "../../../src/views/prDetailPanel.ts"),
     "utf8",
   );
-  const sidebarSource = fs.readFileSync(
-    path.resolve(
-      __dirname,
-      "../../../src/features/pullRequests/views/sidebarPullRequestProvider.ts",
-    ),
+  const pullRequestsSource = fs.readFileSync(
+    path.resolve(__dirname, "../../../src/views/pullRequestProvider.ts"),
+    "utf8",
+  );
+  const changesSource = fs.readFileSync(
+    path.resolve(__dirname, "../../../src/views/prDiffProvider.ts"),
     "utf8",
   );
 
@@ -37,8 +38,16 @@ suite("PR detail presentation", () => {
     assert.match(source, /review-changes-requested/);
     assert.match(source, /review-pending/);
     assert.match(source, /class="context-row"/);
-    assert.match(source, /const stateIcon = "●"/);
     assert.match(source, /assigned to <strong>/);
+  });
+
+  test("matches Issue detail status-dot sizing and title wording", () => {
+    assert.match(
+      source,
+      /\.state-dot\{width:8px;height:8px;border-radius:50%;flex:0 0 8px;background:currentColor\}/,
+    );
+    assert.match(source, /<span class="state-dot \$\{stateClass\}"/);
+    assert.match(source, /<h1>Pull Request #\$\{pr\.number\} \$\{escHtml\(pr\.title\)\}<\/h1>/);
   });
 
   test("makes queued inline review comments explicitly submittable", () => {
@@ -57,8 +66,20 @@ suite("PR detail presentation", () => {
   });
 
   test("adds native Markdown preview to PR View Details hover", () => {
-    assert.match(sidebarSource, /new vscode\.MarkdownString\(element\.pr\.body\)/);
-    assert.match(sidebarSource, /detailItem\.tooltip = preview/);
-    assert.match(sidebarSource, /preview\.isTrusted = false/);
+    assert.match(pullRequestsSource, /new vscode\.MarkdownString\(pr\.body\)/);
+    assert.match(pullRequestsSource, /detailItem\.tooltip = preview/);
+    assert.match(pullRequestsSource, /preview\.isTrusted = false/);
+  });
+
+  test("puts View Details first in Pull Requests and Changes in Pull Request", () => {
+    const pullDetails = pullRequestsSource.indexOf('"View Details"');
+    const pullBranch = pullRequestsSource.indexOf("`${pr.head.ref} → ${pr.base.ref}`", pullDetails);
+    assert.ok(pullDetails >= 0 && pullBranch > pullDetails);
+
+    assert.match(changesSource, /class PRDiffDetailItem/);
+    const changesDetails = changesSource.indexOf("details,", changesSource.indexOf("return ["));
+    const changesBranch = changesSource.indexOf("new PRDiffBranchItem", changesDetails);
+    assert.ok(changesDetails >= 0 && changesBranch > changesDetails);
+    assert.match(changesSource, /command: "gitea\.viewPRDetail"/);
   });
 });
