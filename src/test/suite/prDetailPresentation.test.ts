@@ -163,7 +163,7 @@ suite("PR detail presentation", () => {
       reviewSource,
       /Review Pull Request #\$\{pr\.number\} \(\$\{active\.repoInfo\.label\}\)/,
     );
-    const branches = reviewSource.indexOf('<span>Branch management</span>');
+    const branches = reviewSource.indexOf('<span>Branch identification</span>');
     const review = reviewSource.indexOf('<span>Review</span>', branches);
     const checks = reviewSource.indexOf('<span>Checks</span>', review);
     const readiness = reviewSource.indexOf('<span>Merge readiness</span>', checks);
@@ -174,6 +174,7 @@ suite("PR detail presentation", () => {
       reviewSource,
       /<select aria-label="Source branch" disabled><option selected>/,
     );
+    assert.match(reviewSource, /class="branch-arrow" aria-hidden="true">↓<\/span>/);
     assert.match(reviewSource, /id="baseBranch"/);
     assert.match(reviewSource, /type: "updateBase"/);
     assert.match(reviewSource, /message\.type === "updateBase"/);
