@@ -32,4 +32,19 @@ suite("Issue detail Markdown", () => {
     assert.match(source, /resolved\.protocol !== "http:"/);
     assert.match(source, /resolved\.protocol !== "https:"/);
   });
+
+  test("styles issue detail from VS Code theme and typography tokens", () => {
+    assert.match(source, /--base-size: var\(--vscode-font-size/);
+    assert.match(source, /--success: var\(--vscode-testing-iconPassed/);
+    assert.match(source, /--danger: var\(--vscode-testing-iconFailed/);
+    assert.match(source, /--input-bg: var\(--vscode-input-background\)/);
+    assert.match(source, /--button-bg: var\(--vscode-button-background\)/);
+    assert.match(source, /section>h2\{font-size:1em/);
+    assert.match(source, /\.markdown-body h2\{font-size:1\.16em\}/);
+    assert.match(source, /\.markdown-body table\{/);
+    assert.doesNotMatch(source, /#2da44e/);
+    assert.doesNotMatch(source, /#cf222e/);
+    assert.doesNotMatch(source, /#b91c1c/);
+    assert.doesNotMatch(source, /#15803d/);
+  });
 });
