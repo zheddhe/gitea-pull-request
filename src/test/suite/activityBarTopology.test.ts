@@ -232,6 +232,27 @@ suite("Activity Bar topology", () => {
     assert.match(source, /await this\.api\.listBranches\(repoInfo\)/);
   });
 
+  test("Create view uses source-to-base identification and native metadata pickers", () => {
+    const source = fs.readFileSync(
+      path.resolve(
+        __dirname,
+        "../../../src/features/pullRequests/views/createPullRequestView.ts",
+      ),
+      "utf8",
+    );
+    const sourceBranch = source.indexOf("Source branch");
+    const arrow = source.indexOf("↓", sourceBranch);
+    const baseBranch = source.indexOf("Base branch", arrow);
+    assert.match(source, /Branch identification/);
+    assert.ok(sourceBranch >= 0 && arrow > sourceBranch && baseBranch > arrow);
+    assert.match(source, /class="form-card"/);
+    assert.match(source, /class="metadata-list"/);
+    assert.match(source, /class="chip"/);
+    assert.match(source, /canPickMany: true/);
+    assert.doesNotMatch(source, /openLegacy/);
+    assert.doesNotMatch(source, /Use legacy create flow/);
+  });
+
   test("removes Webview controls superseded by native title actions", () => {
     const createSource = fs.readFileSync(
       path.resolve(
@@ -324,8 +345,8 @@ suite("Activity Bar topology", () => {
     }
     assert.match(createSource, /<label for="base">/);
     assert.match(createSource, /<label for="head">/);
-    assert.match(createSource, /<label for="title">/);
-    assert.match(createSource, /<label for="body">/);
+    assert.match(createSource, /aria-label="Pull request title"/);
+    assert.match(createSource, /aria-label="Pull request description"/);
     assert.match(reviewSource, /<textarea id="reviewBody"/);
     assert.match(reviewSource, /<select id="mergeMethod"/);
     assert.match(reviewSource, /data-check-url=/);
