@@ -5,60 +5,67 @@ on:
     types: [published]
 
 jobs:
-  build-and-upload:
+  release:
     runs-on: ubuntu-latest
-    
+
     permissions:
-      contents: write  # Required to upload assets to release
-    
+      contents: write
+      id-token: write
+
     steps:
-      - name: Checkout code
+      - name: Checkout release tag
         uses: actions/checkout@v4
-      
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
-      
-      - name: Install dependencies
-        run: npm ci
-      
-      - name: Compile TypeScript
-        run: npm run compile
-      
-      - name: Install vsce
-        run: npm install -g @vscode/vsce
-      
-      - name: Package extension
-        run: vsce package --no-dependencies
-      
-      - name: Get package version
-        id: package-version
-        run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
-      
-      - name: Upload VSIX to release
-        uses: softprops/action-gh-release@v1
-        with:
-          files: "*.vsix"
+
+      - name: Validate release tag and package version
+        id: version
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      
-      - name: Publish to VS Code Marketplace
-        if: env.AZURE_TOKEN != ''
-        run: vsce publish -p $AZURE_TOKEN
-        env:
-          AZURE_TOKEN: ${{ secrets.AZURE_TOKEN }}
-      
-      - name: Summary
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
-          echo "## 🎉 Extension Released!" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Version: **v${{ steps.package-version.outputs.version }}**" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "✅ VSIX file uploaded to release" >> $GITHUB_STEP_SUMMARY
-          if [ -n "${{ secrets.AZURE_TOKEN }}" ]; then
-            echo "✅ Published to VS Code Marketplace" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "ℹ️ Skipped marketplace publish (AZURE_TOKEN not configured)" >> $GITHUB_STEP_SUMMARY
+          set -euo pipefail
+          package_version="$(node -p "require('./package.json').version")"
+          tag_version="${RELEASE_TAG#v}"
+          if [ "$tag_version" != "$package_version" ]; then
+            echo "ERROR: release tag '$RELEASE_TAG' does not match package version '$package_version'." >&2
+            exit 1
           fi
+          echo "version=$package_version" >> "$GITHUB_OUTPUT"
+          echo "vsix=.artifacts/vsix/gitea-pull-request-$package_version.vsix" >> "$GITHUB_OUTPUT"
+
+      - name: Build, test and package release VSIX
+        run: make ci
+
+      - name: Verify release VSIX
+        env:
+          VSIX_FILE: ${{ steps.version.outputs.vsix }}
+        run: |
+          set -euo pipefail
+          test -s "$VSIX_FILE"
+          echo "Release VSIX: $VSIX_FILE"
+
+      - name: Upload VSIX to GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.version.outputs.vsix }}
+
+      - name: Publish to VS Code Marketplace
+        run: >-
+          npx --yes @vscode/vsce@3.9.2 publish
+          --oidc
+          --packagePath "${{ steps.version.outputs.vsix }}"
+
+      - name: Release summary
+        run: |
+          echo "## Extension released" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Version: **v${{ steps.version.outputs.version }}**" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- VSIX uploaded to the GitHub release" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Published to VS Code Marketplace through GitHub OIDC trusted publishing" >> "$GITHUB_STEP_SUMMARY"
