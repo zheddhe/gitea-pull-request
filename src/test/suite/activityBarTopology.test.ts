@@ -179,6 +179,35 @@ suite("Activity Bar topology", () => {
     assert.strictEqual(closeAction.group, "navigation@2");
   });
 
+  test("uses native refresh then close for post-merge", () => {
+    const commands = packageJson.contributes?.commands ?? [];
+    const refresh = commands.find(
+      (command) => command.command === "gitea.refreshPostMerge",
+    );
+    const close = commands.find(
+      (command) => command.command === "gitea.finishPostMerge",
+    );
+    assert.strictEqual(refresh?.icon, "$(refresh)");
+    assert.strictEqual(close?.icon, "$(close)");
+
+    const titleActions = packageJson.contributes?.menus?.["view/title"] ?? [];
+    const expectedWhen =
+      "view == gitea.postMergePullRequest && gitea.prSession.merged";
+    const refreshAction = titleActions.find(
+      (item) =>
+        item.command === "gitea.refreshPostMerge" && item.when === expectedWhen,
+    );
+    const closeAction = titleActions.find(
+      (item) =>
+        item.command === "gitea.finishPostMerge" && item.when === expectedWhen,
+    );
+
+    assert.ok(refreshAction);
+    assert.ok(closeAction);
+    assert.strictEqual(refreshAction.group, "navigation@1");
+    assert.strictEqual(closeAction.group, "navigation@2");
+  });
+
   test("uses native close semantics for create and post-merge views", () => {
     const commands = packageJson.contributes?.commands ?? [];
     for (const commandId of ["gitea.cancelCreatePR", "gitea.finishPostMerge"]) {
@@ -245,7 +274,8 @@ suite("Activity Bar topology", () => {
     assert.doesNotMatch(createSource, /id="cancel"/);
     assert.doesNotMatch(reviewSource, /id="refresh"/);
     assert.doesNotMatch(postMergeSource, /id="done"/);
-    assert.match(postMergeSource, /id="refresh"/);
+    assert.doesNotMatch(postMergeSource, /id="refresh"/);
+    assert.match(postMergeSource, /async refreshBranchState\(\): Promise<void>/);
   });
 
   test("Review keeps checks PR-centric without duplicating the CI browser", () => {
