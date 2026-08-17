@@ -15,6 +15,24 @@ interface RepoIssueState {
 
 // ── Tree items ────────────────────────────────────────────────────────────────
 
+export class IssueScopeItem extends vscode.TreeItem {
+  constructor(filter: IssueFilter) {
+    super(
+      filter === "open" ? "Showing open issues" : "Showing closed issues",
+      vscode.TreeItemCollapsibleState.None,
+    );
+    this.id = "issue-scope";
+    this.contextValue = "issueScope";
+    this.description = "Change filter";
+    this.iconPath = new vscode.ThemeIcon("filter");
+    this.command = {
+      command: "gitea.configureIssueFilter",
+      title: "Filter Issues",
+    };
+    this.tooltip = "Choose whether the Issues view shows open or closed issues.";
+  }
+}
+
 export class RepoGroupItem extends vscode.TreeItem {
   constructor(
     public readonly repoInfo: RepoInfo,
@@ -111,7 +129,14 @@ export class IssuesProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
     auth.onDidChangeSession(() => this.refresh());
   }
 
+  getFilter(): IssueFilter {
+    return this.filter;
+  }
+
   setFilter(filter: IssueFilter): void {
+    if (this.filter === filter) {
+      return;
+    }
     this.filter = filter;
     this.refresh();
   }
@@ -148,7 +173,7 @@ export class IssuesProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
         item.iconPath = new vscode.ThemeIcon("info");
         return [item];
       }
-      const items: vscode.TreeItem[] = [];
+      const items: vscode.TreeItem[] = [new IssueScopeItem(this.filter)];
       for (const r of repos) {
         const session = await this.auth.getSession(r.serverUrl);
         items.push(new RepoGroupItem(r, !!session));
@@ -263,7 +288,7 @@ function relativeTime(iso: string): string {
 }
 
 function buildIssueChildren(item: IssueItem): vscode.TreeItem[] {
-  const { issue, repoInfo } = item;
+  const { issue } = item;
   const children: vscode.TreeItem[] = [];
 
   if (issue.body?.trim()) {
