@@ -693,12 +693,14 @@ export class ReviewPullRequestViewProvider
   </div>
 
   <div class="section">
-    <div class="section-title">${readinessIcon}<span>Merge readiness</span></div>
-    <div>${stateLabel} · ${mergeable}</div>
-    <div>${escapeHtml(readiness.reviewLabel)} · ${escapeHtml(readiness.ciLabel)}</div>
-    ${this.readiness.loading ? '<div class="muted">Refreshing merge readiness…</div>' : ""}
-    ${blockers ? `<ul class="blocked">${blockers}</ul>` : '<div class="ready">No blocking condition detected from available Gitea signals.</div>'}
-    ${warnings ? `<ul class="muted">${warnings}</ul>` : ""}
+    <div class="section-title">${reviewIcon}<span>Review</span></div>
+    <textarea id="reviewBody" placeholder="Leave a comment or review message">${escapeHtml(this.reviewBody)}</textarea>
+    <div class="actions">
+      <button id="comment"${disabled}>Comment</button>
+      <button class="success-outline" id="approve"${disabled}>Approve</button>
+      <button class="danger-outline" id="requestChanges"${disabled}>Request Changes</button>
+      ${wip ? `<button id="readyForReview"${disabled}>Mark Ready for Review</button>` : ""}
+    </div>
   </div>
 
   <div class="section">
@@ -708,14 +710,12 @@ export class ReviewPullRequestViewProvider
   </div>
 
   <div class="section">
-    <div class="section-title">${reviewIcon}<span>Review</span></div>
-    <textarea id="reviewBody" placeholder="Leave a comment or review message">${escapeHtml(this.reviewBody)}</textarea>
-    <div class="actions">
-      <button id="comment"${disabled}>Comment</button>
-      <button class="success-outline" id="approve"${disabled}>Approve</button>
-      <button class="danger-outline" id="requestChanges"${disabled}>Request Changes</button>
-      ${wip ? `<button id="readyForReview"${disabled}>Mark Ready for Review</button>` : ""}
-    </div>
+    <div class="section-title">${readinessIcon}<span>Merge readiness</span></div>
+    <div>${stateLabel} · ${mergeable}</div>
+    <div>${escapeHtml(readiness.reviewLabel)} · ${escapeHtml(readiness.ciLabel)}</div>
+    ${this.readiness.loading ? '<div class="muted">Refreshing merge readiness…</div>' : ""}
+    ${blockers ? `<ul class="blocked">${blockers}</ul>` : '<div class="ready">No blocking condition detected from available Gitea signals.</div>'}
+    ${warnings ? `<ul class="muted">${warnings}</ul>` : ""}
   </div>
 
   <div class="section">
