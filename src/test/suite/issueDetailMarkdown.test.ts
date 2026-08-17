@@ -11,10 +11,15 @@ suite("Issue detail Markdown", () => {
   test("uses the VS Code Markdown renderer for issue content", () => {
     assert.match(source, /"markdown\.api\.render"/);
     assert.match(source, /this\.renderMarkdown\(issue\.body \?\? ""\)/);
-    assert.match(source, /comments\.map\(\(comment\) => this\.renderMarkdown\(comment\.body \?\? ""\)\)/);
+    assert.match(
+      source,
+      /comments\.map\(\(comment\) => this\.renderMarkdown\(comment\.body \?\? ""\)\)/,
+    );
   });
 
-  test("does not render issue Markdown as escaped preformatted text", () => {
+  test("keeps a safe plain-text fallback instead of client-side Markdown parsing", () => {
+    assert.match(source, /Issue Markdown renderer fallback/);
+    assert.match(source, /return `<pre>\$\{escHtml\(markdown\)\}<\/pre>`/);
     assert.doesNotMatch(source, /function renderBody\(/);
     assert.doesNotMatch(source, /function renderComments\(/);
     assert.doesNotMatch(source, /onclick=/);
