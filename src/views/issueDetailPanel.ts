@@ -211,7 +211,6 @@ export class IssueDetailPanel {
     commentBodies: string[],
   ): string {
     const stateLabel = issue.state === "open" ? "Open" : "Closed";
-    const stateIcon = issue.state === "open" ? "●" : "●";
     const stateClass = issue.state === "open" ? "state-open" : "state-closed";
     const nonce = getNonce();
 
@@ -223,9 +222,9 @@ export class IssueDetailPanel {
         )
         .join("") ?? "";
     const assigneesHtml = issue.assignees?.length
-      ? `<span class="mi">$(person) ${issue.assignees.map((user) => escHtml(user.login)).join(", ")}</span>`
+      ? `<span class="mi">Assignees: ${issue.assignees.map((user) => escHtml(user.login)).join(", ")}</span>`
       : issue.assignee
-        ? `<span class="mi">$(person) ${escHtml(issue.assignee.login)}</span>`
+        ? `<span class="mi">Assignee: ${escHtml(issue.assignee.login)}</span>`
         : "";
     const milestoneHtml = issue.milestone
       ? `<span class="mi">Milestone: ${escHtml(issue.milestone.title)}</span>`
@@ -263,7 +262,6 @@ export class IssueDetailPanel {
 <style>
 :root {
   --surface: var(--vscode-editor-background);
-  --surface-raised: var(--vscode-sideBar-background, var(--vscode-editor-background));
   --surface-subtle: var(--vscode-textBlockQuote-background, var(--vscode-editor-inactiveSelectionBackground));
   --fg: var(--vscode-foreground);
   --muted: var(--vscode-descriptionForeground);
@@ -282,7 +280,6 @@ export class IssueDetailPanel {
   --button-secondary-hover: var(--vscode-button-secondaryHoverBackground);
   --success: var(--vscode-testing-iconPassed, var(--vscode-charts-green));
   --danger: var(--vscode-testing-iconFailed, var(--vscode-errorForeground));
-  --warning: var(--vscode-editorWarning-foreground, var(--vscode-charts-yellow));
   --mono: var(--vscode-editor-font-family);
   --base-size: var(--vscode-font-size, 13px);
 }
@@ -293,7 +290,7 @@ button,input,textarea{font:inherit}
 a{color:var(--link);text-decoration:none}a:hover{color:var(--link-active);text-decoration:underline}
 .title-row{display:flex;align-items:center;gap:10px;margin-bottom:5px;min-width:0}
 .title-row h1{font-size:1.22em;line-height:1.3;font-weight:600;margin:0;min-width:0;overflow-wrap:anywhere}
-.state-dot{font-size:.85em;line-height:1}.state-open{color:var(--success)}.state-closed{color:var(--danger)}
+.state-dot{width:8px;height:8px;border-radius:50%;flex:0 0 8px;background:currentColor}.state-open{color:var(--success)}.state-closed{color:var(--danger)}
 .meta-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px 9px;color:var(--muted);font-size:.92em;margin:0 0 12px}
 .meta-row strong{color:var(--fg);font-weight:600}
 .badge{display:inline-flex;align-items:center;border:1px solid currentColor;border-radius:999px;padding:1px 7px;font-size:.78em;font-weight:600;text-transform:uppercase;background:transparent}
@@ -302,16 +299,14 @@ a{color:var(--link);text-decoration:none}a:hover{color:var(--link-active);text-d
 .actions{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;align-items:center}
 .btn{border:1px solid transparent;border-radius:2px;padding:4px 10px;min-height:26px;cursor:pointer;background:var(--button-bg);color:var(--button-fg)}
 .btn:hover{background:var(--button-hover)}.btn.sec{background:var(--button-secondary-bg);color:var(--button-secondary-fg)}.btn.sec:hover{background:var(--button-secondary-hover)}
-.btn.danger{background:var(--button-secondary-bg);color:var(--danger);border-color:color-mix(in srgb,var(--danger) 55%,transparent)}
-.btn.danger:hover{background:color-mix(in srgb,var(--danger) 14%,var(--button-secondary-bg))}
-.btn.success{background:var(--button-secondary-bg);color:var(--success);border-color:color-mix(in srgb,var(--success) 55%,transparent)}
-.btn.success:hover{background:color-mix(in srgb,var(--success) 14%,var(--button-secondary-bg))}
+.btn.danger{background:var(--button-secondary-bg);color:var(--danger);border-color:color-mix(in srgb,var(--danger) 55%,transparent)}.btn.danger:hover{background:color-mix(in srgb,var(--danger) 14%,var(--button-secondary-bg))}
+.btn.success{background:var(--button-secondary-bg);color:var(--success);border-color:color-mix(in srgb,var(--success) 55%,transparent)}.btn.success:hover{background:color-mix(in srgb,var(--success) 14%,var(--button-secondary-bg))}
 .btn.sm{font-size:.9em;padding:2px 8px;min-height:22px}
 .btn:focus-visible,.tab:focus-visible,textarea:focus-visible,input:focus-visible,a:focus-visible{outline:1px solid var(--focus);outline-offset:2px}
 .tabs{display:flex;gap:2px;border-bottom:1px solid var(--border);margin:0 0 14px}
-.tab{background:transparent;border:0;border-bottom:2px solid transparent;color:var(--muted);cursor:pointer;padding:6px 10px;font:inherit}
-.tab:hover{color:var(--fg)}.tab.active{color:var(--fg);border-bottom-color:var(--focus);font-weight:600}
+.tab{background:transparent;border:0;border-bottom:2px solid transparent;color:var(--muted);cursor:pointer;padding:6px 10px;font:inherit}.tab:hover{color:var(--fg)}.tab.active{color:var(--fg);border-bottom-color:var(--focus);font-weight:600}
 .tab-content{display:none}.tab-content.active{display:block}
+section>h2{font-size:1em;line-height:1.3;font-weight:600;margin:16px 0 8px;color:var(--fg)}
 .desc-body{background:var(--surface-subtle);border:1px solid var(--border);border-radius:3px;padding:12px 14px;margin-bottom:14px;overflow:hidden;overflow-wrap:anywhere}
 .markdown-body{font-size:1em;line-height:1.5}
 .markdown-body h1,.markdown-body h2,.markdown-body h3,.markdown-body h4,.markdown-body h5,.markdown-body h6{font-weight:600;line-height:1.3;margin:1.05em 0 .45em;color:var(--fg)}
@@ -326,8 +321,8 @@ a{color:var(--link);text-decoration:none}a:hover{color:var(--link-active);text-d
 .markdown-body table{border-collapse:collapse;width:max-content;max-width:100%;display:block;overflow:auto;margin:.7em 0}.markdown-body th,.markdown-body td{border:1px solid var(--border);padding:5px 8px;text-align:left}.markdown-body th{font-weight:600;background:var(--surface-subtle)}
 .markdown-body input[type="checkbox"]{width:auto;margin:0 6px 0 0;vertical-align:middle;accent-color:var(--success)}
 .comment{border:1px solid var(--border);border-radius:3px;margin-bottom:10px;overflow:hidden;background:var(--surface)}
-.comment-hdr{display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--surface-subtle);border-bottom:1px solid var(--border)}
-.comment-hdr strong{font-weight:600}.comment-body{padding:10px 12px;overflow:hidden;overflow-wrap:anywhere}.avatar{width:20px;height:20px;border-radius:50%}
+.comment-hdr{display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--surface-subtle);border-bottom:1px solid var(--border)}.comment-hdr strong{font-weight:600}
+.comment-body{padding:10px 12px;overflow:hidden;overflow-wrap:anywhere}.avatar{width:20px;height:20px;border-radius:50%}
 .empty{color:var(--muted);font-style:italic;padding:6px 0}.form-section{margin-top:14px}.form-section>label{display:block;margin-bottom:5px;font-size:.92em}
 textarea,input[type="text"]{width:100%;background:var(--input-bg);color:var(--input-fg);border:1px solid var(--input-border);border-radius:2px;padding:6px 8px;box-sizing:border-box}
 textarea{resize:vertical;line-height:1.45}.edit-form{background:var(--surface-subtle);border:1px solid var(--focus);border-radius:3px;padding:12px;margin-bottom:14px}.edit-form label{display:block;font-size:.92em;font-weight:600;margin-bottom:4px;color:var(--fg)}
@@ -339,7 +334,7 @@ textarea{resize:vertical;line-height:1.45}.edit-form{background:var(--surface-su
 </head>
 <body>
 <div class="title-row">
-  <span class="state-dot ${stateClass}" aria-hidden="true">${stateIcon}</span>
+  <span class="state-dot ${stateClass}" aria-hidden="true"></span>
   <h1 id="issue-title">Issue #${issue.number}: ${escHtml(issue.title)}</h1>
   <button id="edit" class="btn sm">Edit</button>
 </div>
