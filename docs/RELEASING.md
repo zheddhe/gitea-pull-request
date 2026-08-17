@@ -8,6 +8,7 @@ This document describes the release path for **Gitea Pull Request** on GitHub an
 - Marketplace publisher ID: **zheddhe**
 - Extension package name: **gitea-pull-request**
 - Marketplace extension identity: **zheddhe.gitea-pull-request**
+- GitHub repository: **zheddhe/gitea-pull-request**
 
 The repository and Marketplace publication are maintained independently from the maintainer's employer.
 
@@ -30,7 +31,7 @@ No Azure DevOps Personal Access Token is required or expected by `.github/workfl
 Configure the Visual Studio Marketplace publisher to trust this GitHub workflow:
 
 - GitHub owner: `zheddhe`
-- Repository: `gitea-vscode-extension`
+- Repository: `gitea-pull-request`
 - Workflow: `.github/workflows/release.yml`
 - Marketplace publisher: `zheddhe`
 
