@@ -27,6 +27,7 @@ export function registerPullRequestSessionCommands(
         );
 
         await vscode.commands.executeCommand(PULL_REQUEST_CONTEXT_CONTAINER);
+        await vscode.commands.executeCommand("gitea.viewActivePRDetail");
       },
     ),
     vscode.commands.registerCommand("gitea.clearActivePR", async () => {
