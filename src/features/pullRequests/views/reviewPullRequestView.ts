@@ -60,7 +60,6 @@ interface GitExtensionExportsLike {
 }
 
 type ReviewViewMessage =
-  | { type: "comment"; body: string }
   | { type: "approve"; body: string }
   | { type: "requestChanges"; body: string }
   | { type: "readyForReview" }
@@ -198,10 +197,6 @@ export class ReviewPullRequestViewProvider
 
     this.reviewBody = message.body;
     const body = message.body.trim();
-    if (message.type === "comment" && !body) {
-      vscode.window.showWarningMessage("A comment body is required.");
-      return;
-    }
     if (message.type === "requestChanges" && !body) {
       vscode.window.showWarningMessage(
         "Describe the requested changes before submitting the review.",
@@ -213,10 +208,7 @@ export class ReviewPullRequestViewProvider
     this.busy = true;
     this.render();
     try {
-      if (message.type === "comment") {
-        await this.reviewApi.addComment(active.repoInfo, number, body);
-        vscode.window.showInformationMessage(`Comment posted on PR #${number}.`);
-      } else if (message.type === "approve") {
+      if (message.type === "approve") {
         await this.reviewApi.createReview(active.repoInfo, number, "APPROVED", body);
         vscode.window.showInformationMessage(`PR #${number} approved.`);
       } else {
@@ -694,9 +686,8 @@ export class ReviewPullRequestViewProvider
 
   <div class="section">
     <div class="section-title">${reviewIcon}<span>Review</span></div>
-    <textarea id="reviewBody" placeholder="Leave a comment or review message">${escapeHtml(this.reviewBody)}</textarea>
+    <textarea id="reviewBody" placeholder="Leave a review message">${escapeHtml(this.reviewBody)}</textarea>
     <div class="actions">
-      <button id="comment"${disabled}>Comment</button>
       <button class="success-outline" id="approve"${disabled}>Approve</button>
       <button class="danger-outline" id="requestChanges"${disabled}>Request Changes</button>
       ${wip ? `<button id="readyForReview"${disabled}>Mark Ready for Review</button>` : ""}
@@ -712,7 +703,7 @@ export class ReviewPullRequestViewProvider
   <div class="section">
     <div class="section-title">${readinessIcon}<span>Merge readiness</span></div>
     <div>${stateLabel} · ${mergeable}</div>
-    <div>${escapeHtml(readiness.reviewLabel)} · ${escapeHtml(readiness.ciLabel)}</div>
+    <div class="muted">${escapeHtml(readiness.reviewLabel)} · ${escapeHtml(readiness.ciLabel)}</div>
     ${this.readiness.loading ? '<div class="muted">Refreshing merge readiness…</div>' : ""}
     ${blockers ? `<ul class="blocked">${blockers}</ul>` : '<div class="ready">No blocking condition detected from available Gitea signals.</div>'}
     ${warnings ? `<ul class="muted">${warnings}</ul>` : ""}
@@ -731,7 +722,6 @@ export class ReviewPullRequestViewProvider
   const body=document.getElementById('reviewBody');
   const mergeMethod=document.getElementById('mergeMethod');
   const baseBranch=document.getElementById('baseBranch');
-  document.getElementById('comment')?.addEventListener('click',()=>vscode.postMessage({type:'comment',body:body.value}));
   document.getElementById('approve')?.addEventListener('click',()=>vscode.postMessage({type:'approve',body:body.value}));
   document.getElementById('requestChanges')?.addEventListener('click',()=>vscode.postMessage({type:'requestChanges',body:body.value}));
   document.getElementById('readyForReview')?.addEventListener('click',()=>vscode.postMessage({type:'readyForReview'}));
