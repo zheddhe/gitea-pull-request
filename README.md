@@ -88,9 +88,11 @@ Two Gitea-specific Activity Bar containers separate general forge browsing from 
 
 ## Requirements
 
-- VS Code **1.85** or later
-- Gitea **v1.17+**
+- VS Code **1.133.0** or later
+- Gitea **1.26.4** or later
 - A Gitea API token with the required permissions
+
+Version `0.7.0` was functionally validated against **VS Code 1.133.0** and **Gitea 1.26.4**. Older Gitea releases are not claimed as supported for this release line.
 
 ### Recommended Gitea token permissions
 
@@ -109,7 +111,7 @@ Two Gitea-specific Activity Bar containers separate general forge browsing from 
 
 Development build, dependency locking, validation, packaging and local installation are centralized in the repository `Makefile`.
 
-The packaging tool is pinned to `@vscode/vsce 3.9.2`; local VSIX packaging therefore requires **Node.js 22+**. The VS Code command-line launcher (`code`) is only required for installation targets.
+The packaging tool is pinned to `@vscode/vsce 3.9.2`; the `0.7.0` development, CI and release baseline is **Node.js 24.x**. The VS Code command-line launcher (`code`) is only required for installation targets.
 
 After a fresh clone, or after modifying `package.json`, synchronize the lock and dependencies with:
 
