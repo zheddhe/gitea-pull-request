@@ -656,14 +656,14 @@ export class ReviewPullRequestViewProvider
 <style>
   body{padding:12px;color:var(--vscode-foreground);font-family:var(--vscode-font-family);font-size:var(--vscode-font-size)}
   .muted{color:var(--vscode-descriptionForeground)}
-  textarea,select{box-sizing:border-box;width:100%;color:var(--vscode-input-foreground);background:var(--vscode-input-background);border:1px solid var(--vscode-input-border,transparent);padding:6px 8px}
+  textarea,select{box-sizing:border-box;width:100%;font:inherit;color:var(--vscode-input-foreground);background:var(--vscode-input-background);border:1px solid var(--vscode-input-border,transparent);padding:6px 8px}
   textarea{min-height:110px;resize:vertical}
   .section{margin-top:14px;padding-top:10px;border-top:1px solid var(--vscode-panel-border)}
   .section:first-child{margin-top:0;padding-top:0;border-top:0}
   .section-title{display:flex;align-items:center;gap:6px;font-weight:600;margin-bottom:7px}
   .section-icon{width:15px;height:15px;flex:0 0 15px;color:var(--vscode-descriptionForeground)}
   .actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
-  button{border:1px solid transparent;padding:6px 12px;color:var(--vscode-button-foreground);background:var(--vscode-button-background);cursor:pointer}
+  button{font:inherit;border:1px solid transparent;padding:6px 12px;color:var(--vscode-button-foreground);background:var(--vscode-button-background);cursor:pointer}
   button.success-outline{color:var(--vscode-testing-iconPassed);background:var(--vscode-button-secondaryBackground);border-color:var(--vscode-testing-iconPassed)}
   button.danger-outline{color:var(--vscode-errorForeground);background:var(--vscode-button-secondaryBackground);border-color:var(--vscode-errorForeground)}
   button.icon-button{display:inline-flex;align-items:center;justify-content:center;width:28px;height:26px;padding:3px;color:var(--vscode-foreground);background:var(--vscode-button-secondaryBackground);border-color:var(--vscode-widget-border,var(--vscode-panel-border))}
@@ -671,7 +671,6 @@ export class ReviewPullRequestViewProvider
   button:disabled,select:disabled{opacity:.55;cursor:default}
   .branch-grid{display:grid;grid-template-columns:max-content minmax(0,1fr) max-content;gap:7px 8px;align-items:center}
   .branch-grid strong{white-space:nowrap}
-  .branch-arrow{grid-column:2;color:var(--vscode-descriptionForeground);padding-left:8px;line-height:1}
   ul{margin:6px 0;padding-left:20px}.blocked{color:var(--vscode-errorForeground)}.ready{color:var(--vscode-testing-iconPassed)}
   .checks{list-style:none;padding:0;margin-top:8px}.check{display:grid;grid-template-columns:max-content 1fr;gap:8px;padding:6px 0;border-top:1px solid var(--vscode-panel-border)}.check:first-child{border-top:0}.check-state{min-width:62px;font-size:.9em;font-weight:600}.check-success .check-state{color:var(--vscode-testing-iconPassed)}.check-pending .check-state,.check-warning .check-state{color:var(--vscode-editorWarning-foreground)}.check-failure .check-state,.check-error .check-state{color:var(--vscode-errorForeground)}.check-description{color:var(--vscode-descriptionForeground);margin-top:2px;overflow-wrap:anywhere}a{color:var(--vscode-textLink-foreground);text-decoration:none}
 </style>
@@ -681,7 +680,6 @@ export class ReviewPullRequestViewProvider
     <div class="section-title">${branchIcon}<span>Branch identification</span></div>
     <div class="branch-grid">
       <strong>Source branch</strong><select aria-label="Source branch" disabled><option selected>${escapeHtml(pr.head.ref)}</option></select><button class="icon-button" id="checkoutSource" title="Checkout source branch" aria-label="Checkout source branch">${checkoutIcon}</button>
-      <span></span><span class="branch-arrow" aria-hidden="true">↓</span><span></span>
       <strong>Base branch</strong><select id="baseBranch" aria-label="Base branch"${this.busy ? " disabled" : ""}>${branchOptions}</select><button class="icon-button" id="checkoutBase" title="Checkout base branch" aria-label="Checkout base branch">${checkoutIcon}</button>
     </div>
   </div>
