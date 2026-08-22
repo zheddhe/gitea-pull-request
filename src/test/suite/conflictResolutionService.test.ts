@@ -1,5 +1,6 @@
 import * as assert from "assert";
 import {
+  classifySourceSynchronization,
   executeConflictResolutionPreparation,
   type ConflictResolutionOperations,
   type ConflictResolutionPlan,
@@ -7,6 +8,7 @@ import {
 
 const plan: ConflictResolutionPlan = {
   sourceBranch: "feature/conflict",
+  sourceSha: "1111111111111111111111111111111111111111",
   sourceRemote: "origin",
   sourceRemoteRef: "origin/feature/conflict",
   baseBranch: "develop",
@@ -105,6 +107,27 @@ suite("ConflictResolutionService", () => {
     if (result.kind === "conflicts") {
       assert.deepStrictEqual(result.conflictedFiles, ["src/a.ts", "src/b.ts"]);
     }
+  });
+
+  test("keeps an exact local pull request source unchanged", () => {
+    assert.strictEqual(
+      classifySourceSynchronization("abc", "abc", true),
+      "current",
+    );
+  });
+
+  test("allows only a safe fast-forward for a stale local source", () => {
+    assert.strictEqual(
+      classifySourceSynchronization("old", "new", true),
+      "fastForward",
+    );
+  });
+
+  test("refuses a local source that has diverged from the pull request head", () => {
+    assert.strictEqual(
+      classifySourceSynchronization("local", "remote", false),
+      "diverged",
+    );
   });
 });
 
