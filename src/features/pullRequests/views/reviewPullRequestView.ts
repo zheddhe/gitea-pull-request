@@ -21,6 +21,7 @@ import {
   type MergeReadiness,
   type RepositoryMergeSettings,
 } from "../domain/reviewPullRequestModel";
+import { visibilityRefreshDecision } from "../domain/visibilityRefreshPolicy";
 import { PullRequestReviewApi } from "../services/pullRequestReviewApi";
 import { PullRequestSessionService } from "../services/pullRequestSessionService";
 
@@ -62,6 +63,7 @@ interface GitExtensionExportsLike {
 type ReviewViewMessage =
   | { type: "approve"; body: string }
   | { type: "requestChanges"; body: string }
+  | { type: "draftChanged"; body: string }
   | { type: "readyForReview" }
   | { type: "selectMergeMethod"; method: MergeMethod }
   | { type: "merge" }
@@ -82,6 +84,10 @@ export class ReviewPullRequestViewProvider
   private reviewBody = "";
   private busy = false;
   private readiness: ReadinessState = { loading: false };
+  private activePullRequestIdentity: string | undefined;
+  private visibilityRefreshInFlight = false;
+  private lastVisibilityRefreshAt = 0;
+  private deferredVisibilityRefresh = false;
   private readonly disposables: vscode.Disposable[] = [];
 
   constructor(
@@ -92,9 +98,14 @@ export class ReviewPullRequestViewProvider
     private readonly prProvider: PullRequestProvider,
     private readonly workspaceState: vscode.Memento,
   ) {
+    this.activePullRequestIdentity = this.pullRequestIdentity(this.session.current);
     this.disposables.push(
       this.session.onDidChangeState((state) => {
-        this.reviewBody = "";
+        const nextIdentity = this.pullRequestIdentity(state);
+        if (nextIdentity !== this.activePullRequestIdentity) {
+          this.reviewBody = "";
+        }
+        this.activePullRequestIdentity = nextIdentity;
         this.readiness = { loading: false };
         this.render();
         if (state.kind === "active") {
@@ -120,15 +131,27 @@ export class ReviewPullRequestViewProvider
         log(`[review-view] message received type=${message.type}`);
         void this.handleMessage(message);
       }),
+      view.onDidChangeVisibility(() => {
+        if (view.visible) void this.refreshOnVisibility();
+      }),
     );
     this.render();
     const active = this.activeContext();
     if (active) void this.loadReadiness(active.repoInfo, active.state);
+    if (view.visible) this.lastVisibilityRefreshAt = Date.now();
   }
 
   dispose(): void {
     for (const disposable of this.disposables) disposable.dispose();
     this.disposables.length = 0;
+  }
+
+  private pullRequestIdentity(
+    state: PullRequestWorkspaceState,
+  ): string | undefined {
+    return state.kind === "active"
+      ? `${state.repository.key}#${state.pullRequest.number}`
+      : undefined;
   }
 
   private activeContext():
@@ -142,7 +165,83 @@ export class ReviewPullRequestViewProvider
     return repoInfo ? { repoInfo, state } : undefined;
   }
 
+  private async refreshOnVisibility(ignoreCooldown = false): Promise<void> {
+    const view = this.view;
+    const active = this.activeContext();
+    if (!view || !active) return;
+
+    const now = Date.now();
+    const decision = visibilityRefreshDecision({
+      visible: view.visible,
+      busy: this.busy,
+      hasDraft: this.reviewBody.length > 0,
+      inFlight: this.visibilityRefreshInFlight,
+      lastRefreshAt: ignoreCooldown ? 0 : this.lastVisibilityRefreshAt,
+      now,
+    });
+
+    if (decision === "draft" || decision === "busy") {
+      this.deferredVisibilityRefresh = true;
+      log(
+        `[review-view] visibility refresh deferred reason=${decision} repo=${active.repoInfo.label} pr=#${active.state.pullRequest.number}`,
+      );
+      return;
+    }
+    if (decision !== "refresh") return;
+
+    this.visibilityRefreshInFlight = true;
+    this.deferredVisibilityRefresh = false;
+    this.lastVisibilityRefreshAt = now;
+    const repositoryKey = active.state.repository.key;
+    const pullRequestNumber = active.state.pullRequest.number;
+    log(
+      `[review-view] visibility refresh repo=${active.repoInfo.label} pr=#${pullRequestNumber}`,
+    );
+
+    try {
+      const pullRequest = await this.api.getPullRequest(
+        active.repoInfo,
+        pullRequestNumber,
+      );
+      const current = this.activeContext();
+      if (
+        !current ||
+        current.state.repository.key !== repositoryKey ||
+        current.state.pullRequest.number !== pullRequestNumber
+      ) {
+        return;
+      }
+      await this.session.activate(
+        current.state.repository,
+        pullRequest,
+        current.state.checkoutState,
+      );
+      this.prProvider.refresh();
+      log(
+        `[review-view] visibility refresh complete repo=${current.repoInfo.label} pr=#${pullRequest.number} head=${pullRequest.head.sha}`,
+      );
+    } catch (error) {
+      log(
+        `[review-view] visibility refresh failed repo=${active.repoInfo.label} pr=#${pullRequestNumber}: ${(error as Error).message}`,
+      );
+    } finally {
+      this.visibilityRefreshInFlight = false;
+    }
+  }
+
   private async handleMessage(message: ReviewViewMessage): Promise<void> {
+    if (message.type === "draftChanged") {
+      this.reviewBody = message.body;
+      if (
+        !this.reviewBody &&
+        this.deferredVisibilityRefresh &&
+        this.view?.visible
+      ) {
+        void this.refreshOnVisibility(true);
+      }
+      return;
+    }
+
     if (message.type === "openCheck") {
       const uri = vscode.Uri.parse(message.url);
       if (uri.scheme !== "http" && uri.scheme !== "https") {
@@ -722,6 +821,7 @@ export class ReviewPullRequestViewProvider
   const body=document.getElementById('reviewBody');
   const mergeMethod=document.getElementById('mergeMethod');
   const baseBranch=document.getElementById('baseBranch');
+  body?.addEventListener('input',()=>vscode.postMessage({type:'draftChanged',body:body.value}));
   document.getElementById('approve')?.addEventListener('click',()=>vscode.postMessage({type:'approve',body:body.value}));
   document.getElementById('requestChanges')?.addEventListener('click',()=>vscode.postMessage({type:'requestChanges',body:body.value}));
   document.getElementById('readyForReview')?.addEventListener('click',()=>vscode.postMessage({type:'readyForReview'}));
