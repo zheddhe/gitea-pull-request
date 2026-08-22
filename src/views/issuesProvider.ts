@@ -13,6 +13,13 @@ interface RepoIssueState {
   loading: boolean;
 }
 
+export function isIssueAssignedTo(issue: GiteaIssue, username: string): boolean {
+  return (
+    issue.assignee?.login === username ||
+    issue.assignees?.some((assignee) => assignee.login === username) === true
+  );
+}
+
 export class IssueScopeItem extends vscode.TreeItem {
   constructor(filter: IssueFilter) {
     super(
@@ -36,6 +43,24 @@ export class RepoGroupItem extends vscode.TreeItem {
     this.description = repoInfo.currentBranch ? `(${repoInfo.currentBranch})` : "";
     this.iconPath = new vscode.ThemeIcon(authed ? "repo" : "repo-forked");
     this.tooltip = `${repoInfo.serverUrl}/${repoInfo.owner}/${repoInfo.repo}`;
+  }
+}
+
+export class AssignedIssuesItem extends vscode.TreeItem {
+  constructor(
+    public readonly issues: GiteaIssue[],
+    public readonly repoInfo: RepoInfo,
+  ) {
+    super(
+      `Assigned to Me (${issues.length})`,
+      issues.length > 0
+        ? vscode.TreeItemCollapsibleState.Collapsed
+        : vscode.TreeItemCollapsibleState.None,
+    );
+    this.id = `issue-assigned:${repoInfo.key}`;
+    this.contextValue = "issueAssignedToMe";
+    this.iconPath = new vscode.ThemeIcon("person");
+    this.tooltip = "Issues in the current Open/Closed filter assigned to you.";
   }
 }
 
@@ -148,12 +173,18 @@ export class IssuesProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
         signIn.command = { command: "gitea.signIn", title: "Sign In" };
         return [signIn];
       }
-      return this.getRepoChildren(repoInfo);
+      return this.getRepoChildren(repoInfo, session.username);
+    }
+    if (element instanceof AssignedIssuesItem) {
+      return element.issues.map((issue) => new IssueItem(issue, element.repoInfo));
     }
     return [];
   }
 
-  private async getRepoChildren(repoInfo: RepoInfo): Promise<vscode.TreeItem[]> {
+  private async getRepoChildren(
+    repoInfo: RepoInfo,
+    username: string,
+  ): Promise<vscode.TreeItem[]> {
     let state = this.stateMap.get(repoInfo.key);
     if (!state) {
       state = { issues: [], page: 1, hasMore: false, loading: false };
@@ -166,12 +197,22 @@ export class IssuesProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
       item.iconPath = new vscode.ThemeIcon("loading~spin");
       return [item];
     }
+
+    const assignedIssues = state.issues.filter((issue) =>
+      isIssueAssignedTo(issue, username),
+    );
+    const assigned = new AssignedIssuesItem(assignedIssues, repoInfo);
+
     if (state.issues.length === 0) {
       const empty = new vscode.TreeItem(`No ${this.filter} issues`, vscode.TreeItemCollapsibleState.None);
       empty.iconPath = new vscode.ThemeIcon("info");
-      return [empty];
+      return [assigned, empty];
     }
-    const items: vscode.TreeItem[] = state.issues.map((i) => new IssueItem(i, repoInfo));
+
+    const items: vscode.TreeItem[] = [
+      assigned,
+      ...state.issues.map((issue) => new IssueItem(issue, repoInfo)),
+    ];
     if (state.hasMore) items.push(new LoadMoreIssueItem(repoInfo.key, this.filter));
     return items;
   }
