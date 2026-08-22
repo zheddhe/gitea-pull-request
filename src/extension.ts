@@ -83,10 +83,12 @@ export async function activate(
     vscode.window.registerWebviewViewProvider(
       CreatePullRequestViewProvider.viewType,
       createPullRequestView,
+      { webviewOptions: { retainContextWhenHidden: true } },
     ),
     vscode.window.registerWebviewViewProvider(
       ReviewPullRequestViewProvider.viewType,
       reviewPullRequestView,
+      { webviewOptions: { retainContextWhenHidden: true } },
     ),
     vscode.window.registerWebviewViewProvider(
       PostMergePullRequestViewProvider.viewType,
