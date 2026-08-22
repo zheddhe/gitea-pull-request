@@ -26,4 +26,18 @@ suite("Issue tree presentation", () => {
     assert.match(source, /tooltip\.isTrusted = false/);
     assert.match(source, /tooltip\.supportHtml = false/);
   });
+
+  test("adds Assigned to Me as a real business aggregation without replacing the listing", () => {
+    assert.match(source, /class AssignedIssuesItem extends vscode\.TreeItem/);
+    assert.match(source, /`Assigned to Me \(\$\{issues\.length\}\)`/);
+    assert.match(source, /this\.contextValue = "issueAssignedToMe"/);
+    assert.match(source, /new vscode\.ThemeIcon\("person"\)/);
+    assert.match(source, /state\.issues\.filter\(\(issue\) =>/);
+    assert.match(source, /isIssueAssignedTo\(issue, username\)/);
+    assert.match(
+      source,
+      /\.\.\.state\.issues\.map\(\(issue\) => new IssueItem\(issue, repoInfo\)\)/,
+    );
+    assert.match(source, /element instanceof AssignedIssuesItem/);
+  });
 });
