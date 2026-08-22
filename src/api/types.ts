@@ -159,6 +159,7 @@ export interface GiteaWorkflowRun {
     | "waiting"
     | "running"
     | "in_progress"
+    | "completed"
     | "success"
     | "failure"
     | "cancelled"

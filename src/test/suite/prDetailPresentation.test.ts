@@ -196,9 +196,18 @@ suite("PR detail presentation", () => {
     assert.match(reviewSource, /id="closePR"/);
   });
 
-  test("keeps native Markdown preview on PR View Details hover", () => {
-    assert.match(pullRequestsSource, /new vscode\.MarkdownString\(pr\.body\)/);
-    assert.match(pullRequestsSource, /detailItem\.tooltip = preview/);
-    assert.match(pullRequestsSource, /preview\.isTrusted = false/);
+  test("keeps native Markdown preview on the flat PR row", () => {
+    assert.doesNotMatch(pullRequestsSource, /class PRChildItem/);
+    assert.doesNotMatch(pullRequestsSource, /function buildPRChildren/);
+    assert.match(
+      pullRequestsSource,
+      /new vscode\.MarkdownString\(tooltipLines\.join\("\\n\\n"\)\)/,
+    );
+    assert.match(pullRequestsSource, /pr\.body\.trim\(\)/);
+    assert.match(pullRequestsSource, /tooltip\.isTrusted = false/);
+    assert.match(pullRequestsSource, /tooltip\.supportHtml = false/);
+    assert.match(pullRequestsSource, /Assignees: \$\{pr\.assignees\.map/);
+    assert.match(pullRequestsSource, /Labels: \$\{pr\.labels\.map/);
+    assert.match(pullRequestsSource, /Changes: \+\$\{pr\.additions\}/);
   });
 });

@@ -2,7 +2,25 @@
 
 All notable changes to **Gitea Pull Request** are documented in this file.
 
-## 0.7.0 - Unreleased
+## 0.8.0 - Unreleased
+
+### Added
+- CI / Actions rows now surface the completed run conclusion as the primary signal, with event/date metadata and branch/commit detail retained in the tooltip.
+- **Assigned to Me** issue aggregation follows the current Open/Closed filter and supports both single- and multi-assignee Gitea payloads.
+- Native VS Code log levels (`trace`, `debug`, `info`, `warn`, `error`) through a `LogOutputChannel`, with the existing `log()` helper retained as an `info()` compatibility alias.
+
+### Changed
+- Pull-request and issue rows are flattened into leaf business objects; secondary metadata and Markdown description/body content are consolidated into safe hover tooltips.
+- Common PR/Issue actions are available inline with consistent semantics: **View Details**, **Open in Browser**, and **Activate PR** where applicable.
+- Pull-request aggregation icons are semantic: pull-request for **All Open**, eye/review for **Waiting for my review**, and person for **Created by me**.
+- Closed issues use a red status signal instead of purple to avoid merged-state ambiguity.
+
+### Fixed
+- Removed a sidebar-specific hard-coded folder icon that overrode the intended **Waiting for my review** category icon.
+- Completed CI runs no longer present generic `completed` as their meaningful final result.
+- Missing CI metadata is omitted rather than displayed as `undefined`.
+
+## 0.7.0 - 2026-08-17
 
 ### Added
 - Native **View Details**, **Open in Browser**, **Refresh** and lifecycle title actions across the active pull-request workspace.

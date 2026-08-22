@@ -1,16 +1,37 @@
 import * as vscode from "vscode";
 
-let channel: vscode.OutputChannel | undefined;
+let channel: vscode.LogOutputChannel | undefined;
 
-export function initOutputChannel(): vscode.OutputChannel {
-  channel = vscode.window.createOutputChannel("Gitea Pull Request");
+export function initOutputChannel(): vscode.LogOutputChannel {
+  channel = vscode.window.createOutputChannel("Gitea Pull Request", { log: true });
   return channel;
 }
 
-export function getOutputChannel(): vscode.OutputChannel | undefined {
+export function getOutputChannel(): vscode.LogOutputChannel | undefined {
   return channel;
 }
 
+export function trace(message: string): void {
+  channel?.trace(message);
+}
+
+export function debug(message: string): void {
+  channel?.debug(message);
+}
+
+export function info(message: string): void {
+  channel?.info(message);
+}
+
+export function warn(message: string): void {
+  channel?.warn(message);
+}
+
+export function error(message: string | Error): void {
+  channel?.error(message);
+}
+
+// Backward-compatible alias while existing call sites are migrated gradually.
 export function log(message: string): void {
-  channel?.appendLine(new Date().toISOString() + " " + message);
+  info(message);
 }

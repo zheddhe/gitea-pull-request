@@ -84,14 +84,17 @@ suite("Issue detail Markdown", () => {
     assert.doesNotMatch(source, /closedDate/);
   });
 
-  test("keeps View Details as the first issue child", () => {
-    const builder = issuesSource.indexOf("function buildIssueChildren");
-    const details = issuesSource.indexOf('"View Details"', builder);
-    const labels = issuesSource.indexOf('new vscode.ThemeIcon("tag")', details);
-    const comments = issuesSource.indexOf('new vscode.ThemeIcon("comment-discussion")', details);
-    const browser = issuesSource.indexOf('"Open in Browser"', details);
-    assert.ok(builder >= 0 && details > builder);
-    assert.ok(labels > details && comments > details && browser > details);
+  test("keeps issue metadata available on the flat Activity Bar row", () => {
+    assert.doesNotMatch(issuesSource, /function buildIssueChildren/);
+    assert.doesNotMatch(issuesSource, /class IssueChildItem/);
+    assert.match(issuesSource, /new vscode\.MarkdownString\(tooltipLines\.join\("\\n\\n"\)\)/);
+    assert.match(issuesSource, /issue\.body\.trim\(\)/);
+    assert.match(issuesSource, /Labels: \$\{issue\.labels\.map/);
+    assert.match(issuesSource, /Assignees: \$\{issue\.assignees\.map/);
+    assert.match(issuesSource, /Milestone: \$\{issue\.milestone\.title\}/);
+    assert.match(issuesSource, /\$\{issue\.comments\} comment\(s\)/);
+    assert.match(issuesSource, /tooltip\.isTrusted = false/);
+    assert.match(issuesSource, /tooltip\.supportHtml = false/);
   });
 
   test("styles issue detail from VS Code theme tokens", () => {

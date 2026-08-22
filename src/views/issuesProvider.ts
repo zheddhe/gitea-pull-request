@@ -13,6 +13,13 @@ interface RepoIssueState {
   loading: boolean;
 }
 
+export function isIssueAssignedTo(issue: GiteaIssue, username: string): boolean {
+  return (
+    issue.assignee?.login === username ||
+    issue.assignees?.some((assignee) => assignee.login === username) === true
+  );
+}
+
 export class IssueScopeItem extends vscode.TreeItem {
   constructor(filter: IssueFilter) {
     super(
@@ -39,29 +46,57 @@ export class RepoGroupItem extends vscode.TreeItem {
   }
 }
 
-export class IssueItem extends vscode.TreeItem {
-  constructor(public readonly issue: GiteaIssue, public readonly repoInfo: RepoInfo) {
-    super(`#${issue.number} ${issue.title}`, vscode.TreeItemCollapsibleState.Collapsed);
-    this.id = `issue:${repoInfo.key}:${issue.number}`;
-    this.contextValue = `issue_${issue.state}`;
-    this.tooltip = new vscode.MarkdownString(
-      `**#${issue.number}** ${issue.title}\n\n` +
-        `By **${issue.user.login}** · ${issue.state} · ${issue.comments} comment(s)` +
-        (issue.labels?.length ? `\n\nLabels: ${issue.labels.map((l) => l.name).join(", ")}` : ""),
+export class AssignedIssuesItem extends vscode.TreeItem {
+  constructor(
+    public readonly issues: GiteaIssue[],
+    public readonly repoInfo: RepoInfo,
+  ) {
+    super(
+      `Assigned to Me (${issues.length})`,
+      issues.length > 0
+        ? vscode.TreeItemCollapsibleState.Collapsed
+        : vscode.TreeItemCollapsibleState.None,
     );
-    this.iconPath =
-      issue.state === "open"
-        ? new vscode.ThemeIcon("issues", new vscode.ThemeColor("charts.green"))
-        : new vscode.ThemeIcon("issue-closed", new vscode.ThemeColor("charts.purple"));
-    this.description = `${issue.user.login} · ${relativeTime(issue.updated_at)}`;
+    this.id = `issue-assigned:${repoInfo.key}`;
+    this.contextValue = "issueAssignedToMe";
+    this.iconPath = new vscode.ThemeIcon("person");
+    this.tooltip = "Issues in the current Open/Closed filter assigned to you.";
   }
 }
 
-export class IssueChildItem extends vscode.TreeItem {
-  constructor(label: string, description?: string, icon?: vscode.ThemeIcon) {
-    super(label, vscode.TreeItemCollapsibleState.None);
-    if (description) this.description = description;
-    if (icon) this.iconPath = icon;
+export class IssueItem extends vscode.TreeItem {
+  constructor(public readonly issue: GiteaIssue, public readonly repoInfo: RepoInfo) {
+    super(`#${issue.number} ${issue.title}`, vscode.TreeItemCollapsibleState.None);
+    this.id = `issue:${repoInfo.key}:${issue.number}`;
+    this.contextValue = `issue_${issue.state}`;
+
+    const tooltipLines = [
+      `**#${issue.number}** ${issue.title}`,
+      "",
+      `By **${issue.user.login}** · ${issue.state} · ${issue.comments} comment(s)`,
+    ];
+    if (issue.assignees?.length) {
+      tooltipLines.push("", `Assignees: ${issue.assignees.map((a) => a.login).join(", ")}`);
+    }
+    if (issue.labels?.length) {
+      tooltipLines.push(`Labels: ${issue.labels.map((l) => l.name).join(", ")}`);
+    }
+    if (issue.milestone) {
+      tooltipLines.push(`Milestone: ${issue.milestone.title}`);
+    }
+    if (issue.body?.trim()) {
+      tooltipLines.push("", "---", "", issue.body.trim());
+    }
+    const tooltip = new vscode.MarkdownString(tooltipLines.join("\n\n"));
+    tooltip.isTrusted = false;
+    tooltip.supportHtml = false;
+    this.tooltip = tooltip;
+
+    this.iconPath =
+      issue.state === "open"
+        ? new vscode.ThemeIcon("issues", new vscode.ThemeColor("charts.green"))
+        : new vscode.ThemeIcon("issue-closed", new vscode.ThemeColor("charts.red"));
+    this.description = `${issue.user.login} · ${relativeTime(issue.updated_at)}`;
   }
 }
 
@@ -138,13 +173,18 @@ export class IssuesProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
         signIn.command = { command: "gitea.signIn", title: "Sign In" };
         return [signIn];
       }
-      return this.getRepoChildren(repoInfo);
+      return this.getRepoChildren(repoInfo, session.username);
     }
-    if (element instanceof IssueItem) return buildIssueChildren(element);
+    if (element instanceof AssignedIssuesItem) {
+      return element.issues.map((issue) => new IssueItem(issue, element.repoInfo));
+    }
     return [];
   }
 
-  private async getRepoChildren(repoInfo: RepoInfo): Promise<vscode.TreeItem[]> {
+  private async getRepoChildren(
+    repoInfo: RepoInfo,
+    username: string,
+  ): Promise<vscode.TreeItem[]> {
     let state = this.stateMap.get(repoInfo.key);
     if (!state) {
       state = { issues: [], page: 1, hasMore: false, loading: false };
@@ -157,12 +197,22 @@ export class IssuesProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
       item.iconPath = new vscode.ThemeIcon("loading~spin");
       return [item];
     }
+
+    const assignedIssues = state.issues.filter((issue) =>
+      isIssueAssignedTo(issue, username),
+    );
+    const assigned = new AssignedIssuesItem(assignedIssues, repoInfo);
+
     if (state.issues.length === 0) {
       const empty = new vscode.TreeItem(`No ${this.filter} issues`, vscode.TreeItemCollapsibleState.None);
       empty.iconPath = new vscode.ThemeIcon("info");
-      return [empty];
+      return [assigned, empty];
     }
-    const items: vscode.TreeItem[] = state.issues.map((i) => new IssueItem(i, repoInfo));
+
+    const items: vscode.TreeItem[] = [
+      assigned,
+      ...state.issues.map((issue) => new IssueItem(issue, repoInfo)),
+    ];
     if (state.hasMore) items.push(new LoadMoreIssueItem(repoInfo.key, this.filter));
     return items;
   }
@@ -195,47 +245,4 @@ function relativeTime(iso: string): string {
   const hrs = Math.floor(mins / 60);
   if (hrs < 24) return `${hrs}h ago`;
   return `${Math.floor(hrs / 24)}d ago`;
-}
-
-function buildIssueChildren(item: IssueItem): vscode.TreeItem[] {
-  const { issue } = item;
-  const children: vscode.TreeItem[] = [];
-
-  const detailItem = new IssueChildItem("View Details", undefined, new vscode.ThemeIcon("eye"));
-  if (issue.body?.trim()) {
-    const bodyTooltip = new vscode.MarkdownString(issue.body);
-    bodyTooltip.isTrusted = false;
-    bodyTooltip.supportHtml = false;
-    detailItem.tooltip = bodyTooltip;
-  } else {
-    detailItem.tooltip = "Open full issue details.";
-  }
-  detailItem.command = {
-    command: "gitea.viewIssueDetail",
-    title: "View Issue Details",
-    arguments: [item],
-  };
-  children.push(detailItem);
-
-  if (issue.labels?.length) {
-    children.push(new IssueChildItem(issue.labels.map((l) => l.name).join(", "), "labels", new vscode.ThemeIcon("tag")));
-  }
-  if (issue.assignees?.length) {
-    children.push(new IssueChildItem(issue.assignees.map((a) => a.login).join(", "), "assignees", new vscode.ThemeIcon("person")));
-  }
-  if (issue.milestone) {
-    children.push(new IssueChildItem(issue.milestone.title, "milestone", new vscode.ThemeIcon("milestone")));
-  }
-  if (issue.comments > 0) {
-    children.push(new IssueChildItem(`${issue.comments} comment(s)`, undefined, new vscode.ThemeIcon("comment-discussion")));
-  }
-
-  const openItem = new IssueChildItem("Open in Browser", undefined, new vscode.ThemeIcon("link-external"));
-  openItem.command = {
-    command: "gitea.openIssue",
-    title: "Open Issue in Browser",
-    arguments: [item],
-  };
-  children.push(openItem);
-  return children;
 }
