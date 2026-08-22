@@ -1,6 +1,9 @@
 import * as vscode from "vscode";
 import { RepoManager } from "../../../context/repoManager";
+import { ConflictResolutionService } from "./conflictResolutionService";
 import { PullRequestSessionService } from "./pullRequestSessionService";
+
+const MERGE_IN_PROGRESS_CONTEXT = "gitea.conflictResolution.inProgress";
 
 export class ConflictResolutionCoordinator implements vscode.Disposable {
   private readonly disposable: vscode.Disposable;
@@ -9,10 +12,16 @@ export class ConflictResolutionCoordinator implements vscode.Disposable {
   constructor(
     private readonly repoManager: RepoManager,
     private readonly session: PullRequestSessionService,
+    private readonly conflictResolution: ConflictResolutionService,
   ) {
     this.disposable = this.session.onDidChangeState((state) => {
       if (state.kind !== "active") {
         this.lastOfferedIdentity = undefined;
+        void vscode.commands.executeCommand(
+          "setContext",
+          MERGE_IN_PROGRESS_CONTEXT,
+          false,
+        );
         return;
       }
       void this.offerIfBlocked(state.repository.key, state.pullRequest.number);
@@ -37,8 +46,7 @@ export class ConflictResolutionCoordinator implements vscode.Disposable {
     if (
       state.kind !== "active" ||
       state.repository.key !== repositoryKey ||
-      state.pullRequest.number !== pullRequestNumber ||
-      state.pullRequest.mergeable !== false
+      state.pullRequest.number !== pullRequestNumber
     ) {
       return;
     }
@@ -48,8 +56,32 @@ export class ConflictResolutionCoordinator implements vscode.Disposable {
       .find((repo) => repo.key === repositoryKey);
     if (!repoInfo) return;
 
+    const inspection = await this.conflictResolution.inspect(repoInfo).catch(() => undefined);
+    await vscode.commands.executeCommand(
+      "setContext",
+      MERGE_IN_PROGRESS_CONTEXT,
+      inspection?.mergeInProgress === true,
+    );
+
     const identity = `${repositoryKey}#${pullRequestNumber}@${state.pullRequest.head.sha}`;
     if (identity === this.lastOfferedIdentity) return;
+
+    if (inspection?.mergeInProgress) {
+      this.lastOfferedIdentity = identity;
+      const action = await vscode.window.showWarningMessage(
+        `A Git merge is already in progress while reviewing PR #${pullRequestNumber}. Continue resolving it in Source Control / Merge Editor, or abort the prepared merge.`,
+        "Open Source Control",
+        "Abort Merge",
+      );
+      if (action === "Open Source Control") {
+        await vscode.commands.executeCommand("workbench.view.scm");
+      } else if (action === "Abort Merge") {
+        await vscode.commands.executeCommand("gitea.abortConflictResolution");
+      }
+      return;
+    }
+
+    if (state.pullRequest.mergeable !== false) return;
     this.lastOfferedIdentity = identity;
 
     const action = await vscode.window.showWarningMessage(
