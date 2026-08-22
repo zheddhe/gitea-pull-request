@@ -12,7 +12,7 @@ suite("Post-merge presentation", () => {
   );
 
   test("uses compact branch-lifecycle outcome labels", () => {
-    assert.match(source, />Checkout Base \/ Delete Source<\/button>/);
+    assert.match(source, />✓ Checkout Base \/ Delete Source<\/button>/);
     assert.match(source, />Checkout Base \/ Keep Source<\/button>/);
     assert.match(source, />Create New Pull Request<\/button>/);
 
@@ -21,10 +21,10 @@ suite("Post-merge presentation", () => {
     assert.doesNotMatch(source, /without deleting branch/);
   });
 
-  test("keeps delete destructive and keep/create neutral", () => {
-    assert.match(source, /id="delete" class="danger-outline"/);
-    assert.match(source, /id="checkout" class="secondary"/);
-    assert.match(source, /id="create" class="secondary"/);
+  test("uses primary buttons and emphasizes the recommended cleanup path without danger styling", () => {
+    assert.match(source, /id="delete" title="Recommended:/);
+    assert.doesNotMatch(source, /class="danger-outline"/);
+    assert.doesNotMatch(source, /class="secondary"/);
     assert.match(source, /\.actions \{ display: flex; flex-wrap: wrap;/);
   });
 
