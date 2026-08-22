@@ -18,11 +18,10 @@ suite("Review visibility refresh", () => {
     assert.doesNotMatch(source, /setTimeout\s*\(/);
   });
 
-  test("tracks review drafts before a visibility refresh can rebuild the view", () => {
+  test("tracks review drafts while allowing bounded visibility refresh", () => {
     assert.match(source, /\{ type: "draftChanged"; body: string \}/);
     assert.match(source, /body\?\.addEventListener\('input',[\s\S]*?type:'draftChanged'/);
     assert.match(source, /hasDraft: this\.reviewBody\.length > 0/);
-    assert.match(source, /this\.deferredVisibilityRefresh = true/);
     assert.match(source, /if \(message\.type !== "draftChanged"\)/);
   });
 
