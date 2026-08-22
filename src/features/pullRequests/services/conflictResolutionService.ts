@@ -27,6 +27,7 @@ export interface ConflictResolutionInspection {
 
 export interface ConflictResolutionPlan {
   sourceBranch: string;
+  sourceSha: string;
   sourceRemote: string;
   sourceRemoteRef: string;
   baseBranch: string;
@@ -40,6 +41,17 @@ export interface ConflictResolutionOperations {
   checkoutSource(plan: ConflictResolutionPlan): Promise<void>;
   mergeBase(plan: ConflictResolutionPlan): Promise<ConflictResolutionPreparationResult>;
   abortMerge(): Promise<void>;
+}
+
+export type SourceSynchronization = "current" | "fastForward" | "diverged";
+
+export function classifySourceSynchronization(
+  localSha: string,
+  remoteSha: string,
+  localIsAncestorOfRemote: boolean,
+): SourceSynchronization {
+  if (localSha === remoteSha) return "current";
+  return localIsAncestorOfRemote ? "fastForward" : "diverged";
 }
 
 export async function executeConflictResolutionPreparation(
@@ -74,7 +86,7 @@ export class ConflictResolutionService {
   ): Promise<ConflictResolutionPreparationResult> {
     const plan = await this.plan(repoInfo, pullRequest);
     log(
-      `[conflict-resolution] prepare repo=${repoInfo.label} pr=#${pullRequest.number} source=${plan.sourceRemoteRef} base=${plan.baseRemoteRef}`,
+      `[conflict-resolution] prepare repo=${repoInfo.label} pr=#${pullRequest.number} source=${plan.sourceRemoteRef}@${plan.sourceSha.slice(0, 8)} base=${plan.baseRemoteRef}`,
     );
 
     const result = await executeConflictResolutionPreparation(plan, {
@@ -146,6 +158,7 @@ export class ConflictResolutionService {
 
     return {
       sourceBranch: pullRequest.head.ref,
+      sourceSha: pullRequest.head.sha,
       sourceRemote,
       sourceRemoteRef: `${sourceRemote}/${pullRequest.head.ref}`,
       baseBranch: pullRequest.base.ref,
@@ -158,6 +171,15 @@ export class ConflictResolutionService {
     repoInfo: RepoInfo,
     plan: ConflictResolutionPlan,
   ): Promise<void> {
+    const remoteSha = String(
+      (await this.git(repoInfo, ["rev-parse", plan.sourceRemoteRef])).stdout,
+    ).trim();
+    if (remoteSha !== plan.sourceSha) {
+      throw new Error(
+        `The fetched source branch '${plan.sourceRemoteRef}' moved from the pull request head (${plan.sourceSha.slice(0, 8)} -> ${remoteSha.slice(0, 8)}). Refresh the pull request before preparing conflict resolution.`,
+      );
+    }
+
     const localExists =
       (await this.gitOptional(repoInfo, [
         "show-ref",
@@ -178,15 +200,55 @@ export class ConflictResolutionService {
       ]);
     }
 
-    const { stdout } = await this.git(repoInfo, ["rev-parse", "--abbrev-ref", "HEAD"]);
-    const checkedOut = String(stdout).trim();
+    const checkedOut = String(
+      (await this.git(repoInfo, ["rev-parse", "--abbrev-ref", "HEAD"])).stdout,
+    ).trim();
     if (checkedOut !== plan.sourceBranch) {
       throw new Error(
         `Expected source branch '${plan.sourceBranch}' to be checked out, but Git reports '${checkedOut || "detached HEAD"}'.`,
       );
     }
+
+    const localSha = String(
+      (await this.git(repoInfo, ["rev-parse", "HEAD"])).stdout,
+    ).trim();
+    const localIsAncestorOfRemote =
+      localSha === remoteSha ||
+      (await this.gitOptional(repoInfo, [
+        "merge-base",
+        "--is-ancestor",
+        localSha,
+        plan.sourceRemoteRef,
+      ])) !== undefined;
+    const synchronization = classifySourceSynchronization(
+      localSha,
+      remoteSha,
+      localIsAncestorOfRemote,
+    );
+
+    if (synchronization === "diverged") {
+      throw new Error(
+        `Local source branch '${plan.sourceBranch}' has commits that are not part of the pull request head. Reconcile or preserve that local work before preparing conflict resolution; the extension will not reset it.`,
+      );
+    }
+    if (synchronization === "fastForward") {
+      await this.git(repoInfo, ["merge", "--ff-only", plan.sourceRemoteRef]);
+      log(
+        `[conflict-resolution] fast-forwarded source repo=${repoInfo.label} branch=${plan.sourceBranch} to=${remoteSha.slice(0, 8)}`,
+      );
+    }
+
+    const finalSha = String(
+      (await this.git(repoInfo, ["rev-parse", "HEAD"])).stdout,
+    ).trim();
+    if (finalSha !== plan.sourceSha) {
+      throw new Error(
+        `Source branch '${plan.sourceBranch}' is not at the pull request head after synchronization. Expected ${plan.sourceSha.slice(0, 8)}, found ${finalSha.slice(0, 8)}.`,
+      );
+    }
+
     log(
-      `[conflict-resolution] checked out source repo=${repoInfo.label} branch=${plan.sourceBranch}`,
+      `[conflict-resolution] checked out source repo=${repoInfo.label} branch=${plan.sourceBranch} sha=${finalSha.slice(0, 8)}`,
     );
   }
 
