@@ -23,6 +23,7 @@ suite("Review visibility refresh", () => {
     assert.match(source, /body\?\.addEventListener\('input',[\s\S]*?type:'draftChanged'/);
     assert.match(source, /hasDraft: this\.reviewBody\.length > 0/);
     assert.match(source, /this\.deferredVisibilityRefresh = true/);
+    assert.match(source, /if \(message\.type !== "draftChanged"\)/);
   });
 
   test("preserves a draft when refreshing the same active pull request", () => {
@@ -35,6 +36,12 @@ suite("Review visibility refresh", () => {
       source,
       /return state\.kind === "active"\s*\? `\$\{state\.repository\.key\}#\$\{state\.pullRequest\.number\}`/,
     );
+  });
+
+  test("preserves scroll position across bounded rerenders", () => {
+    assert.match(source, /const persistedState=vscode\.getState\(\) \|\| \{\}/);
+    assert.match(source, /window\.scrollTo\(0,persistedState\.scrollY\)/);
+    assert.match(source, /vscode\.setState\(\{\.\.\.vscode\.getState\(\),scrollY:window\.scrollY\}\)/);
   });
 
   test("reuses normal session activation so PR and readiness consumers refresh together", () => {
