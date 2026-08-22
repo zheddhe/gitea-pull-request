@@ -25,14 +25,14 @@ suite("Visibility refresh policy", () => {
     );
   });
 
-  test("defers while busy or while a draft exists", () => {
+  test("defers while busy but allows a retained review draft", () => {
     assert.strictEqual(
       visibilityRefreshDecision({ ...base, busy: true }),
       "busy",
     );
     assert.strictEqual(
       visibilityRefreshDecision({ ...base, hasDraft: true }),
-      "draft",
+      "refresh",
     );
   });
 
