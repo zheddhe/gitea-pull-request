@@ -321,9 +321,9 @@ export class PostMergePullRequestViewProvider
       <div class="section">
         <div class="section-title">Next action</div>
         <div class="actions">
-          <button id="delete" class="danger-outline" ${cleanupDisabled}>Checkout Base / Delete Source</button>
-          <button id="checkout" class="secondary" ${disabled}>Checkout Base / Keep Source</button>
-          <button id="create" class="secondary" ${disabled}>Create New Pull Request</button>
+          <button id="delete" title="Recommended: return to the base branch and clean up the merged source branch." ${cleanupDisabled}>✓ Checkout Base / Delete Source</button>
+          <button id="checkout" ${disabled}>Checkout Base / Keep Source</button>
+          <button id="create" ${disabled}>Create New Pull Request</button>
         </div>
       </div>
       <script>
@@ -355,10 +355,6 @@ export class PostMergePullRequestViewProvider
   .actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 8px; }
   button { font: inherit; color: var(--vscode-button-foreground); background: var(--vscode-button-background); border: 1px solid transparent; padding: 6px 10px; cursor: pointer; text-align: left; }
   button:hover { background: var(--vscode-button-hoverBackground); }
-  button.secondary { color: var(--vscode-button-secondaryForeground); background: var(--vscode-button-secondaryBackground); }
-  button.secondary:hover { background: var(--vscode-button-secondaryHoverBackground); }
-  button.danger-outline { color: var(--vscode-errorForeground); background: var(--vscode-button-secondaryBackground); border-color: var(--vscode-errorForeground); }
-  button.danger-outline:hover { background: var(--vscode-button-secondaryHoverBackground); }
   button:disabled { opacity: .55; cursor: default; }
   .warning { color: var(--vscode-errorForeground); }
 </style>
