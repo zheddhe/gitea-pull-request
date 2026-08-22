@@ -61,9 +61,16 @@ export function registerConflictResolutionCommands(
             result.conflictedFiles.length === 1
               ? "1 conflicted file"
               : `${result.conflictedFiles.length} conflicted files`;
-          vscode.window.showWarningMessage(
-            `Conflict resolution prepared for PR #${active.pullRequest.number}: ${fileSummary}. Resolve the conflicts in Source Control / Merge Editor, stage the resolved files, commit the merge, push the source branch, then refresh the pull request.`,
+          const nextAction = await vscode.window.showWarningMessage(
+            `Conflict resolution prepared for PR #${active.pullRequest.number}: ${fileSummary}. Resolve the conflicts, stage the resolved files, commit the merge, push the source branch, then refresh the pull request.`,
+            "Open Source Control",
+            "Abort Merge",
           );
+          if (nextAction === "Open Source Control") {
+            await vscode.commands.executeCommand("workbench.view.scm");
+          } else if (nextAction === "Abort Merge") {
+            await vscode.commands.executeCommand("gitea.abortConflictResolution");
+          }
           return;
         }
 
@@ -72,9 +79,13 @@ export function registerConflictResolutionCommands(
           MERGE_IN_PROGRESS_CONTEXT,
           false,
         );
-        vscode.window.showInformationMessage(
+        const nextAction = await vscode.window.showInformationMessage(
           `The latest ${result.baseRef} integrated cleanly into '${result.sourceBranch}'. Push the source branch, then refresh the pull request before merging it on Gitea.`,
+          "Open Source Control",
         );
+        if (nextAction === "Open Source Control") {
+          await vscode.commands.executeCommand("workbench.view.scm");
+        }
       } catch (error) {
         const inspection = await conflictResolution
           .inspect(active.repoInfo)
