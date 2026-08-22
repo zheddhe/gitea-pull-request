@@ -128,7 +128,9 @@ export class ReviewPullRequestViewProvider
     view.webview.options = { enableScripts: true };
     this.disposables.push(
       view.webview.onDidReceiveMessage((message: ReviewViewMessage) => {
-        log(`[review-view] message received type=${message.type}`);
+        if (message.type !== "draftChanged") {
+          log(`[review-view] message received type=${message.type}`);
+        }
         void this.handleMessage(message);
       }),
       view.onDidChangeVisibility(() => {
@@ -821,6 +823,19 @@ export class ReviewPullRequestViewProvider
   const body=document.getElementById('reviewBody');
   const mergeMethod=document.getElementById('mergeMethod');
   const baseBranch=document.getElementById('baseBranch');
+  const persistedState=vscode.getState() || {};
+  if (Number.isFinite(persistedState.scrollY)) {
+    requestAnimationFrame(()=>window.scrollTo(0,persistedState.scrollY));
+  }
+  let scrollFramePending=false;
+  window.addEventListener('scroll',()=>{
+    if (scrollFramePending) return;
+    scrollFramePending=true;
+    requestAnimationFrame(()=>{
+      scrollFramePending=false;
+      vscode.setState({...vscode.getState(),scrollY:window.scrollY});
+    });
+  });
   body?.addEventListener('input',()=>vscode.postMessage({type:'draftChanged',body:body.value}));
   document.getElementById('approve')?.addEventListener('click',()=>vscode.postMessage({type:'approve',body:body.value}));
   document.getElementById('requestChanges')?.addEventListener('click',()=>vscode.postMessage({type:'requestChanges',body:body.value}));
