@@ -14,7 +14,7 @@ suite("Activity Bar icon semantics", () => {
 
   test("uses semantic icons for pull request categories", () => {
     assert.match(prSource, /category === "all" \? "git-pull-request"/);
-    assert.match(prSource, /category === "waiting" \? "eye"/);
+    assert.match(prSource, /category === "waiting" \? "comment-discussion"/);
     assert.match(prSource, /: "person"/);
     assert.doesNotMatch(prSource, /category === "all" \? "folder"/);
   });
