@@ -15,6 +15,7 @@ import { registerConflictResolutionCommands } from "./features/pullRequests/comm
 import { registerPullRequestSessionCommands } from "./features/pullRequests/commands/sessionCommands";
 import { registerRefreshActivePullRequestCommand } from "./features/pullRequests/commands/refreshActivePullRequestCommand";
 import { BranchCleanupService } from "./features/pullRequests/services/branchCleanupService";
+import { ConflictResolutionCoordinator } from "./features/pullRequests/services/conflictResolutionCoordinator";
 import { ConflictResolutionService } from "./features/pullRequests/services/conflictResolutionService";
 import { PullRequestSessionCoordinator } from "./features/pullRequests/services/pullRequestSessionCoordinator";
 import { PullRequestSessionService } from "./features/pullRequests/services/pullRequestSessionService";
@@ -41,6 +42,10 @@ export async function activate(
   const conflictResolution = new ConflictResolutionService();
   const prSessionCoordinator = new PullRequestSessionCoordinator(
     api,
+    repoManager,
+    prSession,
+  );
+  const conflictResolutionCoordinator = new ConflictResolutionCoordinator(
     repoManager,
     prSession,
   );
@@ -130,6 +135,7 @@ export async function activate(
     reviewPullRequestView,
     postMergePullRequestView,
     prSessionCoordinator,
+    conflictResolutionCoordinator,
     prSession,
     ciProvider,
     statusBar,
@@ -166,6 +172,7 @@ export async function activate(
   await repoManager.initialize();
   await prSession.initialize();
   await prSessionCoordinator.initialize();
+  await conflictResolutionCoordinator.initialize();
   statusBar.refresh();
 
   const session = await auth.getSession();
