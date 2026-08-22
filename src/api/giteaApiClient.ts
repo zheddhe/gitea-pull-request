@@ -1,6 +1,6 @@
 import { AuthManager } from "../auth/authManager";
 import type { RepoInfo } from "../context/repoManager";
-import { log } from "../debug/outputChannel";
+import { debug, trace, warn } from "../debug/outputChannel";
 import type {
   GiteaUser,
   GiteaPullRequest,
@@ -201,10 +201,10 @@ export class GiteaApiClient {
             serverUrl,
             `/repos/${owner}/${repo}/pulls/${number}/reviews/${review.id}/comments`,
           );
-          log(`[pr-inline-api] repo=${repoInfo.label} pr=#${number} review=${review.id} comments=${comments?.length ?? 0}`);
+          debug(`[pr-inline-api] repo=${repoInfo.label} pr=#${number} review=${review.id} comments=${comments?.length ?? 0}`);
           return comments ?? [];
         } catch (error) {
-          log(`[pr-inline-api] repo=${repoInfo.label} pr=#${number} review=${review.id} comments failed: ${(error as Error).message}`);
+          warn(`[pr-inline-api] repo=${repoInfo.label} pr=#${number} review=${review.id} comments failed: ${(error as Error).message}`);
           return [];
         }
       }),
@@ -214,9 +214,9 @@ export class GiteaApiClient {
       new_position: comment.position,
       old_position: comment.original_position,
     }));
-    log(`[pr-inline-api] repo=${repoInfo.label} pr=#${number} reviews=${reviews.length} inlineComments=${comments.length}`);
+    debug(`[pr-inline-api] repo=${repoInfo.label} pr=#${number} reviews=${reviews.length} inlineComments=${comments.length}`);
     for (const comment of comments) {
-      log(`[pr-inline-api] comment=${comment.id} review=${comment.pull_request_review_id ?? "?"} path=${comment.path} position=${comment.position ?? 0} original_position=${comment.original_position ?? 0}`);
+      trace(`[pr-inline-api] comment=${comment.id} review=${comment.pull_request_review_id ?? "?"} path=${comment.path} position=${comment.position ?? 0} original_position=${comment.original_position ?? 0}`);
     }
     return comments;
   }
