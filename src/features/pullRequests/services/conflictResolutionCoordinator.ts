@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import type { GiteaCombinedStatus } from "../../../api/types";
 import { RepoManager } from "../../../context/repoManager";
-import { log } from "../../../debug/outputChannel";
+import { debug, warn } from "../../../debug/outputChannel";
 import { ConflictResolutionService } from "./conflictResolutionService";
 import { PullRequestReviewApi } from "./pullRequestReviewApi";
 import { PullRequestSessionService } from "./pullRequestSessionService";
@@ -100,13 +100,13 @@ export class ConflictResolutionCoordinator implements vscode.Disposable {
         state.pullRequest.head.sha,
       );
       if (hasPendingChecks(status)) {
-        log(
+        debug(
           `[conflict-resolution] guidance suppressed repo=${repoInfo.label} pr=#${pullRequestNumber} reason=ci-pending`,
         );
         return;
       }
     } catch (error) {
-      log(
+      warn(
         `[conflict-resolution] unable to verify CI state before guidance repo=${repoInfo.label} pr=#${pullRequestNumber}: ${(error as Error).message}`,
       );
     }
