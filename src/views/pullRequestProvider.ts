@@ -45,7 +45,7 @@ export class CategoryItem extends vscode.TreeItem {
       : "Created by me";
     const icon =
       category === "all" ? "git-pull-request"
-      : category === "waiting" ? "comment-discussion"
+      : category === "waiting" ? "request-changes"
       : "person";
     const color =
       category === "waiting" ? "charts.yellow"
@@ -83,7 +83,7 @@ export class PullRequestItem extends vscode.TreeItem {
       `\`${pr.head.ref}\` → \`${pr.base.ref}\``,
     ];
     if (pr.assignees?.length) {
-      tooltipLines.push("", `Assignees: ${pr.assignees.map((l) => l.login).join(", ")}`);
+      tooltipLines.push("", `Assignees: ${pr.assignees.map((a) => a.login).join(", ")}`);
     }
     if (pr.labels?.length) {
       tooltipLines.push(`Labels: ${pr.labels.map((l) => l.name).join(", ")}`);
