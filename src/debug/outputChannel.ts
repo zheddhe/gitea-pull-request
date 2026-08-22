@@ -30,8 +30,3 @@ export function warn(message: string): void {
 export function error(message: string | Error): void {
   channel?.error(message);
 }
-
-// Backward-compatible alias while existing call sites are migrated gradually.
-export function log(message: string): void {
-  info(message);
-}
