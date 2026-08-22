@@ -11,9 +11,11 @@ import { registerCICommands } from "./commands/ciCommands";
 import { registerAuthCommands } from "./commands/authCommands";
 import { registerIssueCommands } from "./commands/issueCommands";
 import { initOutputChannel } from "./debug/outputChannel";
+import { registerConflictResolutionCommands } from "./features/pullRequests/commands/conflictResolutionCommands";
 import { registerPullRequestSessionCommands } from "./features/pullRequests/commands/sessionCommands";
 import { registerRefreshActivePullRequestCommand } from "./features/pullRequests/commands/refreshActivePullRequestCommand";
 import { BranchCleanupService } from "./features/pullRequests/services/branchCleanupService";
+import { ConflictResolutionService } from "./features/pullRequests/services/conflictResolutionService";
 import { PullRequestSessionCoordinator } from "./features/pullRequests/services/pullRequestSessionCoordinator";
 import { PullRequestSessionService } from "./features/pullRequests/services/pullRequestSessionService";
 import { PullRequestReviewApi } from "./features/pullRequests/services/pullRequestReviewApi";
@@ -36,6 +38,7 @@ export async function activate(
   const reviewApi = new PullRequestReviewApi(auth);
   const prSession = new PullRequestSessionService();
   const branchCleanup = new BranchCleanupService();
+  const conflictResolution = new ConflictResolutionService();
   const prSessionCoordinator = new PullRequestSessionCoordinator(
     api,
     repoManager,
@@ -142,6 +145,12 @@ export async function activate(
     statusBar,
   );
   registerPullRequestSessionCommands(context, prSession);
+  registerConflictResolutionCommands(
+    context,
+    repoManager,
+    prSession,
+    conflictResolution,
+  );
   registerRefreshActivePullRequestCommand(
     context,
     api,
