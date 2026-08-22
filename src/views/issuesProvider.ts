@@ -95,7 +95,7 @@ export class IssueItem extends vscode.TreeItem {
     this.iconPath =
       issue.state === "open"
         ? new vscode.ThemeIcon("issues", new vscode.ThemeColor("charts.green"))
-        : new vscode.ThemeIcon("issue-closed", new vscode.ThemeColor("charts.purple"));
+        : new vscode.ThemeIcon("issue-closed", new vscode.ThemeColor("charts.red"));
     this.description = `${issue.user.login} · ${relativeTime(issue.updated_at)}`;
   }
 }
