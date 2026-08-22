@@ -48,7 +48,10 @@ export class CategoryItem extends vscode.TreeItem {
       `${label} (${prs.length})`,
       vscode.TreeItemCollapsibleState.Collapsed,
     );
-    this.id = `pr-cat:${repoInfo.key}:${category}`;
+    this.id =
+      category === "waiting"
+        ? `pr-cat:${repoInfo.key}:waiting-icon-probe`
+        : `pr-cat:${repoInfo.key}:${category}`;
     this.contextValue = `category-${category}`;
     this.iconPath = new vscode.ThemeIcon(icon);
   }
