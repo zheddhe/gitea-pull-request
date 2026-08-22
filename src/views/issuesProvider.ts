@@ -41,27 +41,37 @@ export class RepoGroupItem extends vscode.TreeItem {
 
 export class IssueItem extends vscode.TreeItem {
   constructor(public readonly issue: GiteaIssue, public readonly repoInfo: RepoInfo) {
-    super(`#${issue.number} ${issue.title}`, vscode.TreeItemCollapsibleState.Collapsed);
+    super(`#${issue.number} ${issue.title}`, vscode.TreeItemCollapsibleState.None);
     this.id = `issue:${repoInfo.key}:${issue.number}`;
     this.contextValue = `issue_${issue.state}`;
-    this.tooltip = new vscode.MarkdownString(
-      `**#${issue.number}** ${issue.title}\n\n` +
-        `By **${issue.user.login}** · ${issue.state} · ${issue.comments} comment(s)` +
-        (issue.labels?.length ? `\n\nLabels: ${issue.labels.map((l) => l.name).join(", ")}` : ""),
-    );
+
+    const tooltipLines = [
+      `**#${issue.number}** ${issue.title}`,
+      "",
+      `By **${issue.user.login}** · ${issue.state} · ${issue.comments} comment(s)`,
+    ];
+    if (issue.assignees?.length) {
+      tooltipLines.push("", `Assignees: ${issue.assignees.map((a) => a.login).join(", ")}`);
+    }
+    if (issue.labels?.length) {
+      tooltipLines.push(`Labels: ${issue.labels.map((l) => l.name).join(", ")}`);
+    }
+    if (issue.milestone) {
+      tooltipLines.push(`Milestone: ${issue.milestone.title}`);
+    }
+    if (issue.body?.trim()) {
+      tooltipLines.push("", "---", "", issue.body.trim());
+    }
+    const tooltip = new vscode.MarkdownString(tooltipLines.join("\n\n"));
+    tooltip.isTrusted = false;
+    tooltip.supportHtml = false;
+    this.tooltip = tooltip;
+
     this.iconPath =
       issue.state === "open"
         ? new vscode.ThemeIcon("issues", new vscode.ThemeColor("charts.green"))
         : new vscode.ThemeIcon("issue-closed", new vscode.ThemeColor("charts.purple"));
     this.description = `${issue.user.login} · ${relativeTime(issue.updated_at)}`;
-  }
-}
-
-export class IssueChildItem extends vscode.TreeItem {
-  constructor(label: string, description?: string, icon?: vscode.ThemeIcon) {
-    super(label, vscode.TreeItemCollapsibleState.None);
-    if (description) this.description = description;
-    if (icon) this.iconPath = icon;
   }
 }
 
@@ -140,7 +150,6 @@ export class IssuesProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
       }
       return this.getRepoChildren(repoInfo);
     }
-    if (element instanceof IssueItem) return buildIssueChildren(element);
     return [];
   }
 
@@ -195,47 +204,4 @@ function relativeTime(iso: string): string {
   const hrs = Math.floor(mins / 60);
   if (hrs < 24) return `${hrs}h ago`;
   return `${Math.floor(hrs / 24)}d ago`;
-}
-
-function buildIssueChildren(item: IssueItem): vscode.TreeItem[] {
-  const { issue } = item;
-  const children: vscode.TreeItem[] = [];
-
-  const detailItem = new IssueChildItem("View Details", undefined, new vscode.ThemeIcon("eye"));
-  if (issue.body?.trim()) {
-    const bodyTooltip = new vscode.MarkdownString(issue.body);
-    bodyTooltip.isTrusted = false;
-    bodyTooltip.supportHtml = false;
-    detailItem.tooltip = bodyTooltip;
-  } else {
-    detailItem.tooltip = "Open full issue details.";
-  }
-  detailItem.command = {
-    command: "gitea.viewIssueDetail",
-    title: "View Issue Details",
-    arguments: [item],
-  };
-  children.push(detailItem);
-
-  if (issue.labels?.length) {
-    children.push(new IssueChildItem(issue.labels.map((l) => l.name).join(", "), "labels", new vscode.ThemeIcon("tag")));
-  }
-  if (issue.assignees?.length) {
-    children.push(new IssueChildItem(issue.assignees.map((a) => a.login).join(", "), "assignees", new vscode.ThemeIcon("person")));
-  }
-  if (issue.milestone) {
-    children.push(new IssueChildItem(issue.milestone.title, "milestone", new vscode.ThemeIcon("milestone")));
-  }
-  if (issue.comments > 0) {
-    children.push(new IssueChildItem(`${issue.comments} comment(s)`, undefined, new vscode.ThemeIcon("comment-discussion")));
-  }
-
-  const openItem = new IssueChildItem("Open in Browser", undefined, new vscode.ThemeIcon("link-external"));
-  openItem.command = {
-    command: "gitea.openIssue",
-    title: "Open Issue in Browser",
-    arguments: [item],
-  };
-  children.push(openItem);
-  return children;
 }
