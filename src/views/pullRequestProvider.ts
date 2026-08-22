@@ -2,7 +2,6 @@ import * as vscode from "vscode";
 import { GiteaApiClient } from "../api/giteaApiClient";
 import { AuthManager } from "../auth/authManager";
 import { RepoManager, RepoInfo } from "../context/repoManager";
-import { log } from "../debug/outputChannel";
 import type { GiteaPullRequest, GiteaReview } from "../api/types";
 
 export type PRFilter = "open" | "closed";
@@ -44,22 +43,17 @@ export class CategoryItem extends vscode.TreeItem {
       category === "all" ? "All Open"
       : category === "waiting" ? "Waiting for my review"
       : "Created by me";
-    const icon = category === "created" ? "person" : "git-pull-request";
+    const icon =
+      category === "all" ? "git-pull-request"
+      : category === "waiting" ? "eye"
+      : "person";
     super(
       `${label} (${prs.length})`,
       vscode.TreeItemCollapsibleState.Collapsed,
     );
-    this.id =
-      category === "waiting"
-        ? `pr-cat:${repoInfo.key}:waiting-icon-probe`
-        : `pr-cat:${repoInfo.key}:${category}`;
+    this.id = `pr-cat:${repoInfo.key}:${category}`;
     this.contextValue = `category-${category}`;
     this.iconPath = new vscode.ThemeIcon(icon);
-
-    log(
-      `[PR category] category=${category} id=${this.id} context=${this.contextValue} ` +
-      `icon=${this.iconPath.id} collapsible=${this.collapsibleState} count=${prs.length}`,
-    );
   }
 }
 
@@ -277,7 +271,7 @@ export class PullRequestProvider implements vscode.TreeDataProvider<vscode.TreeI
     });
     const createdPrs = allPrs.filter((pr) => pr.user.login === username);
 
-    const categories: CategoryItem[] = [];
+    const categories: vscode.TreeItem[] = [];
     if (allPrs.length > 0) {
       categories.push(new CategoryItem("all", allPrs, repoInfo));
     }
@@ -287,12 +281,6 @@ export class PullRequestProvider implements vscode.TreeDataProvider<vscode.TreeI
     if (createdPrs.length > 0) {
       categories.push(new CategoryItem("created", createdPrs, repoInfo));
     }
-
-    log(
-      `[PR categories] repo=${repoInfo.owner}/${repoInfo.repo} ` +
-      `order=${categories.map((item) => item.category).join(",")} ` +
-      `items=${categories.map((item) => `${item.category}:${item.id}:${item.iconPath instanceof vscode.ThemeIcon ? item.iconPath.id : "non-theme-icon"}`).join(" | ")}`,
-    );
 
     return categories;
   }
