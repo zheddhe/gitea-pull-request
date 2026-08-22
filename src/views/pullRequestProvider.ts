@@ -43,21 +43,14 @@ export class CategoryItem extends vscode.TreeItem {
       category === "all" ? "All Open"
       : category === "waiting" ? "Waiting for my review"
       : "Created by me";
-    const icon =
-      category === "all" ? "git-pull-request"
-      : "person";
-    const color =
-      category === "waiting" ? "charts.yellow"
-      : undefined;
+    const icon = category === "created" ? "person" : "git-pull-request";
     super(
       `${label} (${prs.length})`,
       vscode.TreeItemCollapsibleState.Collapsed,
     );
     this.id = `pr-cat:${repoInfo.key}:${category}`;
     this.contextValue = `category-${category}`;
-    this.iconPath = color
-      ? new vscode.ThemeIcon(icon, new vscode.ThemeColor(color))
-      : new vscode.ThemeIcon(icon);
+    this.iconPath = new vscode.ThemeIcon(icon);
   }
 }
 
