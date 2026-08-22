@@ -8,15 +8,22 @@ suite("Issue tree presentation", () => {
     "utf8",
   );
 
-  test("does not expose the raw issue body as a tree child", () => {
-    assert.doesNotMatch(source, /bodyPreview/);
-    assert.doesNotMatch(source, /new IssueChildItem\(bodyPreview/);
+  test("keeps issues as leaf business objects", () => {
+    assert.match(
+      source,
+      /super\(`#\$\{issue\.number\} \$\{issue\.title\}`, vscode\.TreeItemCollapsibleState\.None\)/,
+    );
+    assert.doesNotMatch(source, /class IssueChildItem/);
+    assert.doesNotMatch(source, /buildIssueChildren/);
   });
 
-  test("uses a native Markdown tooltip on View Details", () => {
-    assert.match(source, /new vscode\.MarkdownString\(issue\.body\)/);
-    assert.match(source, /bodyTooltip\.isTrusted = false/);
-    assert.match(source, /bodyTooltip\.supportHtml = false/);
-    assert.match(source, /detailItem\.tooltip = bodyTooltip/);
+  test("moves useful secondary metadata and body preview to the issue tooltip", () => {
+    assert.match(source, /const tooltipLines = \[/);
+    assert.match(source, /Assignees:/);
+    assert.match(source, /Labels:/);
+    assert.match(source, /Milestone:/);
+    assert.match(source, /issue\.body\.trim\(\)/);
+    assert.match(source, /tooltip\.isTrusted = false/);
+    assert.match(source, /tooltip\.supportHtml = false/);
   });
 });
