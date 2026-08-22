@@ -12,10 +12,13 @@ suite("Activity Bar icon semantics", () => {
     "utf8",
   );
 
-  test("uses semantic icons for pull request categories", () => {
-    assert.match(prSource, /category === "all" \? "git-pull-request"/);
-    assert.match(prSource, /: "person"/);
-    assert.doesNotMatch(prSource, /category === "all" \? "folder"/);
+  test("uses the same pull request icon for All Open and Waiting for my review", () => {
+    assert.match(
+      prSource,
+      /const icon = category === "created" \? "person" : "git-pull-request"/,
+    );
+    assert.match(prSource, /this\.iconPath = new vscode\.ThemeIcon\(icon\)/);
+    assert.doesNotMatch(prSource, /category === "waiting" \? "charts\.yellow"/);
     assert.doesNotMatch(prSource, /request-changes/);
     assert.doesNotMatch(prSource, /comment-discussion/);
   });
