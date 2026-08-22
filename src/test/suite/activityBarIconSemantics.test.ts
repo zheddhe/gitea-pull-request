@@ -14,10 +14,10 @@ suite("Activity Bar icon semantics", () => {
 
   test("uses semantic icons for pull request categories", () => {
     assert.match(prSource, /category === "all" \? "git-pull-request"/);
-    assert.match(prSource, /category === "waiting" \? "request-changes"/);
     assert.match(prSource, /: "person"/);
     assert.doesNotMatch(prSource, /category === "all" \? "folder"/);
-    assert.doesNotMatch(prSource, /category === "waiting" \? "folder"/);
+    assert.doesNotMatch(prSource, /request-changes/);
+    assert.doesNotMatch(prSource, /comment-discussion/);
   });
 
   test("uses red for closed issues rather than merged-state purple", () => {
