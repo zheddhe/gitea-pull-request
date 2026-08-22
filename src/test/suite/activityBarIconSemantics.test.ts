@@ -7,6 +7,13 @@ suite("Activity Bar icon semantics", () => {
     path.resolve(__dirname, "../../../src/views/pullRequestProvider.ts"),
     "utf8",
   );
+  const sidebarPrSource = fs.readFileSync(
+    path.resolve(
+      __dirname,
+      "../../../src/features/pullRequests/views/sidebarPullRequestProvider.ts",
+    ),
+    "utf8",
+  );
   const issueSource = fs.readFileSync(
     path.resolve(__dirname, "../../../src/views/issuesProvider.ts"),
     "utf8",
@@ -21,6 +28,13 @@ suite("Activity Bar icon semantics", () => {
     assert.doesNotMatch(prSource, /category === "waiting" \? "charts\.yellow"/);
     assert.doesNotMatch(prSource, /request-changes/);
     assert.doesNotMatch(prSource, /comment-discussion/);
+  });
+
+  test("sidebar presentation does not override Waiting for my review with a folder", () => {
+    assert.doesNotMatch(
+      sidebarPrSource,
+      /contextValue === "category-waiting"[\s\S]*?iconPath\s*=\s*new vscode\.ThemeIcon\("folder"\)/,
+    );
   });
 
   test("uses red for closed issues rather than merged-state purple", () => {
