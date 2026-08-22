@@ -4,34 +4,33 @@ All notable changes to **Gitea Pull Request** are documented in this file.
 
 ## 0.8.0 - Unreleased
 
-### Added
-- CI / Actions rows now surface the completed run conclusion as the primary signal, with event/date metadata and branch/commit detail retained in the tooltip.
-- **Assigned to Me** issue aggregation follows the current Open/Closed filter and supports both single- and multi-assignee Gitea payloads.
-- Native VS Code log levels (`trace`, `debug`, `info`, `warn`, `error`) through a `LogOutputChannel`, with the existing `log()` helper retained as an `info()` compatibility alias.
-- Guided conflict preparation for non-mergeable pull requests: exact source/base remote resolution, fetch-before-merge, PR head-SHA validation, safe local source checkout/fast-forward, remote-base merge, and native VS Code Merge Editor / Source Control hand-off.
-- Native **Abort Merge** support and reconstruction of an in-progress prepared merge after VS Code reload.
-- CI-aware conflict notifications that wait while a real check is pending and resume normal conflict guidance once checks settle.
-- Bounded active-PR refresh when the contextual Review view becomes visible again after the freshness interval, without background polling.
+`0.8.0` completes the core pull-request workflow introduced in the previous releases and focuses on making day-to-day use safer, clearer and more natural inside VS Code.
 
-### Changed
-- Pull-request and issue rows are flattened into leaf business objects; secondary metadata and Markdown description/body content are consolidated into safe hover tooltips.
-- Common PR/Issue actions are available inline with consistent semantics: **View Details**, **Open in Browser**, and **Activate PR** where applicable.
-- Pull-request aggregation icons are semantic: pull-request for **All Open**, eye/review for **Waiting for my review**, and person for **Created by me**.
-- Closed issues use a red status signal instead of purple to avoid merged-state ambiguity.
-- Post-merge actions use compact primary buttons: **✓ Checkout Base / Delete Source**, **Checkout Base / Keep Source**, and **Create New Pull Request**. Cleanup is recommended without presenting the normal post-merge choice itself as an error state.
-- Create and Review Activity Bar WebviewViews retain their live context while hidden, preserving unsaved text and selections across Activity Bar switches.
-- Visibility refresh can update PR/CI/mergeability while an unsent review draft remains present; the draft is preserved while normal session consumers receive fresh remote state.
-- Marketplace publication is intentionally manual: release CI validates/builds/tests/packages and attaches the exact VSIX to the GitHub Release, then the release VSIX is uploaded through the Visual Studio Marketplace publisher management page without PAT or OIDC publication credentials.
+### Added
+- **Guided conflict resolution** for pull requests that cannot be merged automatically. The extension prepares the correct local Git state, validates the exact PR head, fetches the relevant remotes, and then hands real conflicts to the native VS Code Source Control / Merge Editor workflow.
+- **Abort Merge** support and recovery of an already prepared conflict-resolution session after VS Code reload.
+- **Assigned to Me** issue aggregation that follows the current Open/Closed scope.
+- Native VS Code diagnostic levels (`trace`, `debug`, `info`, `warn`, `error`) with consistent component-prefixed logging, making troubleshooting easier without flooding normal usage.
+
+### Improved
+- **Activity Bar clarity**: pull-request and issue entries are flatter, easier to scan, and expose common actions directly on the row. Secondary metadata remains available in safe Markdown tooltips instead of nested technical children.
+- **More meaningful status signals**: completed CI runs display their actual result rather than the generic `completed` state, PR categories use semantic icons, and closed issues use a distinct red signal rather than a merged-like color.
+- **Conflict guidance is CI-aware**: the extension avoids prompting for conflict resolution while a real CI check is still pending, then resumes normal mergeability guidance once checks settle.
+- **Safer refresh behavior**: returning to the contextual PR workspace refreshes sufficiently stale remote PR/CI state at a natural visibility boundary, without background polling.
+- **Draft preservation**: Create Pull Request and Review Pull Request keep unsent text, selections and form state when switching Activity Bar context. Fresh remote state can be loaded without discarding an in-progress review draft.
+- **Post-merge workflow** is more compact and explicit, with three equally valid choices: **✓ Checkout Base / Delete Source**, **Checkout Base / Keep Source**, and **Create New Pull Request**. Cleanup remains recommended without being presented as an error or destructive warning.
 
 ### Fixed
-- Removed a sidebar-specific hard-coded folder icon that overrode the intended **Waiting for my review** category icon.
-- Completed CI runs no longer present generic `completed` as their meaningful final result.
-- Missing CI metadata is omitted rather than displayed as `undefined`.
-- Non-mergeable PRs no longer leave users without a guided path to prepare and resolve real Git conflicts.
-- Conflict guidance no longer races an explicitly pending CI check while Gitea mergeability is still settling.
-- Switching Activity Bar context no longer makes Refresh act as an implicit save operation for editable Create/Review fields.
-- Returning to the contextual PR workspace no longer requires aggressive polling or a manual Refresh to pick up sufficiently stale server-side PR/CI state.
-- Post-merge presentation no longer relies on stacked full-width/destructive-looking controls or an instructional Refresh/Close footer.
+- Refresh no longer acts as an accidental save step before switching away from editable Create/Review views.
+- Non-mergeable pull requests no longer leave the user at a dead end with no guided path toward native conflict resolution.
+- Conflict notifications no longer race an explicitly pending CI check while Gitea is still determining mergeability.
+- Completed CI runs no longer expose `completed` as if it were the meaningful final result, and unavailable metadata is no longer rendered as `undefined`.
+- The **Waiting for my review** category no longer falls back to a generic folder icon.
+- Post-merge actions no longer rely on stacked full-width or destructive-looking controls.
+
+### Quality and maintainability
+- Test coverage now has a reproducible function/branch baseline for directly testable domain logic. It is intentionally informational rather than a percentage release gate, so it can highlight regressions and uncovered decision paths without driving artificial tests.
+- Logging semantics are documented and normalized across components, with stable prefixes and native VS Code log-level filtering.
 
 ### Release preparation
 - Promote package and lock metadata to `0.8.0` **before merge** with `make promote RELEASE_VERSION=0.8.0` so the merged commit tagged `v0.8.0` already matches the release version.
