@@ -17,6 +17,7 @@ The standalone product line uses roadmap phases as minor-version boundaries whil
 | Phase 4 — post-merge lifecycle | `0.5.0` |
 | Phase 5 — dedicated Pull Request workspace | `0.6.0` |
 | Phase 6 — secondary workflows and polish | `0.7.0` |
+| Phase 7 — workflow completion and refresh hardening | `0.8.0` |
 
 Patch releases are reserved for corrections within an existing phase boundary. See [`docs/ROADMAP.md`](docs/ROADMAP.md) for the detailed release gate.
 
@@ -54,6 +55,8 @@ The dedicated Gitea Pull Request Activity Bar icon is deliberately distinct from
 | **Sidebar PR creation** | Select repository, source/base branches, title/description and supported metadata; create normal or draft/WIP PRs |
 | **Sidebar PR review** | Manage source/base branches, approve or request changes, inspect checks/readiness, select merge method, merge or close |
 | **Merge readiness** | Distinguish WIP/no-delta/server-side non-mergeable states and surface CI/check, review and branch-policy signals |
+| **Guided conflict preparation** | Prepare a safe local merge of the fresh remote base into the exact PR source branch, then hand real conflicts to native VS Code Source Control / Merge Editor |
+| **Bounded contextual refresh** | Refresh stale PR/CI/mergeability state when the Review view becomes visible again, without hidden polling and without discarding an unsent review draft |
 | **Merge methods** | Use repository-supported merge commit, squash or rebase methods |
 | **Post-merge lifecycle** | Safely choose local/remote branch cleanup, checkout the base without deletion, keep branches, or create a new PR |
 | **PR Diff Tree** | Directory tree with file status, viewed-state checkboxes, native `vscode.diff` integration and reload when the active PR head changes |
@@ -92,7 +95,7 @@ Two Gitea-specific Activity Bar containers separate general forge browsing from 
 - Gitea **1.26.4** or later
 - A Gitea API token with the required permissions
 
-Version `0.7.0` was functionally validated against **VS Code 1.133.0** and **Gitea 1.26.4**. Older Gitea releases are not claimed as supported for this release line.
+The `0.8.0` release line keeps the Phase 6 compatibility baseline: VS Code 1.133.0+, Gitea 1.26.4+ and Node.js 24.x for development/build/release tooling.
 
 ### Recommended Gitea token permissions
 
@@ -111,7 +114,7 @@ Version `0.7.0` was functionally validated against **VS Code 1.133.0** and **Git
 
 Development build, dependency locking, validation, packaging and local installation are centralized in the repository `Makefile`.
 
-The packaging tool is pinned to `@vscode/vsce 3.9.2`; the `0.7.0` development, CI and release baseline is **Node.js 24.x**. The VS Code command-line launcher (`code`) is only required for installation targets.
+The packaging tool is pinned to `@vscode/vsce 3.9.2`; the development, CI and release baseline is **Node.js 24.x**. The VS Code command-line launcher (`code`) is only required for installation targets.
 
 After a fresh clone, or after modifying `package.json`, synchronize the lock and dependencies with:
 
@@ -147,13 +150,15 @@ Promote explicitly with:
 make promote RELEASE_VERSION=<target-version>
 ```
 
-For Phase 6:
+For Phase 7:
 
 ```bash
-make promote RELEASE_VERSION=0.7.0
+make promote RELEASE_VERSION=0.8.0
 ```
 
-This updates `package.json` and `package-lock.json` together without creating a Git tag. Review and commit both files together, then run `make verify` and `make reinstall-vsix` before marking the release PR ready to merge.
+Promotion must happen **before the release PR is merged**. It updates `package.json` and `package-lock.json` together without creating a Git tag. Review and commit both files together, then run `make verify` and `make reinstall-vsix` before marking the release PR ready to merge.
+
+After merge, tag the merged `main` commit and publish the GitHub Release. Release CI validates the tag/package identity, rebuilds/tests/packages the exact versioned VSIX and attaches it to the GitHub Release. Marketplace publication is intentionally manual: upload that exact release VSIX through the Visual Studio Marketplace publisher management page. No Marketplace PAT or OIDC publishing credential is used by the repository workflow.
 
 Useful targets:
 
@@ -201,6 +206,8 @@ The **Gitea** Activity Bar workspace is the discovery/forge view. It contains Pu
 
 Pull Requests are grouped by repository and categories such as **All Open**, **Waiting for my review** and **Created by me**. On first entry the repository, All Open and Waiting for my review nodes are expanded so actionable work is visible immediately; users may collapse them afterwards normally.
 
+Pull-request and issue rows are leaf business rows with concise metadata/Markdown hover detail and inline **View Details**, **Open in Browser**, and PR activation actions. Issues additionally expose **Assigned to Me** for the authenticated Gitea user while preserving the complete Open/Closed listing.
+
 The current Waiting for my review category uses the available Gitea assignment signals as its discovery heuristic. Exact review state remains authoritative in the contextual review workflow.
 
 ### Create Pull Request
@@ -218,6 +225,8 @@ It supports:
 - native title **Close** to cancel creation;
 - automatic activation of the created PR.
 
+The Create and Review WebviewViews retain their live context while hidden, so unsaved text and selections survive Activity Bar switches without requiring a Refresh first.
+
 The title starts empty rather than being inferred from the branch name. Projects remain intentionally omitted while reliable PR ↔ Project API read/write support is unavailable.
 
 ### Activate and refresh a pull request
@@ -231,7 +240,9 @@ The contextual Changes and Review views expose the same title-action pattern:
 - **Refresh Active Pull Request**;
 - **Close active PR context**.
 
-Refresh reloads the PR itself and rebinds Changes in Pull Request. Additional pushed commits therefore update the diff when Refresh is invoked instead of retaining stale cached state. Refresh remains explicit; the extension does not use aggressive polling.
+Manual Refresh reloads the PR itself and rebinds Changes in Pull Request. In addition, the contextual Review view performs a bounded refresh when it becomes visible again after at least 15 seconds since the previous visibility refresh. The refresh is visibility-event driven only: there is no background timer or hidden polling.
+
+The bounded refresh reuses the normal active-session activation path so PR data, diff consumers, checks/readiness and conflict guidance converge on the same fresh server state. An unsent review draft is preserved and does not prevent remote PR/CI/mergeability state from being refreshed.
 
 ### Changes in Pull Request
 
@@ -257,7 +268,9 @@ Mergeability is presented separately where possible:
 - **No changes to merge** — head already contained in target;
 - **Not mergeable (Gitea)** — server reports another mergeability blocker.
 
-The extension does not fabricate exact conflicting-file details when the supported Gitea API cannot provide them reliably.
+When Gitea reports a real non-mergeable PR, the extension can prepare a safe local conflict-resolution workflow. It requires a clean working tree, fetches exact source/base remotes, validates the PR head SHA, safely checks out/fast-forwards the source branch and merges the fresh remote base into it. Real conflicts then remain a normal Git merge state handled by VS Code Source Control / Merge Editor; **Abort Merge** uses standard `git merge --abort` semantics.
+
+Conflict guidance waits while at least one real CI check is pending so an unfinished check does not prematurely trigger a merge-conflict workflow. Completed checks restore normal conflict handling. No exact conflicting-file detail is fabricated when the supported Gitea API cannot provide it reliably.
 
 ### PR Detail
 
@@ -276,28 +289,21 @@ The PR title, description and discussion comments can be edited inline. Descript
 
 After successful merge the active Changes/Review views are replaced in the contextual workspace by **Pull Request #N Merged**.
 
-The post-merge workflow:
+The primary post-merge choices are:
 
-- preserves exact PR/repository/head/base context;
-- resolves local and remote branch identities independently;
-- discovers remote refs directly from Git;
-- preselects eligible local + remote deletion choices;
-- checks out the base before deleting a checked-out local head;
-- prevents local deletion if checkout fails;
-- permits independent remote cleanup and reports partial errors;
-- supports checkout without deletion;
-- supports Create New Pull Request;
-- exposes native title **Refresh** for branch-state rediscovery;
-- exposes native title **Close** to keep branches and finish;
-- returns to idle and removes the merged contextual view once cleanup/completion succeeds.
+- **✓ Checkout Base / Delete Source** — recommended cleanup path;
+- **Checkout Base / Keep Source**;
+- **Create New Pull Request**.
 
-No branch is deleted merely because its name resembles the PR head; deletion uses resolved repository-local Git identities.
+The post-merge workflow preserves exact PR/repository/head/base context, resolves local and remote branch identities independently, discovers remote refs directly from Git, checks out the actual PR base before deleting a checked-out local source when required, prevents unsafe local deletion if checkout fails, supports independent remote cleanup and reports partial errors.
+
+Cleanup safety remains enforced through resolved branch identity, branch selection and confirmation even though the normal cleanup choice is not styled as an error/destructive warning. No branch is deleted merely because its name resembles the PR head.
 
 ---
 
 ## Issues
 
-Issues stay in the general Gitea workspace. A native TreeView/QuickPick control switches between **Open** and **Closed** issue scopes.
+Issues stay in the general Gitea workspace. A native TreeView/QuickPick control switches between **Open** and **Closed** issue scopes, and **Assigned to Me** follows that current scope.
 
 Issue children keep **View Details** first for fast access, followed by contextual metadata/browser entries. Issue Detail provides:
 
@@ -313,7 +319,9 @@ Close/Re-open remain issue workflow commands rather than being duplicated inside
 
 ## CI / Actions
 
-General CI / Actions remains in the main Gitea workspace and supports workflow runs, job status, logs, reruns and cancellation. PR-specific checks are also surfaced in the contextual Review view with explicit external links when Gitea provides a target URL.
+General CI / Actions remains in the main Gitea workspace and supports workflow runs, job status, logs, reruns and cancellation. Completed runs use their conclusion as the meaningful final state; running states remain explicit, while event/date metadata stays concise and branch/commit detail remains available through hover context.
+
+PR-specific checks are also surfaced in the contextual Review view with explicit external links when Gitea provides a target URL.
 
 ---
 
@@ -336,6 +344,7 @@ See [`docs/ROADMAP.md`](docs/ROADMAP.md).
 - **Phase 4 / 0.5.0** — post-merge lifecycle and branch cleanup
 - **Phase 5 / 0.6.0** — dedicated Gitea Pull Request workspace / dual Activity Bar topology
 - **Phase 6 / 0.7.0** — secondary workflows, detail ergonomics and polish
+- **Phase 7 / 0.8.0** — workflow completion, conflict guidance, Activity Bar signal and safe contextual refresh
 
 Each phase is reviewed as a coherent release increment: implementation/tests, package + lock metadata, changelog, user documentation, roadmap/Story, Make validation and local VSIX validation must agree before merge.
 
