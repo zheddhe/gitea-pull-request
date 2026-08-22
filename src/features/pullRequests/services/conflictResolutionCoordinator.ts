@@ -1,9 +1,19 @@
 import * as vscode from "vscode";
+import type { GiteaCombinedStatus } from "../../../api/types";
 import { RepoManager } from "../../../context/repoManager";
+import { log } from "../../../debug/outputChannel";
 import { ConflictResolutionService } from "./conflictResolutionService";
+import { PullRequestReviewApi } from "./pullRequestReviewApi";
 import { PullRequestSessionService } from "./pullRequestSessionService";
 
 const MERGE_IN_PROGRESS_CONTEXT = "gitea.conflictResolution.inProgress";
+
+export function hasPendingChecks(status: GiteaCombinedStatus): boolean {
+  if (status.statuses.some((check) => check.state === "pending")) {
+    return true;
+  }
+  return status.total_count > 0 && status.state === "pending";
+}
 
 export class ConflictResolutionCoordinator implements vscode.Disposable {
   private readonly disposable: vscode.Disposable;
@@ -13,6 +23,7 @@ export class ConflictResolutionCoordinator implements vscode.Disposable {
     private readonly repoManager: RepoManager,
     private readonly session: PullRequestSessionService,
     private readonly conflictResolution: ConflictResolutionService,
+    private readonly reviewApi: PullRequestReviewApi,
   ) {
     this.disposable = this.session.onDidChangeState((state) => {
       if (state.kind !== "active") {
@@ -82,8 +93,25 @@ export class ConflictResolutionCoordinator implements vscode.Disposable {
     }
 
     if (state.pullRequest.mergeable !== false) return;
-    this.lastOfferedIdentity = identity;
 
+    try {
+      const status = await this.reviewApi.getCombinedStatus(
+        repoInfo,
+        state.pullRequest.head.sha,
+      );
+      if (hasPendingChecks(status)) {
+        log(
+          `[conflict-resolution] guidance suppressed repo=${repoInfo.label} pr=#${pullRequestNumber} reason=ci-pending`,
+        );
+        return;
+      }
+    } catch (error) {
+      log(
+        `[conflict-resolution] unable to verify CI state before guidance repo=${repoInfo.label} pr=#${pullRequestNumber}: ${(error as Error).message}`,
+      );
+    }
+
+    this.lastOfferedIdentity = identity;
     const action = await vscode.window.showWarningMessage(
       `PR #${pullRequestNumber} is not automatically mergeable. You can prepare a local Git merge of the latest base into '${state.pullRequest.head.ref}' to materialize and resolve any real conflicts safely.`,
       "Prepare Conflict Resolution",
