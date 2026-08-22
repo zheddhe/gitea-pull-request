@@ -48,6 +48,7 @@ export async function activate(
   const conflictResolutionCoordinator = new ConflictResolutionCoordinator(
     repoManager,
     prSession,
+    conflictResolution,
   );
 
   const prProvider = new SidebarPullRequestProvider(api, repoManager, auth);
