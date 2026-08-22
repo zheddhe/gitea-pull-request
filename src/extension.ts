@@ -49,6 +49,7 @@ export async function activate(
     repoManager,
     prSession,
     conflictResolution,
+    reviewApi,
   );
 
   const prProvider = new SidebarPullRequestProvider(api, repoManager, auth);
