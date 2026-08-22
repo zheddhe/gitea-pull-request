@@ -22,7 +22,10 @@ export function visibilityRefreshDecision(
 ): VisibilityRefreshDecision {
   if (!context.visible) return "hidden";
   if (context.busy) return "busy";
-  if (context.hasDraft) return "draft";
+  // A review draft is mirrored by the extension and the editable webview
+  // context is retained while hidden, so it no longer blocks a visibility
+  // refresh. Keep hasDraft in the context while this behavior is validated
+  // so rollback remains a one-line policy change.
   if (context.inFlight) return "in-flight";
   if (
     context.lastRefreshAt > 0 &&
