@@ -11,7 +11,7 @@ interface RepoCIState {
   loading: boolean;
 }
 
-// ── Status icon helper ────────────────────────────────────────────────────────
+// ── Status and metadata helpers ───────────────────────────────────────────────
 
 export function iconForStatus(status: string): vscode.ThemeIcon {
   switch (status) {
@@ -48,6 +48,46 @@ export function iconForStatus(status: string): vscode.ThemeIcon {
   }
 }
 
+function cleanMetadata(value: string | undefined | null): string | undefined {
+  const cleaned = value?.trim();
+  return cleaned ? cleaned : undefined;
+}
+
+export function isActiveRunStatus(status: string): boolean {
+  return ["running", "waiting", "pending", "in_progress"].includes(status);
+}
+
+export function displayStatusForRun(run: GiteaWorkflowRun): string {
+  const status = cleanMetadata(run.status) ?? "unknown";
+  if (status === "completed") {
+    return cleanMetadata(run.conclusion) ?? status;
+  }
+  return status;
+}
+
+export function formatRunDateTime(run: GiteaWorkflowRun): string | undefined {
+  const raw = cleanMetadata(run.run_started_at) ?? cleanMetadata(run.created_at);
+  if (!raw) {
+    return undefined;
+  }
+
+  const value = new Date(raw);
+  if (Number.isNaN(value.getTime())) {
+    return undefined;
+  }
+
+  return value.toLocaleString(undefined, {
+    dateStyle: "short",
+    timeStyle: "short",
+  });
+}
+
+export function runSecondaryMetadata(run: GiteaWorkflowRun): string[] {
+  return [cleanMetadata(run.event), formatRunDateTime(run)].filter(
+    (value): value is string => !!value,
+  );
+}
+
 // ── Tree items ────────────────────────────────────────────────────────────────
 
 export class RepoGroupItem extends vscode.TreeItem {
@@ -80,20 +120,40 @@ export class CIRunItem extends vscode.TreeItem {
     );
     this.id = `run:${repoInfo.key}:${run.id}`;
     this.contextValue = "ciRun";
-    const eventDesc = `${run.event} · ${run.head_branch}`;
-    const isRunning =
-      run.status === "running" ||
-      run.status === "waiting" ||
-      run.status === "pending" ||
-      run.status === "in_progress";
-    this.description = isRunning ? `🔴 ${eventDesc}` : eventDesc;
-    this.tooltip = new vscode.MarkdownString(
-      `**${run.display_title || run.name}**\n\n` +
-        `Status: \`${run.status}\` | Event: \`${run.event}\`\n\n` +
-        `Branch: \`${run.head_branch}\` · ${run.head_commit?.message ?? ""}` +
-        (isRunning ? "\n\n🔴 **Live**" : ""),
+
+    const status = displayStatusForRun(run);
+    const isRunning = isActiveRunStatus(run.status);
+    const secondaryMetadata = runSecondaryMetadata(run);
+    this.description = [isRunning ? `🔴 ${status}` : status, ...secondaryMetadata].join(
+      " · ",
     );
-    this.iconPath = iconForStatus(run.status);
+
+    const tooltipLines = [
+      `**${run.display_title || run.name || `Run #${run.run_number}`}**`,
+      "",
+      `Status: \`${status}\``,
+    ];
+    const event = cleanMetadata(run.event);
+    if (event) {
+      tooltipLines.push(`Event: \`${event}\``);
+    }
+    const dateTime = formatRunDateTime(run);
+    if (dateTime) {
+      tooltipLines.push(`Date: ${dateTime}`);
+    }
+    const branch = cleanMetadata(run.head_branch);
+    const commitMessage = cleanMetadata(run.head_commit?.message);
+    if (branch) {
+      tooltipLines.push("", `Branch: \`${branch}\``);
+    }
+    if (commitMessage) {
+      tooltipLines.push(`Commit: ${commitMessage}`);
+    }
+    if (isRunning) {
+      tooltipLines.push("", "🔴 **Live**");
+    }
+    this.tooltip = new vscode.MarkdownString(tooltipLines.join("\n\n"));
+    this.iconPath = iconForStatus(status);
   }
 }
 
@@ -103,17 +163,17 @@ export class CIJobItem extends vscode.TreeItem {
     public readonly runId: number,
     public readonly repoInfo: RepoInfo,
   ) {
-    const isRunning = 
-      job.status === "running" || 
+    const isRunning =
+      job.status === "running" ||
       job.status === "waiting" ||
       job.status === "in_progress";
-    
+
     // Jobs are not expandable since Gitea API doesn't provide step details
     super(job.name, vscode.TreeItemCollapsibleState.None);
     this.id = `job:${repoInfo.key}:${runId}:${job.id}`;
     this.contextValue = "ciJob";
     const status = job.conclusion || job.status;
-    
+
     this.description = isRunning ? `🔴 ${status}` : status;
     this.iconPath = iconForStatus(status);
     this.tooltip = `${job.name} — ${status}${isRunning ? " (Live)" : ""}\n\nNote: Gitea API does not expose step-level details.\nView logs for detailed execution information.`;
@@ -125,7 +185,7 @@ export class CIStepItem extends vscode.TreeItem {
     super(`${number}. ${stepName}`, vscode.TreeItemCollapsibleState.None);
     const isRunning = status === "running" || status === "in_progress";
     const isCompleted = status === "success" || status === "completed";
-    
+
     // Highlight currently executing step
     if (isRunning) {
       this.description = `⚡ EXECUTING`;
@@ -135,7 +195,7 @@ export class CIStepItem extends vscode.TreeItem {
     } else {
       this.description = status;
     }
-    
+
     this.iconPath = iconForStatus(status);
   }
 }
