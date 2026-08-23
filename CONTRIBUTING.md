@@ -65,6 +65,8 @@ make reinstall-vsix
 
 The generated package is written under `.artifacts/vsix/`.
 
+Use `make help` for the complete development target list. Release-specific promotion, tagging and publication commands are documented in [`docs/RELEASING.md`](docs/RELEASING.md) rather than the user-facing README.
+
 ---
 
 ## Project Structure
@@ -77,7 +79,7 @@ The generated package is written under `.artifacts/vsix/`.
 | `src/context/`  | Multi-repo detection using the `vscode.git` API       |
 | `src/ui/`       | Status bar item                                       |
 | `src/views/`    | Tree data providers + webview panels                  |
-| `resources/`    | Static assets (icons, SVGs)                           |
+| `resources/`    | Marketplace screenshots and extension icons          |
 | `package.json`  | Extension manifest (commands, views, menus, settings) |
 
 ---
@@ -148,13 +150,13 @@ Include useful correlation context (`repo`, PR/issue/run identifier, operation) 
 
 ## Release and compatibility baseline
 
-For the `0.7.0` release line, the validated baseline is:
+For the `0.8.0` release line, the validated baseline is:
 
 - VS Code `1.133.0+`;
 - Gitea `1.26.4+`;
 - Node.js `24.x` for build/test/package workflows.
 
-See [`docs/RELEASING.md`](docs/RELEASING.md) for the release process.
+See [`docs/RELEASING.md`](docs/RELEASING.md) for the release process and [`docs/TESTING.md`](docs/TESTING.md) for the test-layer and coverage rationale.
 
 ---
 
