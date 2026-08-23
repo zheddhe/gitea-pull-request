@@ -266,7 +266,8 @@ export class PRDiffProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
     this.repoInfo = repoInfo;
     this.pr = pr;
     if (!changed) {
-      this._onDidChangeTreeData.fire(null);
+      if (this.loaded) void this.refreshReviews();
+      else this._onDidChangeTreeData.fire(null);
       return;
     }
 
@@ -282,6 +283,31 @@ export class PRDiffProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
       `[pr-diff] rebind repo=${repoInfo.label} pr=#${pr.number} head=${previousHead.slice(0, 7)}->${pr.head.sha.slice(0, 7)}`,
     );
     this._onDidChangeTreeData.fire(null);
+  }
+
+  private async refreshReviews(): Promise<void> {
+    const loadVersion = this.loadVersion;
+    const repositoryKey = this.repoInfo.key;
+    const pullRequestNumber = this.pr.number;
+    try {
+      const reviews = await this._api.listReviews(this.repoInfo, pullRequestNumber);
+      if (
+        loadVersion !== this.loadVersion ||
+        repositoryKey !== this.repoInfo.key ||
+        pullRequestNumber !== this.pr.number
+      ) {
+        return;
+      }
+      this.reviews = reviews ?? [];
+      log(
+        `[pr-diff] reviews refreshed repo=${this.repoInfo.label} pr=#${pullRequestNumber} reviews=${this.reviews.length}`,
+      );
+      this._onDidChangeTreeData.fire(null);
+    } catch (error) {
+      log(
+        `[pr-diff] review refresh failed repo=${this.repoInfo.label} pr=#${pullRequestNumber}: ${(error as Error).message}`,
+      );
+    }
   }
 
   static hide(key: string): void {
