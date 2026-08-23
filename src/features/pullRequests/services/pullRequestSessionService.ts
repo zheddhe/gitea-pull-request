@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { GiteaPullRequest } from "../../../api/types";
-import { log } from "../../../debug/outputChannel";
+import { debug, info, warn } from "../../../debug/outputChannel";
 import {
   CheckoutState,
   idlePullRequestState,
@@ -27,7 +27,7 @@ export class PullRequestSessionService implements vscode.Disposable {
 
   async initialize(): Promise<void> {
     await this.syncContextKeys();
-    log(`[pr-session] initialized state=${this.describe(this.state)}`);
+    debug(`[pr-session] initialized state=${this.describe(this.state)}`);
   }
 
   async startCreating(
@@ -95,7 +95,7 @@ export class PullRequestSessionService implements vscode.Disposable {
       return false;
     }
 
-    log(`[pr-session] repository unavailable key=${this.state.repository.key}; clearing session`);
+    warn(`[pr-session] repository unavailable key=${this.state.repository.key}; clearing session`);
     await this.clear();
     return true;
   }
@@ -113,7 +113,7 @@ export class PullRequestSessionService implements vscode.Disposable {
     const next = this.describe(nextState);
     this.state = nextState;
     await this.syncContextKeys();
-    log(`[pr-session] ${previous} -> ${next}`);
+    info(`[pr-session] ${previous} -> ${next}`);
     this.stateEmitter.fire(this.state);
   }
 

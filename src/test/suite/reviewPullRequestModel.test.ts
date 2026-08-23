@@ -106,6 +106,38 @@ suite("reviewPullRequestModel", () => {
     );
   });
 
+  test("warns when Gitea does not report mergeability", () => {
+    const readiness = evaluateMergeReadiness(
+      pullRequest({ mergeable: undefined }),
+      combinedStatus("success"),
+      [],
+      { user_can_merge: true },
+    );
+
+    assert.strictEqual(readiness.canMerge, true);
+    assert.ok(
+      readiness.warnings.some((warning) =>
+        warning.includes("Mergeability is not reported"),
+      ),
+    );
+  });
+
+  test("blocks merge when the current user is not allowed to merge", () => {
+    const readiness = evaluateMergeReadiness(
+      pullRequest({ mergeable: true }),
+      combinedStatus("success"),
+      [],
+      { user_can_merge: false },
+    );
+
+    assert.strictEqual(readiness.canMerge, false);
+    assert.ok(
+      readiness.blockingReasons.some((reason) =>
+        reason.includes("not allowed to merge"),
+      ),
+    );
+  });
+
   test("blocks failed checks and requested changes", () => {
     const readiness = evaluateMergeReadiness(
       pullRequest({ mergeable: true }),
@@ -121,6 +153,54 @@ suite("reviewPullRequestModel", () => {
     );
   });
 
+  test("blocks pending checks", () => {
+    const readiness = evaluateMergeReadiness(
+      pullRequest({ mergeable: true }),
+      combinedStatus("pending"),
+      [],
+      { user_can_merge: true },
+    );
+
+    assert.strictEqual(readiness.canMerge, false);
+    assert.ok(
+      readiness.blockingReasons.some((reason) =>
+        reason.includes("still pending"),
+      ),
+    );
+  });
+
+  test("keeps warning checks non-blocking", () => {
+    const readiness = evaluateMergeReadiness(
+      pullRequest({ mergeable: true }),
+      combinedStatus("warning"),
+      [],
+      { user_can_merge: true },
+    );
+
+    assert.strictEqual(readiness.canMerge, true);
+    assert.ok(
+      readiness.warnings.some((warning) =>
+        warning.includes("completed with warnings"),
+      ),
+    );
+  });
+
+  test("warns when required status checks cannot be read", () => {
+    const readiness = evaluateMergeReadiness(
+      pullRequest({ mergeable: true }),
+      undefined,
+      [],
+      { user_can_merge: true, enable_status_check: true },
+    );
+
+    assert.strictEqual(readiness.canMerge, true);
+    assert.ok(
+      readiness.warnings.some((warning) =>
+        warning.includes("combined status could not be read"),
+      ),
+    );
+  });
+
   test("requires configured approvals", () => {
     const readiness = evaluateMergeReadiness(
       pullRequest({ mergeable: true }),
@@ -131,6 +211,28 @@ suite("reviewPullRequestModel", () => {
 
     assert.strictEqual(readiness.canMerge, false);
     assert.ok(readiness.reviewLabel.includes("1 approval / 2 required"));
+  });
+
+  test("uses only the latest review from each user", () => {
+    const readiness = evaluateMergeReadiness(
+      pullRequest({ mergeable: true }),
+      combinedStatus("success"),
+      [
+        review("alice", "REQUEST_CHANGES", {
+          id: 1,
+          submitted_at: "2026-08-16T10:00:00Z",
+        }),
+        review("alice", "APPROVED", {
+          id: 2,
+          submitted_at: "2026-08-16T11:00:00Z",
+        }),
+      ],
+      { user_can_merge: true, required_approvals: 1 },
+    );
+
+    assert.strictEqual(readiness.canMerge, true);
+    assert.ok(readiness.reviewLabel.includes("1 approval / 1 required"));
+    assert.ok(!readiness.reviewLabel.includes("requesting changes"));
   });
 
   test("accepts merge when observable blockers are clear", () => {
@@ -209,7 +311,11 @@ function combinedStatus(
   return { state, statuses: [], total_count: 0 };
 }
 
-function review(login: string, state: GiteaReview["state"]): GiteaReview {
+function review(
+  login: string,
+  state: GiteaReview["state"],
+  overrides: Partial<GiteaReview> = {},
+): GiteaReview {
   return {
     id: 1,
     user: {
@@ -224,5 +330,6 @@ function review(login: string, state: GiteaReview["state"]): GiteaReview {
     submitted_at: "2026-08-16T00:00:00Z",
     stale: false,
     html_url: "",
+    ...overrides,
   };
 }

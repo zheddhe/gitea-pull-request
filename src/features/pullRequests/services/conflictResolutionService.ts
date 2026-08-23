@@ -2,7 +2,7 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import type { GiteaPullRequest } from "../../../api/types";
 import type { RepoInfo } from "../../../context/repoManager";
-import { log } from "../../../debug/outputChannel";
+import { debug, info } from "../../../debug/outputChannel";
 
 const execFileAsync = promisify(execFile);
 
@@ -85,7 +85,7 @@ export class ConflictResolutionService {
     pullRequest: GiteaPullRequest,
   ): Promise<ConflictResolutionPreparationResult> {
     const plan = await this.plan(repoInfo, pullRequest);
-    log(
+    info(
       `[conflict-resolution] prepare repo=${repoInfo.label} pr=#${pullRequest.number} source=${plan.sourceRemoteRef}@${plan.sourceSha.slice(0, 8)} base=${plan.baseRemoteRef}`,
     );
 
@@ -93,14 +93,14 @@ export class ConflictResolutionService {
       inspect: () => this.inspect(repoInfo),
       fetch: async (remote) => {
         await this.git(repoInfo, ["fetch", "--prune", remote]);
-        log(`[conflict-resolution] fetched repo=${repoInfo.label} remote=${remote}`);
+        debug(`[conflict-resolution] fetched repo=${repoInfo.label} remote=${remote}`);
       },
       checkoutSource: (resolvedPlan) => this.checkoutSource(repoInfo, resolvedPlan),
       mergeBase: (resolvedPlan) => this.mergeBase(repoInfo, resolvedPlan),
       abortMerge: () => this.abort(repoInfo),
     });
 
-    log(
+    info(
       `[conflict-resolution] prepared repo=${repoInfo.label} pr=#${pullRequest.number} result=${result.kind}`,
     );
     return result;
@@ -127,7 +127,7 @@ export class ConflictResolutionService {
       throw new Error("No Git merge is currently in progress.");
     }
     await this.git(repoInfo, ["merge", "--abort"]);
-    log(`[conflict-resolution] aborted repo=${repoInfo.label}`);
+    info(`[conflict-resolution] aborted repo=${repoInfo.label}`);
   }
 
   private async plan(
@@ -233,7 +233,7 @@ export class ConflictResolutionService {
     }
     if (synchronization === "fastForward") {
       await this.git(repoInfo, ["merge", "--ff-only", plan.sourceRemoteRef]);
-      log(
+      info(
         `[conflict-resolution] fast-forwarded source repo=${repoInfo.label} branch=${plan.sourceBranch} to=${remoteSha.slice(0, 8)}`,
       );
     }
@@ -247,7 +247,7 @@ export class ConflictResolutionService {
       );
     }
 
-    log(
+    debug(
       `[conflict-resolution] checked out source repo=${repoInfo.label} branch=${plan.sourceBranch} sha=${finalSha.slice(0, 8)}`,
     );
   }

@@ -119,65 +119,26 @@ Compatibility baseline established at VS Code 1.133.0+, Gitea 1.26.4+ and Node.j
 
 ## Phase 7 — Workflow completion and refresh hardening
 
-**Release target:** `0.8.0`
+**Release:** `0.8.0`
 
-**Implementation status:** complete and interactively validated. Detailed implementation record: [`PHASE_7.md`](PHASE_7.md).
+**Status:** completed and interactively validated.
 
-### 7.1 — Activity Bar signal, navigation and action consistency
+Completed:
 
-Completed and merged:
+- clearer Activity Bar signals, flatter PR/Issue rows, inline actions, semantic category icons and **Assigned to Me** issue aggregation;
+- native VS Code log levels with consistent component-prefixed diagnostics and documented logging semantics;
+- guided conflict preparation for non-mergeable PRs, including exact remote/source resolution, PR head-SHA validation, safe local branch handling, native Merge Editor / Source Control hand-off and standard abort behavior;
+- CI-aware suppression of conflict guidance while real checks are pending;
+- compact post-merge choices for deleting or keeping the source branch, or immediately creating another pull request;
+- bounded visibility-driven refresh of stale PR/CI state with no hidden polling;
+- Create/Review Webview state retention so unsent text and selections survive Activity Bar switches while remote state can still refresh safely;
+- reproducible function/branch coverage baseline for directly testable domain logic, used as an informational regression/discovery signal rather than a percentage gate.
 
-- CI run conclusion is the primary completed-state signal;
-- PR/Issue rows are flattened with safe hover metadata and inline actions;
-- semantic PR category icons;
-- **Assigned to Me** issue aggregation following Open/Closed scope;
-- closed-issue red status semantics;
-- native VS Code `LogOutputChannel` levels and configurable verbosity.
-
-### 7.2 — Guided conflict resolution
-
-Completed and merged:
-
-- exact source/base remote discovery for internal and fork PRs;
-- fetch-before-checkout/merge and exact PR head-SHA validation;
-- safe existing-local-source handling: current, fast-forwardable or divergent refusal;
-- merge of the freshly fetched remote base into the PR source branch;
-- clean-merge distinction, native Merge Editor / Source Control hand-off for real conflicts and standard abort semantics;
-- reconstruction after reload while a prepared merge remains active;
-- CI-aware suppression of conflict guidance while real checks remain pending, with bounded fallback behavior and no polling.
-
-### 7.3 — Post-merge ergonomics and safe refresh
-
-Completed and interactively validated:
-
-- compact post-merge choices: **✓ Checkout Base / Delete Source**, **Checkout Base / Keep Source**, **Create New Pull Request**;
-- positive cleanup recommendation while retaining second-level deletion confirmation/safety;
-- removal of obsolete Refresh/Close instructional footer;
-- 15-second bounded refresh when contextual Review becomes visible again;
-- visibility-event-driven refresh only, with no hidden timer/polling and in-flight/cooldown deduplication;
-- normal active-session rebinding so PR, checks/readiness, diff consumers and conflict guidance receive the same fresh server state;
-- unsent review drafts coexist with fresh remote state;
-- Create/Review WebviewViews use `retainContextWhenHidden` so text and selections survive Activity Bar switches;
-- WebviewPanel detail views intentionally remain unchanged.
-
-### Phase 7 interactive validation
-
-Interactive validation covered the full intended 0.8.0 increment, including:
-
-- CI success/failure/in-progress presentation and diagnostic levels;
-- PR/Issue flattened rows, semantic categories and assignment aggregation;
-- guided real Git conflict preparation, native conflict resolution hand-off and safe abort;
-- pending-CI conflict-notification suppression;
-- post-merge delete/keep/create ergonomics and branch safety;
-- Create/Review text and selection preservation across Activity Bar switches;
-- stale contextual PR refresh after visibility return;
-- pending CI becoming completed while hidden;
-- visibility refresh while an unsent review draft remains present;
-- absence of periodic hidden polling.
+The user-facing release summary lives in [`CHANGELOG.md`](../CHANGELOG.md). Test architecture and coverage rationale live in [`TESTING.md`](TESTING.md).
 
 ### `0.8.0` release gate
 
-The remaining gate is release preparation rather than feature work:
+The remaining work is release preparation rather than feature development:
 
 ```bash
 make promote RELEASE_VERSION=0.8.0
@@ -189,7 +150,7 @@ Then:
 
 1. commit `package.json` and `package-lock.json` at `0.8.0` on the release PR branch;
 2. confirm `.artifacts/vsix/gitea-pull-request-0.8.0.vsix` and run the final smoke pass;
-3. mark the Phase 7.3/release-preparation PR ready and merge it;
+3. mark the release PR ready and merge it;
 4. tag the merged `main` commit as `v0.8.0` and publish the GitHub Release;
 5. let release CI rebuild/test/package and attach the exact release VSIX;
 6. manually upload that exact GitHub Release VSIX to the Visual Studio Marketplace publisher management page.
@@ -215,6 +176,8 @@ Then:
 ## Testing strategy
 
 Each phase adds tests at the lowest stable layer first: domain/session unit tests, pure planning tests, API contract-style tests, command/Git orchestration tests, presentation/source-contract tests and extension-host tests where practical. Destructive cleanup safety/error-path coverage remains a release requirement rather than deferred polish.
+
+Coverage measurement complements this strategy for directly testable pure modules. It is used to observe function/branch regressions and identify meaningful untested decisions; no global percentage target is part of the release gate.
 
 Minimum regression workflows:
 

@@ -39,13 +39,23 @@ make compile
 npm run watch
 ```
 
-### Validation and VSIX packaging
+### Validation, coverage and VSIX packaging
 
 Run the same local quality gate used before packaging:
 
 ```bash
 make verify
 ```
+
+Measure the directly testable pure-module coverage baseline with:
+
+```bash
+make coverage
+```
+
+Coverage is an observational development signal, not a release percentage gate. The command reports function and branch coverage for the explicitly instrumented pure modules and writes `.artifacts/coverage/coverage-summary.json`. Use changes in that baseline to investigate newly uncovered functions or decision paths; do not optimize tests for a global percentage.
+
+The regular `make test` suite still runs inside the VS Code Extension Host and remains the functional/integration gate. Coverage deliberately uses a separate direct Node/Mocha path so Extension Host glue does not produce a misleading global figure.
 
 Build and reinstall the versioned VSIX locally with:
 
@@ -77,14 +87,14 @@ The generated package is written under `.artifacts/vsix/`.
 ### Bugs & Feature Requests
 
 - **Search existing issues** before opening a new one.
-- For bugs, include: VS Code version, Gitea version, steps to reproduce, and the error message from the **Output** panel (`Gitea` channel).
+- For bugs, include: VS Code version, Gitea version, steps to reproduce, and the error message from the **Output** panel (`Gitea Pull Request` channel).
 - For features, explain the use case, not just the implementation.
 
 ### Pull Requests
 
 1. Fork the repository and create a branch: `git checkout -b feat/my-feature`
 2. Make your changes.
-3. Run `make verify` before opening the PR.
+3. Run `make verify` before opening the PR; use `make coverage` when changing directly testable domain logic.
 4. Follow the existing code style — ESLint 9 flat config + `tsc --strict`.
 5. Keep the scope of changes small and focused — one feature/fix per PR.
 6. Update `README.md` if you add user-facing functionality.
@@ -101,6 +111,20 @@ The generated package is written under `.artifacts/vsix/`.
 1. Add the command `id` + `title` to `package.json` → `contributes.commands`.
 2. If it appears in menus, add it to `contributes.menus`.
 3. Register it with `context.subscriptions.push(vscode.commands.registerCommand(...))` inside the relevant `src/commands/*.ts` file.
+
+---
+
+## Logging
+
+Use the shared `LogOutputChannel` helpers from `src/debug/outputChannel.ts` and keep component prefixes such as `[pr-session]`, `[pr-refresh]` or `[conflict-resolution]` stable enough to search.
+
+- `trace`: high-frequency or very fine diagnostic detail;
+- `debug`: orchestration, refresh/cache decisions and investigation detail;
+- `info`: meaningful lifecycle or user-visible state transitions;
+- `warn`: degraded/recoverable behavior that deserves attention;
+- `error`: a requested operation failed or the workflow cannot continue normally.
+
+Include useful correlation context (`repo`, PR/issue/run identifier, operation) where it helps diagnose a failure. Avoid keystroke-level logging and do not promote routine implementation chatter to `info`.
 
 ---
 

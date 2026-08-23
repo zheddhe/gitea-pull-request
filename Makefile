@@ -4,6 +4,7 @@ NPM ?= npm
 NPX ?= npx
 CODE ?= code
 VSCE_VERSION ?= 3.9.2
+C8_VERSION ?= 10.1.3
 VSCODE_TEST_VERSION ?= 1.133.0
 
 PROJECT_NAME := $(shell node -p "require('./package.json').name")
@@ -12,8 +13,9 @@ RELEASE_VERSION ?=
 ARTIFACT_ROOT ?= .artifacts
 VSIX_DIR ?= $(ARTIFACT_ROOT)/vsix
 VSIX_FILE := $(VSIX_DIR)/$(PROJECT_NAME)-$(VERSION).vsix
+COVERAGE_DIR ?= $(ARTIFACT_ROOT)/coverage
 
-.PHONY: help doctor lock bootstrap deps promote clean compile lint test test-latest verify vsix rebuild-vsix install-vsix reinstall-vsix ci show-vsix
+.PHONY: help doctor lock bootstrap deps promote clean compile lint test coverage test-latest verify vsix rebuild-vsix install-vsix reinstall-vsix ci show-vsix
 
 help: ## Show the available development targets
 	@printf '%s\n' 'Gitea Pull Request development workflow'
@@ -70,6 +72,22 @@ lint: ## Run ESLint
 
 test: compile ## Run extension tests on the minimum supported VS Code version
 	VSCODE_TEST_VERSION="$(VSCODE_TEST_VERSION)" $(NPM) test
+
+coverage: compile ## Measure function/branch coverage for directly testable pure modules (informational, no threshold)
+	rm -rf "$(COVERAGE_DIR)"
+	$(NPX) --yes c8@$(C8_VERSION) \
+		--all \
+		--reports-dir "$(COVERAGE_DIR)" \
+		--reporter text \
+		--reporter json-summary \
+		--include 'out/features/pullRequests/domain/createPullRequestModel.js' \
+		--include 'out/features/pullRequests/domain/reviewPullRequestModel.js' \
+		--include 'out/features/pullRequests/domain/visibilityRefreshPolicy.js' \
+		./node_modules/.bin/mocha --ui tdd \
+		out/test/suite/createPullRequestModel.test.js \
+		out/test/suite/reviewPullRequestModel.test.js \
+		out/test/suite/visibilityRefreshPolicy.test.js
+	@echo "Coverage baseline written to $(COVERAGE_DIR)/coverage-summary.json (informational only; no release threshold)."
 
 test-latest: compile ## Run extension tests against the latest stable VS Code as an additional compatibility check
 	VSCODE_TEST_VERSION=stable $(NPM) test
