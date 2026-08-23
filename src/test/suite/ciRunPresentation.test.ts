@@ -1,8 +1,9 @@
 import * as assert from "assert";
 import * as vscode from "vscode";
-import type { GiteaWorkflowRun } from "../../api/types";
+import type { GiteaWorkflowJob, GiteaWorkflowRun } from "../../api/types";
 import type { RepoInfo } from "../../context/repoManager";
 import {
+  CIJobItem,
   CIRunItem,
   displayStatusForRun,
   runSecondaryMetadata,
@@ -37,6 +38,21 @@ suite("CI run presentation", () => {
       head_commit: { message: "Test commit", author: { name: "Dev" } },
       repository: {} as GiteaWorkflowRun["repository"],
       jobs_url: "https://gitea.example.test/api/jobs",
+      ...overrides,
+    };
+  }
+
+  function job(overrides: Partial<GiteaWorkflowJob> = {}): GiteaWorkflowJob {
+    return {
+      id: 7,
+      run_id: 42,
+      name: "Tests & Coverage",
+      status: "completed",
+      conclusion: "success",
+      started_at: "2026-08-22T16:30:00Z",
+      completed_at: "2026-08-22T16:31:00Z",
+      html_url: "https://gitea.example.test/owner/repo/actions/runs/42/jobs/7",
+      runner_name: "runner-1",
       ...overrides,
     };
   }
@@ -87,10 +103,31 @@ suite("CI run presentation", () => {
   test("surfaces failure directly on the run row", () => {
     const item = new CIRunItem(run(), repoInfo);
     assert.match(String(item.description), /^failure · push · /);
+    assert.strictEqual(item.contextValue, "ciRun_complete");
     assert.strictEqual((item.iconPath as vscode.ThemeIcon).id, "error");
     assert.ok(item.tooltip instanceof vscode.MarkdownString);
     assert.match(item.tooltip.value, /Status: `failure`/);
     assert.match(item.tooltip.value, /Event: `push`/);
     assert.match(item.tooltip.value, /Date:/);
+  });
+
+  test("marks running runs for cancel-only inline actions", () => {
+    const item = new CIRunItem(
+      run({ status: "running", conclusion: "" }),
+      repoInfo,
+    );
+    assert.strictEqual(item.contextValue, "ciRun_active");
+  });
+
+  test("marks completed and active jobs with distinct action contexts", () => {
+    assert.strictEqual(new CIJobItem(job(), 42, repoInfo).contextValue, "ciJob_complete");
+    assert.strictEqual(
+      new CIJobItem(
+        job({ status: "running", conclusion: "" }),
+        42,
+        repoInfo,
+      ).contextValue,
+      "ciJob_active",
+    );
   });
 });
