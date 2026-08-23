@@ -11,8 +11,6 @@ interface RepoCIState {
   loading: boolean;
 }
 
-// ── Status and metadata helpers ───────────────────────────────────────────────
-
 export function iconForStatus(status: string): vscode.ThemeIcon {
   switch (status) {
     case "success":
@@ -88,8 +86,6 @@ export function runSecondaryMetadata(run: GiteaWorkflowRun): string[] {
   );
 }
 
-// ── Tree items ────────────────────────────────────────────────────────────────
-
 export class RepoGroupItem extends vscode.TreeItem {
   constructor(
     public readonly repoInfo: RepoInfo,
@@ -119,10 +115,10 @@ export class CIRunItem extends vscode.TreeItem {
       vscode.TreeItemCollapsibleState.Collapsed,
     );
     this.id = `run:${repoInfo.key}:${run.id}`;
-    this.contextValue = "ciRun";
 
     const status = displayStatusForRun(run);
     const isRunning = isActiveRunStatus(run.status);
+    this.contextValue = isRunning ? "ciRun_active" : "ciRun_complete";
     const secondaryMetadata = runSecondaryMetadata(run);
     this.description = [isRunning ? `🔴 ${status}` : status, ...secondaryMetadata].join(
       " · ",
@@ -163,15 +159,13 @@ export class CIJobItem extends vscode.TreeItem {
     public readonly runId: number,
     public readonly repoInfo: RepoInfo,
   ) {
-    const isRunning =
-      job.status === "running" ||
-      job.status === "waiting" ||
-      job.status === "in_progress";
+    const isRunning = ["running", "waiting", "pending", "in_progress"].includes(
+      job.status,
+    );
 
-    // Jobs are not expandable since Gitea API doesn't provide step details
     super(job.name, vscode.TreeItemCollapsibleState.None);
     this.id = `job:${repoInfo.key}:${runId}:${job.id}`;
-    this.contextValue = "ciJob";
+    this.contextValue = isRunning ? "ciJob_active" : "ciJob_complete";
     const status = job.conclusion || job.status;
 
     this.description = isRunning ? `🔴 ${status}` : status;
@@ -186,7 +180,6 @@ export class CIStepItem extends vscode.TreeItem {
     const isRunning = status === "running" || status === "in_progress";
     const isCompleted = status === "success" || status === "completed";
 
-    // Highlight currently executing step
     if (isRunning) {
       this.description = `⚡ EXECUTING`;
       this.tooltip = `Currently running: ${stepName}`;
@@ -213,8 +206,6 @@ export class CILoadMoreItem extends vscode.TreeItem {
   }
 }
 
-// ── Provider ──────────────────────────────────────────────────────────────────
-
 export class CIRunsProvider
   implements vscode.TreeDataProvider<vscode.TreeItem>, vscode.Disposable
 {
@@ -233,7 +224,6 @@ export class CIRunsProvider
   ) {
     repoManager.onDidChange(() => this.refresh());
     auth.onDidChangeSession(() => this.refresh());
-    // Auto-polling disabled - use manual refresh instead
   }
 
   refresh(): void {
@@ -245,7 +235,6 @@ export class CIRunsProvider
   async refreshRepo(repoKey: string): Promise<void> {
     const state = this.stateMap.get(repoKey);
     if (state) {
-      // Don't show loading indicator during refresh
       const wasLoading = state.loading;
       state.loading = false;
       state.page = 1;
@@ -260,13 +249,11 @@ export class CIRunsProvider
   async refreshJob(jobId: number, runId: number, repoInfo: RepoInfo): Promise<void> {
     try {
       const job = await this.api.getWorkflowJob(repoInfo, jobId);
-      // Update job in cache
       const jobs = this.jobCache.get(runId);
       if (jobs) {
         const index = jobs.findIndex((j) => j.id === jobId);
         if (index !== -1) {
           jobs[index] = job;
-          // Only fire update for this specific job's parent run
           this._onDidChangeTreeData.fire();
         }
       }
@@ -331,8 +318,6 @@ export class CIRunsProvider
     if (element instanceof CIRunItem) {
       return this.getJobsForRun(element.run.id, element.repoInfo);
     }
-
-    // Jobs are not expandable - Gitea API doesn't support step-level details
 
     return [];
   }
