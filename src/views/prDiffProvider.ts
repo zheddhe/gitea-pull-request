@@ -8,6 +8,10 @@ import type {
   GiteaCommit,
   GiteaReview,
 } from "../api/types";
+import {
+  summarizeEffectiveReviews,
+  type EffectiveReviewState,
+} from "../features/pullRequests/domain/reviewPullRequestModel";
 
 interface DirNode {
   name: string;
@@ -51,13 +55,16 @@ function findDirNode(root: DirNode | null, path: string): DirNode | null {
 }
 
 class PRDiffRootItem extends vscode.TreeItem {
-  constructor(pr: GiteaPullRequest, hasApproved: boolean) {
+  constructor(pr: GiteaPullRequest, reviewState: EffectiveReviewState) {
     super(`#${pr.number} ${pr.title}`, vscode.TreeItemCollapsibleState.Expanded);
     this.id = "prDiffRoot";
     this.contextValue = "prDiffRoot";
-    const color = hasApproved
-      ? new vscode.ThemeColor("charts.green")
-      : new vscode.ThemeColor("charts.yellow");
+    const color =
+      reviewState === "changes_requested"
+        ? new vscode.ThemeColor("charts.red")
+        : reviewState === "approved"
+          ? new vscode.ThemeColor("charts.green")
+          : new vscode.ThemeColor("charts.yellow");
     this.iconPath = new vscode.ThemeIcon("git-pull-request", color);
   }
 }
@@ -430,9 +437,7 @@ export class PRDiffProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
         (sum, file) => sum + file.deletions,
         0,
       );
-      const hasApproved = this.reviews.some(
-        (review) => review.state === "APPROVED" && !review.stale,
-      );
+      const reviewState = summarizeEffectiveReviews(this.reviews).state;
       const commitsSection = new PRDiffSectionItem(
         "Commits",
         "commits",
@@ -448,7 +453,7 @@ export class PRDiffProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
 
       if (this.files.length === 0) {
         return [
-          new PRDiffRootItem(this.pr, hasApproved),
+          new PRDiffRootItem(this.pr, reviewState),
           new PRDiffBranchItem(this.pr),
           new PRDiffStatsItem(0, 0, 0),
           commitsSection,
@@ -472,7 +477,7 @@ export class PRDiffProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
       };
 
       return [
-        new PRDiffRootItem(this.pr, hasApproved),
+        new PRDiffRootItem(this.pr, reviewState),
         new PRDiffBranchItem(this.pr),
         new PRDiffStatsItem(additions, deletions, this.files.length),
         commitsSection,
