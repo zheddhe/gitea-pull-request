@@ -304,19 +304,28 @@
       },
       {
         "command": "gitea.openRunInBrowser",
-        "title": "Gitea: Open Run in Browser"
+        "title": "Gitea: Open Run in Browser",
+        "icon": "$(link-external)"
       },
       {
         "command": "gitea.rerunWorkflow",
-        "title": "Gitea: Re-run Workflow"
+        "title": "Gitea: Re-run Workflow",
+        "icon": "$(debug-rerun)"
       },
       {
         "command": "gitea.cancelRun",
-        "title": "Gitea: Cancel Run"
+        "title": "Gitea: Cancel Run",
+        "icon": "$(stop-circle)"
       },
       {
         "command": "gitea.viewLogs",
-        "title": "Gitea: View Job Logs"
+        "title": "Gitea: View Job Logs",
+        "icon": "$(output)"
+      },
+      {
+        "command": "gitea.rerunJob",
+        "title": "Gitea: Re-run Job",
+        "icon": "$(debug-rerun)"
       },
       {
         "command": "gitea.switchRepo",
@@ -338,15 +347,18 @@
       },
       {
         "command": "gitea.closeIssue",
-        "title": "Gitea: Close Issue"
+        "title": "Gitea: Close Issue",
+        "icon": "$(issue-closed)"
       },
       {
         "command": "gitea.reopenIssue",
-        "title": "Gitea: Re-open Issue"
+        "title": "Gitea: Re-open Issue",
+        "icon": "$(history)"
       },
       {
         "command": "gitea.addIssueComment",
-        "title": "Gitea: Add Issue Comment"
+        "title": "Gitea: Add Issue Comment",
+        "icon": "$(comment-add)"
       }
     ],
     "menus": {
@@ -454,59 +466,34 @@
           "group": "inline@3"
         },
         {
-          "command": "gitea.checkoutPR",
-          "when": "viewItem == pullRequest",
-          "group": "pr@1"
-        },
-        {
-          "command": "gitea.viewPRDetail",
-          "when": "viewItem == pullRequest",
-          "group": "pr@2"
-        },
-        {
-          "command": "gitea.openPR",
-          "when": "viewItem == pullRequest",
-          "group": "pr@3"
-        },
-        {
-          "command": "gitea.approvePR",
-          "when": "viewItem == pullRequest",
-          "group": "pr@4"
-        },
-        {
-          "command": "gitea.mergePR",
-          "when": "viewItem == pullRequest",
-          "group": "pr@5"
-        },
-        {
           "command": "gitea.refreshRepo",
           "when": "viewItem == repoGroup",
-          "group": "inline"
-        },
-        {
-          "command": "gitea.refreshJob",
-          "when": "viewItem == ciJob",
-          "group": "inline"
-        },
-        {
-          "command": "gitea.viewLogs",
-          "when": "viewItem == ciJob",
-          "group": "ci@1"
+          "group": "inline@1"
         },
         {
           "command": "gitea.openRunInBrowser",
           "when": "viewItem == ciRun",
-          "group": "ci@2"
+          "group": "inline@1"
         },
         {
           "command": "gitea.rerunWorkflow",
           "when": "viewItem == ciRun",
-          "group": "ci@3"
+          "group": "inline@2"
         },
         {
           "command": "gitea.cancelRun",
           "when": "viewItem == ciRun",
-          "group": "ci@4"
+          "group": "inline@3"
+        },
+        {
+          "command": "gitea.viewLogs",
+          "when": "viewItem == ciJob",
+          "group": "inline@1"
+        },
+        {
+          "command": "gitea.rerunJob",
+          "when": "viewItem == ciJob",
+          "group": "inline@2"
         },
         {
           "command": "gitea.viewIssueDetail",
@@ -519,29 +506,19 @@
           "group": "inline@2"
         },
         {
-          "command": "gitea.viewIssueDetail",
-          "when": "viewItem == issue_open || viewItem == issue_closed",
-          "group": "issue@1"
-        },
-        {
-          "command": "gitea.openIssue",
-          "when": "viewItem == issue_open || viewItem == issue_closed",
-          "group": "issue@2"
-        },
-        {
           "command": "gitea.addIssueComment",
           "when": "viewItem == issue_open || viewItem == issue_closed",
-          "group": "issue@3"
+          "group": "inline@3"
         },
         {
           "command": "gitea.closeIssue",
           "when": "viewItem == issue_open",
-          "group": "issue@4"
+          "group": "inline@4"
         },
         {
           "command": "gitea.reopenIssue",
           "when": "viewItem == issue_closed",
-          "group": "issue@4"
+          "group": "inline@4"
         }
       ]
     }
