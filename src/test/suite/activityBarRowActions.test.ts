@@ -71,15 +71,44 @@ suite("Activity Bar row actions", () => {
     assert.strictEqual(inlineAction("gitea.reopenIssue", "viewItem == issue_closed")?.group, "inline@4");
   });
 
-  test("keeps CI run and job actions at their correct entity level", () => {
-    const run = "viewItem == ciRun";
-    const job = "viewItem == ciJob";
-    assert.strictEqual(inlineAction("gitea.openRunInBrowser", run)?.group, "inline@1");
-    assert.strictEqual(inlineAction("gitea.rerunWorkflow", run)?.group, "inline@2");
-    assert.strictEqual(inlineAction("gitea.cancelRun", run)?.group, "inline@3");
-    assert.strictEqual(inlineAction("gitea.viewLogs", job)?.group, "inline@1");
-    assert.strictEqual(inlineAction("gitea.rerunJob", job)?.group, "inline@2");
-    assert.strictEqual(inlineAction("gitea.cancelRun", job), undefined);
+  test("scopes CI run actions to the compatible state", () => {
+    assert.strictEqual(
+      inlineAction(
+        "gitea.openRunInBrowser",
+        "viewItem == ciRun_active || viewItem == ciRun_complete",
+      )?.group,
+      "inline@1",
+    );
+    assert.strictEqual(
+      inlineAction("gitea.rerunWorkflow", "viewItem == ciRun_complete")?.group,
+      "inline@2",
+    );
+    assert.strictEqual(
+      inlineAction("gitea.cancelRun", "viewItem == ciRun_active")?.group,
+      "inline@2",
+    );
+  });
+
+  test("scopes CI job actions without pretending job cancellation exists", () => {
+    assert.strictEqual(
+      inlineAction(
+        "gitea.viewLogs",
+        "viewItem == ciJob_active || viewItem == ciJob_complete",
+      )?.group,
+      "inline@1",
+    );
+    assert.strictEqual(
+      inlineAction("gitea.rerunJob", "viewItem == ciJob_complete")?.group,
+      "inline@2",
+    );
+    assert.strictEqual(
+      rowActions.some(
+        (item) =>
+          item.command === "gitea.cancelRun" &&
+          (item.when?.includes("ciJob") ?? false),
+      ),
+      false,
+    );
   });
 
   test("does not expose secondary right-click business action groups", () => {
