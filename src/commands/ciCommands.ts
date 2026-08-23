@@ -92,6 +92,17 @@ export function registerCICommands(
         await LiveLogPanel.show(api, arg.repoInfo, arg.job);
       },
     ),
+
+    vscode.commands.registerCommand(
+      "gitea.rerunJob",
+      async (arg: CIJobItem) => {
+        if (!(arg instanceof CIJobItem)) {
+          vscode.window.showWarningMessage("Select a job to re-run.");
+          return;
+        }
+        await rerunJob(api, arg, ciProvider);
+      },
+    ),
   );
 }
 
@@ -123,6 +134,39 @@ async function rerunWorkflow(
       } catch (err) {
         vscode.window.showErrorMessage(
           `Re-run failed: ${(err as Error).message}`,
+        );
+      }
+    },
+  );
+}
+
+async function rerunJob(
+  api: GiteaApiClient,
+  item: CIJobItem,
+  ciProvider: CIRunsProvider,
+): Promise<void> {
+  const confirm = await vscode.window.showWarningMessage(
+    `Re-run job ${item.job.name}?`,
+    { modal: true },
+    "Re-run Job",
+  );
+  if (confirm !== "Re-run Job") {
+    return;
+  }
+
+  await vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      title: `Re-running ${item.job.name}...`,
+    },
+    async () => {
+      try {
+        await api.rerunWorkflowJob(item.repoInfo, item.runId, item.job.id);
+        vscode.window.showInformationMessage(`Job re-run triggered: ${item.job.name}`);
+        setTimeout(() => ciProvider.refresh(), 2000);
+      } catch (err) {
+        vscode.window.showErrorMessage(
+          `Job re-run failed: ${(err as Error).message}`,
         );
       }
     },
