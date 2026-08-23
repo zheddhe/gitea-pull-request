@@ -9,11 +9,11 @@ suite("CI job detail presentation", () => {
   );
 
   test("uses the same compact detail-header vocabulary as other detail panels", () => {
-    assert.match(source, /class=\"title-row\"/);
+    assert.match(source, /class="title-row"/);
     assert.match(source, />CI Job</);
-    assert.match(source, /class=\"badge \$\{stateClass\}\"/);
-    assert.match(source, /id=\"refresh\" class=\"icon-btn\"/);
-    assert.match(source, /id=\"open-browser\" class=\"icon-btn\"/);
+    assert.match(source, /class="badge \$\{stateClass\}"/);
+    assert.match(source, /id="refresh" class="icon-btn"/);
+    assert.match(source, /id="open-browser" class="icon-btn"/);
   });
 
   test("surfaces concise run and runner metadata", () => {
