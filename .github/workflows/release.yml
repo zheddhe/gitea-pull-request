@@ -1,11 +1,18 @@
 name: Release Extension
 
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Existing release tag to rebuild (for example v0.8.0)'
+        required: true
+        type: string
 
 concurrency:
-  group: release-${{ github.event.release.tag_name }}
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -16,10 +23,31 @@ jobs:
       contents: write
 
     steps:
+      - name: Resolve release tag
+        id: release
+        env:
+          PUSH_TAG: ${{ github.ref_name }}
+          MANUAL_TAG: ${{ inputs.release_tag }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            release_tag="$MANUAL_TAG"
+          else
+            release_tag="$PUSH_TAG"
+          fi
+
+          if [[ ! "$release_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]]; then
+            echo "ERROR: invalid release tag '$release_tag'." >&2
+            exit 1
+          fi
+
+          echo "tag=$release_tag" >> "$GITHUB_OUTPUT"
+
       - name: Checkout release tag
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ steps.release.outputs.tag }}
 
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -30,7 +58,7 @@ jobs:
       - name: Validate release tag and package version
         id: version
         env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
         run: |
           set -euo pipefail
           package_version="$(node -p "require('./package.json').version")"
@@ -65,16 +93,36 @@ jobs:
           test -s "$VSIX_FILE"
           echo "Release VSIX: $VSIX_FILE"
 
-      - name: Upload VSIX to GitHub release
+      - name: Upload recoverable workflow artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: gitea-pull-request-${{ steps.version.outputs.version }}-vsix
+          path: ${{ steps.version.outputs.vsix }}
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Create draft GitHub release and attach VSIX
+        if: github.event_name == 'push'
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
+          tag_name: ${{ steps.release.outputs.tag }}
+          name: Gitea Pull Request ${{ steps.version.outputs.version }}
+          draft: true
           files: ${{ steps.version.outputs.vsix }}
 
       - name: Release summary
+        env:
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           echo "## Extension release artifact ready" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "Version: **v${{ steps.version.outputs.version }}**" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "- VSIX uploaded to the GitHub release" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Marketplace publication is intentionally manual: upload this exact VSIX from the publisher management page" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Verified VSIX uploaded as a recoverable workflow artifact" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$EVENT_NAME" = "push" ]; then
+            echo "- Draft GitHub Release created with the verified VSIX attached" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Review/edit the release notes, then publish the draft; publication makes the release immutable" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "- Manual rebuild mode does not modify an existing GitHub Release" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "- Marketplace publication remains manual: upload this exact verified VSIX from the publisher management page" >> "$GITHUB_STEP_SUMMARY"
