@@ -24,18 +24,23 @@ The `0.8.0` release keeps the validated compatibility baseline established in th
 
 ## Publication model
 
-GitHub is the automated release source of truth. Marketplace publication is intentionally manual.
+GitHub is the automated release-artifact source of truth. Marketplace publication is intentionally manual.
 
-The repository release workflow:
+GitHub immutable releases require assets to be attached **before** publication. The repository therefore uses a draft-first release workflow:
 
-1. validates the release tag against the package version and extension identity;
-2. performs a clean build, lint, Extension Host test and package pass;
-3. creates the versioned VSIX;
-4. attaches that exact VSIX to the GitHub Release.
+1. pushing a version tag (`v*`) triggers `.github/workflows/release.yml`;
+2. the workflow validates the tag against package identity/version;
+3. it performs a clean build, lint, Extension Host test and package pass;
+4. it creates the versioned VSIX;
+5. it uploads the VSIX as a recoverable GitHub Actions artifact;
+6. it creates a **draft GitHub Release** for the tag and attaches that exact VSIX;
+7. the maintainer reviews/edits release notes and publishes the draft manually;
+8. publication makes the release and its assets immutable;
+9. the exact same verified VSIX is uploaded manually to the Visual Studio Marketplace.
 
 The workflow does **not** publish directly to the Visual Studio Marketplace and does not require a Marketplace PAT or GitHub OIDC publishing credential.
 
-After the GitHub Release workflow succeeds, upload the exact VSIX attached to that release through the Visual Studio Marketplace publisher management page. Do not rebuild a separate Marketplace artifact.
+Do not publish a GitHub Release before the VSIX is attached. A published immutable release cannot accept additional assets.
 
 ## Release gate
 
@@ -69,15 +74,36 @@ Perform the final smoke pass before merging the release PR.
 ## GitHub release sequence
 
 1. Merge the validated release PR into `main`.
-2. Create tag `v<package-version>` on the merged release commit.
-3. Create and publish the corresponding GitHub Release.
-4. Publishing the GitHub Release triggers `.github/workflows/release.yml`.
-5. The workflow checks out the release tag and validates tag version, package version, publisher ID and package name.
-6. `make ci` performs the clean dependency install, compile, lint, tests and VSIX packaging.
-7. The generated versioned VSIX is attached to the GitHub Release.
-8. Upload that exact GitHub Release VSIX manually to the Visual Studio Marketplace publisher management page.
+2. Create and push tag `v<package-version>` on the merged release commit.
+3. The tag push triggers `.github/workflows/release.yml`.
+4. The workflow checks out the release tag and validates tag version, package version, publisher ID and package name.
+5. `make ci` performs the clean dependency install, compile, lint, tests and VSIX packaging.
+6. The generated VSIX is uploaded as a GitHub Actions artifact for recovery/debugging purposes.
+7. The workflow creates a **draft GitHub Release** and attaches the verified VSIX.
+8. Review/edit the release title and notes while it is still a draft.
+9. Publish the draft only after confirming the VSIX is present. The release then becomes immutable.
+10. Upload that exact verified VSIX manually to the Visual Studio Marketplace publisher management page.
 
-The workflow must fail rather than publish an artifact when the release identity is inconsistent.
+The workflow must fail rather than prepare a release when the release identity is inconsistent.
+
+## Rebuilding an existing tag
+
+`release.yml` also supports a manual `workflow_dispatch` input named `release_tag`.
+
+Use this only to rebuild/verify a tag that already exists, for example when recovering an artifact after a failed release workflow:
+
+```text
+release_tag = v0.8.0
+```
+
+Manual rebuild mode:
+
+- checks out and validates the requested tag;
+- runs the same clean CI/package path;
+- uploads the resulting VSIX as a GitHub Actions artifact;
+- **does not create, edit, delete or attach assets to an existing GitHub Release**.
+
+This is intentional: an already published immutable release cannot be modified safely. Never delete an immutable release merely to retry asset upload; GitHub prevents reuse of the same release tag name after that lifecycle.
 
 ## Workflow requirements
 
@@ -90,6 +116,7 @@ The release workflow intentionally uses:
 - pinned `@vscode/vsce` version `3.9.2` for packaging;
 - GitHub `contents: write` permission only;
 - one release execution per tag through GitHub Actions concurrency;
+- a 30-day recoverable workflow artifact for each verified VSIX;
 - no stored Marketplace publication credential.
 
 ## Marketplace publication
@@ -99,7 +126,9 @@ Before uploading a release VSIX, confirm in the Marketplace publisher portal tha
 - publisher display name is **Rémy Canal** and publisher ID is `zheddhe`;
 - the extension identity is `zheddhe.gitea-pull-request`;
 - Marketplace-facing README, icon, repository, support and license information are correct;
-- the VSIX being uploaded is exactly the artifact produced and attached by the corresponding GitHub Release workflow.
+- the VSIX being uploaded is exactly the artifact verified by the corresponding release workflow.
+
+For normal releases, prefer the VSIX attached to the draft/published GitHub Release. For recovery of an already immutable release, use the exact VSIX produced by manual rebuild mode.
 
 Marketplace automation can be reconsidered later if a stable trusted-publishing path becomes available and is deliberately re-enabled. Until then, manual upload is the documented release path.
 
