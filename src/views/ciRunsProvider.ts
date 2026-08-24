@@ -158,25 +158,6 @@ export class CIJobItem extends vscode.TreeItem {
   }
 }
 
-export class CIStepItem extends vscode.TreeItem {
-  constructor(stepName: string, status: string, number: number) {
-    super(`${number}. ${stepName}`, vscode.TreeItemCollapsibleState.None);
-    const isRunning = status === "running" || status === "in_progress";
-    const isCompleted = status === "success" || status === "completed";
-
-    if (isRunning) {
-      this.description = `⚡ EXECUTING`;
-      this.tooltip = `Currently running: ${stepName}`;
-    } else if (isCompleted) {
-      this.description = "✓ completed";
-    } else {
-      this.description = status;
-    }
-
-    this.iconPath = iconForStatus(status);
-  }
-}
-
 export class CILoadMoreItem extends vscode.TreeItem {
   constructor(public readonly repoKey: string) {
     super("Load more...", vscode.TreeItemCollapsibleState.None);
