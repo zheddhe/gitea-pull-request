@@ -65,14 +65,10 @@ export function displayStatusForRun(run: GiteaWorkflowRun): string {
 
 export function formatRunDateTime(run: GiteaWorkflowRun): string | undefined {
   const raw = cleanMetadata(run.run_started_at) ?? cleanMetadata(run.created_at);
-  if (!raw) {
-    return undefined;
-  }
+  if (!raw) return undefined;
 
   const value = new Date(raw);
-  if (Number.isNaN(value.getTime())) {
-    return undefined;
-  }
+  if (Number.isNaN(value.getTime())) return undefined;
 
   return value.toLocaleString(undefined, {
     dateStyle: "short",
@@ -97,9 +93,7 @@ export class RepoGroupItem extends vscode.TreeItem {
     );
     this.id = `repo:${repoInfo.key}`;
     this.contextValue = "repoGroup";
-    this.description = repoInfo.currentBranch
-      ? `(${repoInfo.currentBranch})`
-      : "";
+    this.description = repoInfo.currentBranch ? `(${repoInfo.currentBranch})` : "";
     this.iconPath = new vscode.ThemeIcon(authed ? "repo" : "repo-forked");
     this.tooltip = `${repoInfo.serverUrl}/${repoInfo.owner}/${repoInfo.repo}`;
   }
@@ -130,24 +124,14 @@ export class CIRunItem extends vscode.TreeItem {
       `Status: \`${status}\``,
     ];
     const event = cleanMetadata(run.event);
-    if (event) {
-      tooltipLines.push(`Event: \`${event}\``);
-    }
+    if (event) tooltipLines.push(`Event: \`${event}\``);
     const dateTime = formatRunDateTime(run);
-    if (dateTime) {
-      tooltipLines.push(`Date: ${dateTime}`);
-    }
+    if (dateTime) tooltipLines.push(`Date: ${dateTime}`);
     const branch = cleanMetadata(run.head_branch);
     const commitMessage = cleanMetadata(run.head_commit?.message);
-    if (branch) {
-      tooltipLines.push("", `Branch: \`${branch}\``);
-    }
-    if (commitMessage) {
-      tooltipLines.push(`Commit: ${commitMessage}`);
-    }
-    if (isRunning) {
-      tooltipLines.push("", "🔴 **Live**");
-    }
+    if (branch) tooltipLines.push("", `Branch: \`${branch}\``);
+    if (commitMessage) tooltipLines.push(`Commit: ${commitMessage}`);
+    if (isRunning) tooltipLines.push("", "🔴 **Live**");
     this.tooltip = new vscode.MarkdownString(tooltipLines.join("\n\n"));
     this.iconPath = iconForStatus(status);
   }
@@ -246,34 +230,12 @@ export class CIRunsProvider
     }
   }
 
-  async refreshJob(jobId: number, runId: number, repoInfo: RepoInfo): Promise<void> {
-    try {
-      const job = await this.api.getWorkflowJob(repoInfo, jobId);
-      const jobs = this.jobCache.get(runId);
-      if (jobs) {
-        const index = jobs.findIndex((j) => j.id === jobId);
-        if (index !== -1) {
-          jobs[index] = job;
-          this._onDidChangeTreeData.fire();
-        }
-      }
-    } catch (err) {
-      vscode.window.showErrorMessage(
-        `Failed to refresh job: ${(err as Error).message}`,
-      );
-    }
-  }
-
   async loadMore(repoKey: string): Promise<void> {
     const state = this.stateMap.get(repoKey);
-    if (!state || state.loading || !state.hasMore) {
-      return;
-    }
+    if (!state || state.loading || !state.hasMore) return;
     state.page += 1;
     const repoInfo = this.repoManager.getRepos().find((r) => r.key === repoKey);
-    if (repoInfo) {
-      await this.fetchForRepo(repoInfo, state);
-    }
+    if (repoInfo) await this.fetchForRepo(repoInfo, state);
   }
 
   getTreeItem(element: vscode.TreeItem): vscode.TreeItem {
@@ -351,9 +313,7 @@ export class CIRunsProvider
     const items: vscode.TreeItem[] = state.runs.map(
       (r) => new CIRunItem(r, repoInfo),
     );
-    if (state.hasMore) {
-      items.push(new CILoadMoreItem(repoInfo.key));
-    }
+    if (state.hasMore) items.push(new CILoadMoreItem(repoInfo.key));
     return items;
   }
 
@@ -362,9 +322,7 @@ export class CIRunsProvider
     state: RepoCIState,
     silentRefresh: boolean = false,
   ): Promise<void> {
-    if (state.loading && !silentRefresh) {
-      return;
-    }
+    if (state.loading && !silentRefresh) return;
     const shouldShowLoading = !silentRefresh;
     if (shouldShowLoading) {
       state.loading = true;
@@ -389,9 +347,7 @@ export class CIRunsProvider
       state.runs = [];
       state.hasMore = false;
     } finally {
-      if (shouldShowLoading) {
-        state.loading = false;
-      }
+      if (shouldShowLoading) state.loading = false;
       this._onDidChangeTreeData.fire();
     }
   }
