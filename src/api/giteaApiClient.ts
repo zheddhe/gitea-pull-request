@@ -285,6 +285,19 @@ export class GiteaApiClient {
     await this.request<void>(serverUrl, `/repos/${owner}/${repo}/actions/runs/${runId}/rerun`, { method: "POST" });
   }
 
+  async rerunWorkflowJob(
+    repoInfo: RepoInfo,
+    runId: number,
+    jobId: number,
+  ): Promise<void> {
+    const { serverUrl, owner, repo } = repoInfo;
+    await this.request<void>(
+      serverUrl,
+      `/repos/${owner}/${repo}/actions/runs/${runId}/jobs/${jobId}/rerun`,
+      { method: "POST" },
+    );
+  }
+
   async cancelWorkflowRun(repoInfo: RepoInfo, runId: number): Promise<void> {
     const { serverUrl, owner, repo } = repoInfo;
     await this.request<void>(serverUrl, `/repos/${owner}/${repo}/actions/runs/${runId}/cancel`, { method: "POST" });

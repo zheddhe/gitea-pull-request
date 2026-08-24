@@ -121,14 +121,18 @@ Compatibility baseline established at VS Code 1.133.0+, Gitea 1.26.4+ and Node.j
 
 **Release:** `0.8.0`
 
-**Status:** completed and interactively validated.
+**Status:** implementation complete; final interactive 7.5 smoke validation pending server availability.
 
 Completed:
 
-- clearer Activity Bar signals, flatter PR/Issue rows, inline actions, semantic category icons and **Assigned to Me** issue aggregation;
+- clearer Activity Bar signals, flatter PR/Issue rows, semantic category icons and **Assigned to Me** issue aggregation;
+- business operations exposed through explicit inline row actions instead of parallel right-click menus, with PR actions limited to safe workflow entry points and CI actions scoped by run/job state;
+- effective latest-review semantics shared by Merge Readiness and Changes in Pull Request, including immediate review-cache refresh after Approve / Request Changes;
 - native VS Code log levels with consistent component-prefixed diagnostics and documented logging semantics;
 - guided conflict preparation for non-mergeable PRs, including exact remote/source resolution, PR head-SHA validation, safe local branch handling, native Merge Editor / Source Control hand-off and standard abort behavior;
 - CI-aware suppression of conflict guidance while real checks are pending;
+- CI run and job actions aligned to actual Gitea capabilities, including individual job re-run while cancellation remains correctly owned by the workflow run;
+- harmonized CI Job Logs detail presentation with state badge, compact metadata, Refresh/Browser title actions and aggregated live execution logs;
 - compact post-merge choices for deleting or keeping the source branch, or immediately creating another pull request;
 - bounded visibility-driven refresh of stale PR/CI state with no hidden polling;
 - Create/Review Webview state retention so unsent text and selections survive Activity Bar switches while remote state can still refresh safely;
@@ -138,22 +142,20 @@ The user-facing release summary lives in [`CHANGELOG.md`](../CHANGELOG.md). Test
 
 ### `0.8.0` release gate
 
-The remaining work is release preparation rather than feature development:
+Package and lock metadata are already promoted to `0.8.0`. The remaining release gate is validation rather than version preparation:
 
 ```bash
-make promote RELEASE_VERSION=0.8.0
 make verify
 make reinstall-vsix
 ```
 
 Then:
 
-1. commit `package.json` and `package-lock.json` at `0.8.0` on the release PR branch;
-2. confirm `.artifacts/vsix/gitea-pull-request-0.8.0.vsix` and run the final smoke pass;
-3. mark the release PR ready and merge it;
-4. tag the merged `main` commit as `v0.8.0` and publish the GitHub Release;
-5. let release CI rebuild/test/package and attach the exact release VSIX;
-6. manually upload that exact GitHub Release VSIX to the Visual Studio Marketplace publisher management page.
+1. confirm `.artifacts/vsix/gitea-pull-request-0.8.0.vsix` and run the final interactive smoke pass;
+2. mark the final release PR ready and merge it;
+3. tag the merged `main` commit as `v0.8.0` and publish the GitHub Release;
+4. let release CI rebuild/test/package and attach the exact release VSIX;
+5. manually upload that exact GitHub Release VSIX to the Visual Studio Marketplace publisher management page.
 
 ---
 
@@ -178,21 +180,3 @@ Then:
 Each phase adds tests at the lowest stable layer first: domain/session unit tests, pure planning tests, API contract-style tests, command/Git orchestration tests, presentation/source-contract tests and extension-host tests where practical. Destructive cleanup safety/error-path coverage remains a release requirement rather than deferred polish.
 
 Coverage measurement complements this strategy for directly testable pure modules. It is used to observe function/branch regressions and identify meaningful untested decisions; no global percentage target is part of the release gate.
-
-Minimum regression workflows:
-
-1. authenticate and discover repository;
-2. list PRs and issues with workflow aggregations;
-3. activate/refresh PR, open detail and native diff;
-4. create normal or WIP/draft PR, including metadata and branch refresh;
-5. approve/request changes and submit inline review comments;
-6. inspect PR checks/readiness and merge with supported methods while blocking no-delta/WIP/server-non-mergeable states appropriately;
-7. prepare and resolve/abort a real conflicting PR through native Git/VS Code behavior;
-8. inspect/filter/edit issues and comments;
-9. post-merge branch identity, checkout and cleanup;
-10. switch Activity Bar/repository while drafts or an active PR exist and preserve valid state;
-11. coexist with GitHub Pull Requests using the dual Gitea workspace topology.
-
-## Migration rule
-
-A phase is complete only when its new workflow is functional, its documentation/version metadata is coherent, the old behavior it replaces can be removed without losing a supported capability, and the phase release gate has passed. The project should remain buildable and usable at every phase boundary.

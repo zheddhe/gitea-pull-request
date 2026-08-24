@@ -8,6 +8,7 @@ import {
   evaluateMergeReadiness,
   preferredMergeMethod,
   readyForReviewTitle,
+  summarizeEffectiveReviews,
   supportedMergeMethods,
 } from "../../features/pullRequests/domain/reviewPullRequestModel";
 
@@ -233,6 +234,25 @@ suite("reviewPullRequestModel", () => {
     assert.strictEqual(readiness.canMerge, true);
     assert.ok(readiness.reviewLabel.includes("1 approval / 1 required"));
     assert.ok(!readiness.reviewLabel.includes("requesting changes"));
+  });
+
+  test("effective review state lets a newer change request supersede approval", () => {
+    const summary = summarizeEffectiveReviews([
+      review("alice", "APPROVED", {
+        id: 1,
+        submitted_at: "2026-08-16T10:00:00Z",
+      }),
+      review("alice", "REQUEST_CHANGES", {
+        id: 2,
+        submitted_at: "2026-08-16T11:00:00Z",
+      }),
+    ]);
+
+    assert.deepStrictEqual(summary, {
+      state: "changes_requested",
+      approvals: 0,
+      changesRequested: 1,
+    });
   });
 
   test("accepts merge when observable blockers are clear", () => {
