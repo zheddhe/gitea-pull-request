@@ -142,7 +142,7 @@ suite("PR detail presentation", () => {
 
   test("renders and submits replies against the conversation root when supported", () => {
     assert.match(source, /const REPLY_ICON = `<svg/);
-    assert.match(source, /conversation\.orphaned \|\| !inlineReviewReplies/);
+    assert.match(source, /capabilities\.inlineReviewReplies/);
     assert.match(source, /class="icon-btn reply-toggle" data-comment-id="\$\{root\.id\}"/);
     assert.match(source, /title="Reply to conversation"/);
     assert.match(source, /id="reply-form-\$\{root\.id\}"/);
@@ -159,12 +159,35 @@ suite("PR detail presentation", () => {
     assert.match(source, /\.capability-note\{[^}]*margin-left:auto/);
   });
 
-  test("visually distinguishes roots replies and reply actions", () => {
+  test("renders compact resolved state separately from review comment authorship", () => {
+    assert.match(source, /const RESOLVED_EVENT_ICON = `<svg/);
+    assert.match(source, /class="conversation-event resolved-event"/);
+    assert.match(source, /resolved this conversation/);
+    assert.match(source, /root\.resolver\?\.login/);
+    assert.match(source, /\.conversation-event\{[^}]*display:flex/);
+    assert.doesNotMatch(source, /conversation-state resolved/);
+  });
+
+  test("exposes resolve and reopen as compact capability-gated actions", () => {
+    assert.match(source, /capabilities\.inlineReviewResolution/);
+    assert.match(source, /class="icon-btn resolve-conversation"/);
+    assert.match(source, /title="Resolve conversation"/);
+    assert.match(source, /class="icon-btn reopen-conversation"/);
+    assert.match(source, /title="Reopen conversation"/);
+    assert.match(source, /case "resolveInlineConversation"/);
+    assert.match(source, /case "reopenInlineConversation"/);
+    assert.match(source, /"gitea\.resolveInlineReviewConversation"/);
+    assert.match(source, /"gitea\.reopenInlineReviewConversation"/);
+    assert.match(source, /post\('resolveInlineConversation'/);
+    assert.match(source, /post\('reopenInlineConversation'/);
+  });
+
+  test("visually distinguishes roots replies and compact conversation actions", () => {
     assert.match(source, /class="review-comment-card conversation-root"/);
     assert.match(source, /\.review-conversation\{[^}]*border:1px solid var\(--border\)/);
     assert.match(source, /\.review-reply\{[^}]*margin-left:22px/);
     assert.match(source, /\.review-reply::before/);
-    assert.match(source, /\.conversation-actions\{[^}]*margin-left:22px/);
+    assert.match(source, /\.conversation-actions\{[^}]*gap:2px/);
     assert.match(source, /\.reply-form\{[^}]*margin-left:22px/);
   });
 
