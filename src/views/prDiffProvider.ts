@@ -391,24 +391,20 @@ export class PRDiffProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
     if (!node) return vscode.TreeItemCheckboxState.Unchecked;
     const filenames = this.collectFilenames(node);
     if (filenames.length === 0) return vscode.TreeItemCheckboxState.Unchecked;
-    const viewedCount = filenames.filter((file) =>
-      this.viewedFiles.has(file),
-    ).length;
-    if (viewedCount === 0) return vscode.TreeItemCheckboxState.Unchecked;
-    if (viewedCount === filenames.length)
-      return vscode.TreeItemCheckboxState.Checked;
-    return 2 as unknown as vscode.TreeItemCheckboxState;
+    const allViewed = filenames.every((file) => this.viewedFiles.has(file));
+    return allViewed
+      ? vscode.TreeItemCheckboxState.Checked
+      : vscode.TreeItemCheckboxState.Unchecked;
   }
 
   getSectionCheckboxState(): vscode.TreeItemCheckboxState {
     if (this.files.length === 0) return vscode.TreeItemCheckboxState.Unchecked;
-    const viewedCount = this.files.filter((file) =>
+    const allViewed = this.files.every((file) =>
       this.viewedFiles.has(file.filename),
-    ).length;
-    if (viewedCount === 0) return vscode.TreeItemCheckboxState.Unchecked;
-    if (viewedCount === this.files.length)
-      return vscode.TreeItemCheckboxState.Checked;
-    return 2 as unknown as vscode.TreeItemCheckboxState;
+    );
+    return allViewed
+      ? vscode.TreeItemCheckboxState.Checked
+      : vscode.TreeItemCheckboxState.Unchecked;
   }
 
   getTreeItem(element: vscode.TreeItem): vscode.TreeItem {
@@ -514,7 +510,11 @@ export class PRDiffProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
         new vscode.ThemeIcon("file-directory"),
         false,
       );
+      const reviewedCount = this.files.filter((file) =>
+        this.viewedFiles.has(file.filename),
+      ).length;
       filesSection.checkboxState = this.getSectionCheckboxState();
+      filesSection.description = `${reviewedCount}/${this.files.length} reviewed`;
       filesSection.command = {
         command: "gitea.prDiffSectionAction",
         title: "PR Diff Section Action",
