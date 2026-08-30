@@ -1,28 +1,20 @@
 # Gitea Pull Request
 
-**Gitea Pull Request** is a Visual Studio Code extension by **zheddhe** for working with pull requests, reviews, issues and CI context on self-hosted Gitea instances.
+**Pull requests, reviews, issues and CI context for self-hosted Gitea, directly in Visual Studio Code.**
 
-The product uses a sidebar-first workflow inspired by the ergonomics of GitHub Pull Requests for VS Code while remaining implemented specifically for Gitea and its REST API.
+Gitea Pull Request provides a sidebar-first workflow for day-to-day Gitea work without trying to replace VS Code itself. Browse forge activity in the general **Gitea** workspace, then move into a dedicated **Gitea Pull Request** workspace when a pull request becomes active.
 
-## Current release line
+![Gitea workspace with pull requests, issues and CI runs](resources/screenshots/gitea-workspace.png)
 
-The standalone product line uses roadmap phases as minor-version boundaries while the extension is still pre-`1.0.0`:
+## Why Gitea Pull Request?
 
-| Phase | Release |
-| --- | ---: |
-| Phase 0 — product split and foundation | `0.1.0` |
-| Phase 1 — active pull-request model | `0.2.0` |
-| Phase 2 — sidebar-first PR creation | `0.3.0` |
-| Phase 3 — sidebar-first review and merge | `0.4.0` |
-| Phase 4 — post-merge lifecycle | `0.5.0` |
-| Phase 5 — dedicated Pull Request workspace | `0.6.0` |
-| Phase 6 — secondary workflows and polish | `0.7.0` |
+- **Stay in VS Code** for the common pull-request lifecycle: discover, inspect, review, check readiness, merge and clean up branches.
+- **Keep workflow state visible** through native TreeViews, status signals, inline row actions and focused detail panels.
+- **Use Gitea CI context where it matters**: browse workflow runs/jobs globally and see PR checks directly in the review workflow.
+- **Handle real merge conflicts safely** by preparing the correct local Git state and handing conflicts to native VS Code Source Control / Merge Editor.
+- **Work across multiple repositories and forges** without taking ownership of GitHub, GitLab, Bitbucket or Azure DevOps repositories.
 
-Patch releases are reserved for corrections within an existing phase boundary. See [`docs/ROADMAP.md`](docs/ROADMAP.md) for the detailed release gate.
-
-## Product direction
-
-The normal workflow is split across two Activity Bar workspaces:
+## Two workspaces, one workflow
 
 ```text
 Gitea
@@ -37,151 +29,110 @@ Gitea Pull Request
 └─ Pull Request Merged
 ```
 
-The first workspace is the general Gitea/forge browser. The second is contextual and follows the currently active pull request through review, merge and post-merge cleanup.
+The general **Gitea** workspace is the forge browser. Pull requests are grouped by repository and useful queues such as **All Open**, **Waiting for my review** and **Created by me**. Issues expose the current Open/Closed scope plus **Assigned to Me**, and CI / Actions shows recent workflow runs and jobs.
 
-On first entry into the Gitea workspace, detected repository groups plus **All Open** and **Waiting for my review** are expanded by default so the primary open and assigned/review queues are immediately visible.
+Activating a pull request opens the contextual **Gitea Pull Request** workspace. That workspace follows the active PR through review, merge readiness, conflict handling and post-merge cleanup.
 
-The dedicated Gitea Pull Request Activity Bar icon is deliberately distinct from the official GitHub Pull Requests icon so both extensions can coexist without relying on color alone for identification.
+## Review a pull request in context
 
----
+![Pull request review with diff, checks and merge readiness](resources/screenshots/pull-request-review.png)
 
-## Current features
+The review workspace brings the relevant decision points together:
 
-| Feature | Description |
-| --- | --- |
-| **Pull Requests** | Browse Gitea PRs by repository and workflow category, with All Open and Waiting for my review expanded by default |
-| **Active PR session** | Activate one Gitea PR as contextual workspace state; activation focuses the dedicated Gitea Pull Request workspace and opens PR Details |
-| **Sidebar PR creation** | Select repository, source/base branches, title/description and supported metadata; create normal or draft/WIP PRs |
-| **Sidebar PR review** | Manage source/base branches, approve or request changes, inspect checks/readiness, select merge method, merge or close |
-| **Merge readiness** | Distinguish WIP/no-delta/server-side non-mergeable states and surface CI/check, review and branch-policy signals |
-| **Merge methods** | Use repository-supported merge commit, squash or rebase methods |
-| **Post-merge lifecycle** | Safely choose local/remote branch cleanup, checkout the base without deletion, keep branches, or create a new PR |
-| **PR Diff Tree** | Directory tree with file status, viewed-state checkboxes, native `vscode.diff` integration and reload when the active PR head changes |
-| **PR Detail** | Rich detail panel with inline review diffs/comments, review history, discussion, commits, Markdown rendering and inline editing |
-| **Issues** | Browse/filter issues, inspect Markdown detail, edit title/description/comments, create/close/re-open/comment, and open in Gitea |
-| **CI / Actions** | Browse runs/jobs, live logs, rerun and cancel operations in the general Gitea workspace |
-| **Multi-repo / multi-VCS** | Detect Gitea repositories while allowing GitHub and other forge repositories/extensions to coexist |
-| **Status Bar** | Active repository and authentication context |
+- source and base branch identification;
+- native changed-file navigation and VS Code diff integration;
+- Approve / Request Changes review actions;
+- PR checks and their current result;
+- effective review state and merge readiness;
+- repository-supported merge method selection;
+- Merge / Close actions when appropriate.
 
----
+Review state is based on each reviewer's latest effective decision. A newer **Request Changes** therefore supersedes an older approval from the same reviewer, and the Changes tree uses the same effective state as Merge Readiness.
 
-## Multi-VCS coexistence
+The Create and Review views preserve unsent form text and selections when switching Activity Bar context. Remote PR/CI state can still refresh without turning Refresh into an accidental save button.
 
-Gitea Pull Request is designed to coexist with **GitHub Pull Requests and Issues** and other forge integrations in the same VS Code installation/workspace.
+## Guided conflict resolution
 
-Repository discovery is scoped to configured/authenticated Gitea endpoints and excludes public GitHub, GitLab, Bitbucket and Azure DevOps hosts from implicit Gitea detection. A GitHub repository therefore remains managed by the GitHub extension while Gitea repositories are handled by this extension.
+When Gitea reports that a pull request is not mergeable, the extension can prepare a safe local conflict-resolution workflow instead of leaving the user at a dead end.
 
-Two Gitea-specific Activity Bar containers separate general forge browsing from the active pull-request lifecycle. Their icons are monochrome/theme-compatible and intentionally distinguish both Gitea workspaces from GitHub Pull Requests.
+It verifies a clean working tree, resolves the exact PR source/base remotes, validates the expected PR head, fetches fresh refs, checks out or fast-forwards the source branch safely, and merges the fresh remote base into it. If real conflicts remain, VS Code's native Source Control / Merge Editor takes over. **Abort Merge** uses normal Git merge-abort semantics.
 
----
+Conflict guidance is CI-aware: a genuinely pending check suppresses premature conflict prompting until checks settle.
 
-## Architecture principles
+## Finish cleanly after merge
 
-1. **Sidebar first** — frequent PR operations belong in the Activity Bar workflow.
-2. **Native first** — prefer TreeView, QuickPick, commands, context keys, Codicons and `vscode.diff`.
-3. **State driven** — PR UI visibility and actions derive from an explicit workspace/session state.
-4. **API/UI separation** — Gitea REST access remains isolated from UI providers and commands.
-5. **Progressive migration** — avoid a big-bang rewrite of working functionality.
-6. **Details where useful** — richer detail panels complement the sidebar when Markdown, discussion history or inline review context needs more space.
+![Post-merge branch workflow](resources/screenshots/post-merge-workflow.png)
 
----
+After a successful merge, the extension keeps the repository/branch context long enough to offer three explicit next steps:
 
-## Requirements
+- **✓ Checkout Base / Delete Source** — recommended cleanup path;
+- **Checkout Base / Keep Source**;
+- **Create New Pull Request**.
+
+Cleanup resolves local and remote branch identity independently, checks out the real base before deleting a checked-out source branch, and reports partial failures rather than hiding them.
+
+## Pull request details
+
+For inspection that needs more room than the sidebar, PR Detail provides:
+
+- **Inline Reviews** — changed files, inline diff and submitted/pending inline comments;
+- **Review History** — chronological approval/request-changes/comment events;
+- **Discussion** — Markdown PR description and top-level comments;
+- **Commits** — PR commit history.
+
+Titles, descriptions and discussion comments can be edited inline. The sidebar remains the action-oriented workflow surface; PR Detail focuses on inspection and discussion.
+
+## Issues
+
+Issues stay in the general Gitea workspace and support:
+
+- Open / Closed filtering;
+- **Assigned to Me** aggregation;
+- inline **View Details**, **Open in Browser**, **Add Comment** and contextual **Close / Re-open** actions;
+- Markdown detail rendering;
+- inline title, description and comment editing;
+- issue creation and comment creation.
+
+## CI / Actions
+
+The CI / Actions tree exposes workflow runs and their jobs with meaningful final states instead of a generic `completed` label.
+
+Run-level actions are kept at run level: **Open in Browser**, **Re-run Workflow**, and **Cancel Run** when the run is active. Job rows expose **View Logs** and **Re-run Job** where supported by Gitea.
+
+Job Logs uses a compact detail view with status, run/job/runner metadata, Refresh and Browser actions, plus the aggregated execution log returned by Gitea. It does not invent step-level UI when the server API cannot provide reliable step detail.
+
+PR-specific checks are also shown directly in the contextual Review view.
+
+## Multi-repository and multi-forge workspaces
+
+Repository discovery is scoped to configured/authenticated Gitea endpoints. Public GitHub, GitLab, Bitbucket and Azure DevOps remotes are excluded from implicit Gitea detection, allowing their own VS Code integrations to coexist in the same workspace.
+
+The extension uses two Gitea-specific Activity Bar identities so the general forge browser and active PR lifecycle remain visually distinct from the official GitHub Pull Requests extension.
+
+## Getting started
+
+### Requirements
 
 - VS Code **1.133.0** or later
 - Gitea **1.26.4** or later
-- A Gitea API token with the required permissions
+- a Gitea API token with the permissions required for the operations you intend to use
 
-Version `0.7.0` was functionally validated against **VS Code 1.133.0** and **Gitea 1.26.4**. Older Gitea releases are not claimed as supported for this release line.
+### Sign in
 
-### Recommended Gitea token permissions
+Run **`Gitea: Sign In`** from the Command Palette, then provide your Gitea server URL and API token.
+
+Recommended permissions for the full workflow:
 
 | Permission | Level | Purpose |
 | --- | --- | --- |
-| **Repository** | Read & Write | Browse PRs, review and merge |
+| **Repository** | Read & Write | Browse, review and merge pull requests |
 | **Issue** | Read & Write | Browse and manage issues |
 | **Misc** | Read | Transversal API operations |
 | **User** | Read | Identity/profile lookup |
 
-`Repository: Write` is required for merge, review and other write operations. Read-only usage can use narrower permissions.
-
----
-
-## Development and local installation
-
-Development build, dependency locking, validation, packaging and local installation are centralized in the repository `Makefile`.
-
-The packaging tool is pinned to `@vscode/vsce 3.9.2`; the `0.7.0` development, CI and release baseline is **Node.js 24.x**. The VS Code command-line launcher (`code`) is only required for installation targets.
-
-After a fresh clone, or after modifying `package.json`, synchronize the lock and dependencies with:
-
-```bash
-make bootstrap
-```
-
-Normal validation:
-
-```bash
-make verify
-```
-
-Build and reinstall the local VSIX:
-
-```bash
-make reinstall-vsix
-```
-
-Generated packages are stored under:
-
-```text
-.artifacts/vsix/gitea-pull-request-<version>.vsix
-```
-
-### Release promotion
-
-Phase development stays on the last merged release version until implementation and documentation are ready for the release gate.
-
-Promote explicitly with:
-
-```bash
-make promote RELEASE_VERSION=<target-version>
-```
-
-For Phase 6:
-
-```bash
-make promote RELEASE_VERSION=0.7.0
-```
-
-This updates `package.json` and `package-lock.json` together without creating a Git tag. Review and commit both files together, then run `make verify` and `make reinstall-vsix` before marking the release PR ready to merge.
-
-Useful targets:
-
-```bash
-make help
-make doctor
-make lock
-make bootstrap
-make deps
-make promote RELEASE_VERSION=x.y.z
-make compile
-make lint
-make test
-make test-latest
-make verify
-make vsix
-make rebuild-vsix
-make install-vsix
-make reinstall-vsix
-make show-vsix
-make ci
-```
-
----
+Read-only usage can use narrower permissions. Write operations naturally require the corresponding Gitea permission.
 
 ## Configuration
-
-Run **`Gitea: Sign In`** from the Command Palette and provide the Gitea server URL and API token.
 
 | Setting | Default | Description |
 | --- | --- | --- |
@@ -189,162 +140,22 @@ Run **`Gitea: Sign In`** from the Command Palette and provide the Gitea server U
 | `gitea.itemsPerPage` | `20` | Pull request / CI items per page |
 | `gitea.reviewsPerPage` | `20` | Reviews per page |
 
-Existing command and configuration identifiers remain under the stable `gitea.*` namespace.
+`gitea.serverUrl` is useful when the Git remote hostname differs from the Gitea web/API hostname, for example an SSH alias pointing at an HTTPS Gitea instance.
 
----
+## Project documentation
 
-## Pull request workflow
+The README is intentionally focused on using the extension. Maintainer and project-process documentation lives separately:
 
-### General Gitea workspace
-
-The **Gitea** Activity Bar workspace is the discovery/forge view. It contains Pull Requests, Create Pull Request, Issues and CI / Actions.
-
-Pull Requests are grouped by repository and categories such as **All Open**, **Waiting for my review** and **Created by me**. On first entry the repository, All Open and Waiting for my review nodes are expanded so actionable work is visible immediately; users may collapse them afterwards normally.
-
-The current Waiting for my review category uses the available Gitea assignment signals as its discovery heuristic. Exact review state remains authoritative in the contextual review workflow.
-
-### Create Pull Request
-
-The primary creation path opens a dedicated sidebar WebviewView in the general Gitea workspace. Create mode uses temporary view IDs so its focused layout does not overwrite the user's normal Pull Requests / Issues / CI proportions.
-
-It supports:
-
-- explicit repository selection for multi-repository workspaces;
-- **Source branch** and **Base branch** selection;
-- a **General information** block with an explicit pull-request title and description;
-- native QuickPick metadata flows for reviewers, assignees, labels and milestone, with selected values reflected in the form;
-- normal and draft/WIP creation;
-- native title **Refresh** that reloads branches while preserving current draft fields and metadata;
-- native title **Close** to cancel creation;
-- automatic activation of the created PR.
-
-The title starts empty rather than being inferred from the branch name. Projects remain intentionally omitted while reliable PR ↔ Project API read/write support is unavailable.
-
-### Activate and refresh a pull request
-
-Activating a PR establishes the active Gitea PR session, focuses the dedicated **Gitea Pull Request** Activity Bar workspace and opens the PR Detail panel.
-
-The contextual Changes and Review views expose the same title-action pattern:
-
-- **View Details**;
-- **Open in Browser**;
-- **Refresh Active Pull Request**;
-- **Close active PR context**.
-
-Refresh reloads the PR itself and rebinds Changes in Pull Request. Additional pushed commits therefore update the diff when Refresh is invoked instead of retaining stale cached state. Refresh remains explicit; the extension does not use aggressive polling.
-
-### Changes in Pull Request
-
-The **Changes in Pull Request** tree follows the active session and exposes branch identity, commits, reviews and changed files using native VS Code tree/file presentation, viewed-state checkboxes and the native diff editor.
-
-An empty diff is a valid loaded state. If the head is already contained in the target branch, the view remains stable and merge is blocked as having no content left to merge.
-
-### Review Pull Request
-
-The contextual **Review Pull Request #N (owner/repository)** view is intentionally action-oriented. Its sections follow the review workflow:
-
-1. **Branch identification** — source branch, editable base branch, and checkout actions for each branch;
-2. **Review** — Approve and Request Changes with optional/required review message semantics;
-3. **Checks** — PR-centric status summary plus individual Gitea check links;
-4. **Merge readiness** — PR state, review state, CI state and available blocker/warning signals;
-5. **Actions** — repository-supported merge method, **Merge PR** and **Close PR**.
-
-Top-level PR discussion comments are intentionally kept in PR Detail rather than duplicated in the sidebar Review view.
-
-Mergeability is presented separately where possible:
-
-- **Draft / WIP** — intentionally not ready;
-- **No changes to merge** — head already contained in target;
-- **Not mergeable (Gitea)** — server reports another mergeability blocker.
-
-The extension does not fabricate exact conflicting-file details when the supported Gitea API cannot provide them reliably.
-
-### PR Detail
-
-PR Detail is the richer inspection/discussion surface and keeps its active tab across refreshes.
-
-Its tabs are:
-
-- **Inline Reviews** — changed files, inline diff, pending inline comments and previously submitted inline comments placed back on their diff lines where Gitea position data permits;
-- **Review History** — chronological review events (`APPROVED`, `REQUEST_CHANGES`, `COMMENT`) with Oldest/Newest ordering and associated inline comment bodies when available;
-- **Discussion** — Markdown description and top-level PR comments;
-- **Commits** — PR commit history.
-
-The PR title, description and discussion comments can be edited inline. Description/comments are rendered using VS Code's Markdown renderer, with explicit HTTP(S) link handling. Browser and Refresh actions are kept next to the title.
-
-### After merge
-
-After successful merge the active Changes/Review views are replaced in the contextual workspace by **Pull Request #N Merged**.
-
-The post-merge workflow:
-
-- preserves exact PR/repository/head/base context;
-- resolves local and remote branch identities independently;
-- discovers remote refs directly from Git;
-- preselects eligible local + remote deletion choices;
-- checks out the base before deleting a checked-out local head;
-- prevents local deletion if checkout fails;
-- permits independent remote cleanup and reports partial errors;
-- supports checkout without deletion;
-- supports Create New Pull Request;
-- exposes native title **Refresh** for branch-state rediscovery;
-- exposes native title **Close** to keep branches and finish;
-- returns to idle and removes the merged contextual view once cleanup/completion succeeds.
-
-No branch is deleted merely because its name resembles the PR head; deletion uses resolved repository-local Git identities.
-
----
-
-## Issues
-
-Issues stay in the general Gitea workspace. A native TreeView/QuickPick control switches between **Open** and **Closed** issue scopes.
-
-Issue children keep **View Details** first for fast access, followed by contextual metadata/browser entries. Issue Detail provides:
-
-- inline title editing;
-- Markdown description rendering and editing;
-- Markdown comment rendering and inline comment editing;
-- simple comment creation;
-- compact title actions for Open in Browser and Refresh.
-
-Close/Re-open remain issue workflow commands rather than being duplicated inside the detail panel. Notifications/activity feed, saved queries and broader issue search are intentionally deferred because they do not currently justify the added UI/state complexity.
-
----
-
-## CI / Actions
-
-General CI / Actions remains in the main Gitea workspace and supports workflow runs, job status, logs, reruns and cancellation. PR-specific checks are also surfaced in the contextual Review view with explicit external links when Gitea provides a target URL.
-
----
+- [Contributing](CONTRIBUTING.md) — development setup, validation, logging and contribution conventions
+- [Testing](docs/TESTING.md) — test layers and informational coverage baseline
+- [Releasing](docs/RELEASING.md) — packaging and release workflow
+- [Roadmap](docs/ROADMAP.md) — product evolution and completed phases
+- [Changelog](CHANGELOG.md) — user-facing changes by release
 
 ## Project origin
 
-**Gitea Pull Request** is an independent product/version line originating from an earlier MIT-licensed Gitea VS Code extension codebase and a short-lived enhanced fork. The standalone changelog begins at `0.1.0`; predecessor release history is intentionally not reproduced as current product history.
-
-Inherited copyright/license attribution remains preserved. Contributions intended for the predecessor project should be prepared separately from the appropriate historical fork baseline.
-
----
-
-## Development roadmap
-
-See [`docs/ROADMAP.md`](docs/ROADMAP.md).
-
-- **Phase 0 / 0.1.0** — product split and foundation
-- **Phase 1 / 0.2.0** — active pull-request session model
-- **Phase 2 / 0.3.0** — sidebar-first PR creation
-- **Phase 3 / 0.4.0** — sidebar-first review and merge
-- **Phase 4 / 0.5.0** — post-merge lifecycle and branch cleanup
-- **Phase 5 / 0.6.0** — dedicated Gitea Pull Request workspace / dual Activity Bar topology
-- **Phase 6 / 0.7.0** — secondary workflows, detail ergonomics and polish
-
-Each phase is reviewed as a coherent release increment: implementation/tests, package + lock metadata, changelog, user documentation, roadmap/Story, Make validation and local VSIX validation must agree before merge.
-
----
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md).
+Gitea Pull Request is an independent product/version line originating from an earlier MIT-licensed Gitea VS Code extension codebase and a short-lived enhanced fork. Inherited attribution remains preserved in the repository license/history and [NOTICE](NOTICE).
 
 ## License
 
-MIT. See [LICENSE](LICENSE). Existing copyright and license notices are preserved as required by the license.
+[MIT](LICENSE)

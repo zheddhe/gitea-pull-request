@@ -2,7 +2,50 @@
 
 All notable changes to **Gitea Pull Request** are documented in this file.
 
-## 0.7.0 - Unreleased
+## 0.8.0 - Unreleased
+
+`0.8.0` completes the core pull-request workflow introduced in the previous releases and focuses on making day-to-day use safer, clearer and more natural inside VS Code.
+
+### Added
+- **Guided conflict resolution** for pull requests that cannot be merged automatically. The extension prepares the correct local Git state, validates the exact PR head, fetches the relevant remotes, and then hands real conflicts to the native VS Code Source Control / Merge Editor workflow.
+- **Abort Merge** support and recovery of an already prepared conflict-resolution session after VS Code reload.
+- **Assigned to Me** issue aggregation that follows the current Open/Closed scope.
+- **Individual CI job re-run** where supported by Gitea, without conflating it with workflow-level cancellation.
+- Native VS Code diagnostic levels (`trace`, `debug`, `info`, `warn`, `error`) with consistent component-prefixed logging, making troubleshooting easier without flooding normal usage.
+
+### Improved
+- **Activity Bar clarity**: pull-request and issue entries are flatter, easier to scan, and expose common actions directly on the row. Secondary metadata remains available in safe Markdown tooltips instead of nested technical children.
+- **Inline action consistency**: PR, Issue and CI business operations no longer depend on secondary right-click menus. PR rows keep only safe workflow entry points, Issues expose their useful operations directly, and CI actions are scoped to run/job level and current state.
+- **More meaningful status signals**: completed CI runs display their actual result rather than the generic `completed` state, PR categories use semantic icons, and closed issues use a distinct red signal rather than a merged-like color.
+- **Review-state consistency**: Changes in Pull Request now uses the same effective latest-review semantics as Merge Readiness, and refreshes its review cache after review actions so its signal follows Approve / Request Changes without reloading the diff.
+- **CI job log detail** now follows the same compact detail-view language as PR and Issue detail: status signal and badge, concise run/job/runner metadata, title actions for Refresh and Browser, and the existing aggregated execution log.
+- **Conflict guidance is CI-aware**: the extension avoids prompting for conflict resolution while a real CI check is still pending, then resumes normal mergeability guidance once checks settle.
+- **Safer refresh behavior**: returning to the contextual PR workspace refreshes sufficiently stale remote PR/CI state at a natural visibility boundary, without background polling.
+- **Draft preservation**: Create Pull Request and Review Pull Request keep unsent text, selections and form state when switching Activity Bar context. Fresh remote state can be loaded without discarding an in-progress review draft.
+- **Post-merge workflow** is more compact and explicit, with three equally valid choices: **✓ Checkout Base / Delete Source**, **Checkout Base / Keep Source**, and **Create New Pull Request**. Cleanup remains recommended without being presented as an error or destructive warning.
+
+### Fixed
+- Refresh no longer acts as an accidental save step before switching away from editable Create/Review views.
+- A newer `REQUEST_CHANGES` review no longer leaves Changes in Pull Request green because of an older approval from the same reviewer.
+- Review actions no longer leave the Changes in Pull Request review signal stale until an unrelated manual refresh.
+- Non-mergeable pull requests no longer leave the user at a dead end with no guided path toward native conflict resolution.
+- Conflict notifications no longer race an explicitly pending CI check while Gitea is still determining mergeability.
+- Completed CI runs no longer expose `completed` as if it were the meaningful final result, and unavailable metadata is no longer rendered as `undefined`.
+- The **Waiting for my review** category no longer falls back to a generic folder icon.
+- Post-merge actions no longer rely on stacked full-width or destructive-looking controls.
+
+### Quality and maintainability
+- Test coverage now has a reproducible function/branch baseline for directly testable domain logic. It is intentionally informational rather than a percentage release gate, so it can highlight regressions and uncovered decision paths without driving artificial tests.
+- Logging semantics are documented and normalized across components, with stable prefixes and native VS Code log-level filtering.
+- Contribution and presentation tests now protect effective review-state semantics, inline-only action ownership, state-aware CI actions and the Job Logs detail contract.
+
+### Release preparation
+- Package and lock metadata are already promoted together to `0.8.0`; keep that identity unchanged through the final ergonomic hardening pass.
+- Run `make verify` and `make reinstall-vsix`, then validate `.artifacts/vsix/gitea-pull-request-0.8.0.vsix` before marking the final release PR ready.
+- After merge, tag `v0.8.0` and publish the GitHub Release. Release CI rebuilds and attaches the verified VSIX.
+- Publish to the Visual Studio Marketplace manually by uploading that exact GitHub Release VSIX from the publisher management page.
+
+## 0.7.0 - 2026-08-17
 
 ### Added
 - Native **View Details**, **Open in Browser**, **Refresh** and lifecycle title actions across the active pull-request workspace.
@@ -12,7 +55,6 @@ All notable changes to **Gitea Pull Request** are documented in this file.
 - Create Pull Request metadata selection for reviewers, assignees, labels and milestone through native QuickPick workflows.
 - Explicit Source/Base branch identification and branch management in Create and Review workflows.
 - PR-centric Checks presentation with external target links and diagnostics for Gitea commit-status normalization.
-- Marketplace release workflow using GitHub OIDC trusted publishing with no stored Marketplace PAT.
 - `NOTICE` documenting the MIT-licensed project origin and independent maintenance line.
 
 ### Changed
@@ -22,8 +64,8 @@ All notable changes to **Gitea Pull Request** are documented in this file.
 - Create Pull Request uses a **General information** block, Source/Base terminology, empty title by default and native metadata pickers.
 - Obsolete legacy PR creation flow removed.
 - Create-mode temporary view IDs preserve the user's normal Pull Requests / Issues / CI layout memory.
-- CI and release builds now use **Node.js 24**.
-- Extension compatibility baseline raised to **VS Code 1.133.0+** and the extension-host test runner now executes against VS Code `1.133.0` by default.
+- CI and release builds use **Node.js 24**.
+- Extension compatibility baseline raised to **VS Code 1.133.0+** and the extension-host test runner executes against VS Code `1.133.0` by default.
 - Gitea `1.26.4` is the minimum documented/tested server baseline for `0.7.0`; older Gitea versions are not claimed as supported.
 - Development typings aligned to the latest published VS Code typings available during release preparation (`@types/vscode ^1.125.0`), with Node typings moved to the 24.x line and `@vscode/test-electron` moved to the 3.x line.
 
@@ -39,14 +81,12 @@ All notable changes to **Gitea Pull Request** are documented in this file.
 - Marketplace publisher: **Rémy Canal (`zheddhe`)**.
 - Marketplace extension identity: **`zheddhe.gitea-pull-request`**.
 - MIT attribution preserved and extended for the independently maintained product line.
-- Release CI validates tag/package version, publisher and package identity before publishing the exact generated VSIX to GitHub Releases and the Visual Studio Marketplace.
-- Release publication uses pinned `@vscode/vsce 3.9.2` with GitHub OIDC trusted publishing.
 
 ## 0.6.0 - 2026-08-16
 
 ### Added
 - Dedicated **Gitea Pull Request** Activity Bar workspace for the active pull-request lifecycle.
-- Dual-container topology separating general Gitea browsing from active PR context.
+- Dual-container topology separating general Gitea browsing from the active PR lifecycle.
 - Contextual **Changes in Pull Request**, **Review Pull Request** and post-merge views.
 
 ### Changed

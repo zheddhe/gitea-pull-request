@@ -12,18 +12,19 @@ This document describes the release path for **Gitea Pull Request** on GitHub an
 
 The repository and Marketplace publication are maintained independently from the maintainer's employer.
 
-## Compatibility baseline for 0.7.0
+## Compatibility baseline for 0.8.0
 
-The release baseline is intentionally conservative and matches the environments validated for the first Marketplace publication:
+The `0.8.0` release keeps the validated compatibility baseline established in the previous release:
 
 - **Visual Studio Code:** `1.133.0` or newer (`engines.vscode: ^1.133.0`);
-- **Gitea:** `1.26.4` or newer; `1.26.4` is the server version used for the Phase 6 functional validation, and older Gitea versions are not claimed as supported for `0.7.0`;
-- **Node.js:** `24.x` for dependency installation, CI, packaging and release publication.
+- **Gitea:** `1.26.4` or newer; older Gitea versions are not claimed as supported;
+- **Node.js:** `24.x` for dependency installation, CI, packaging and release tooling.
 
-`@types/vscode` may lag the VS Code product release cadence. For `0.7.0`, compilation uses the latest published typings available during the release preparation (`^1.125.0`) while extension-host tests run explicitly against VS Code `1.133.0`.
+`@types/vscode` may lag the VS Code product release cadence. Compilation currently uses the published typings declared in `package.json`, while extension-host tests run explicitly against VS Code `1.133.0` by default.
 
-## Marketplace authentication
+## Publication model
 
+<<<<<<< HEAD
 Automated Visual Studio Marketplace publication is **temporarily paused**.
 
 The current Marketplace publisher portal does not expose a trusted-publishing policy configuration for the repository/workflow, so `.github/workflows/release.yml` does not currently request an OIDC token and does not attempt `vsce publish --oidc`.
@@ -31,41 +32,62 @@ The current Marketplace publisher portal does not expose a trusted-publishing po
 Marketplace releases are published manually by uploading the exact VSIX produced and attached by the GitHub Release workflow.
 
 The intended future trusted-publishing identity remains:
+=======
+GitHub is the automated release-artifact source of truth. Marketplace publication is intentionally manual.
 
-- GitHub owner: `zheddhe`
-- Repository: `gitea-pull-request`
-- Workflow: `.github/workflows/release.yml`
-- Marketplace publisher: `zheddhe`
+GitHub immutable releases require assets to be attached **before** publication. The repository therefore uses a draft-first release workflow:
 
+1. pushing a version tag (`v*`) triggers `.github/workflows/release.yml`;
+2. the workflow validates the tag against package identity/version;
+3. it performs a clean build, lint, Extension Host test and package pass;
+4. it creates the versioned VSIX;
+5. it uploads the VSIX as a recoverable GitHub Actions artifact;
+6. it creates a **draft GitHub Release** for the tag and attaches that exact VSIX;
+7. the maintainer reviews/edits release notes and publishes the draft manually;
+8. publication makes the release and its assets immutable;
+9. the exact same verified VSIX is uploaded manually to the Visual Studio Marketplace.
+>>>>>>> origin/main
+
+The workflow does **not** publish directly to the Visual Studio Marketplace and does not require a Marketplace PAT or GitHub OIDC publishing credential.
+
+<<<<<<< HEAD
 When the Marketplace publisher can be configured with that trusted-publishing policy, automated OIDC publication may be re-enabled. Do not add a long-lived Marketplace PAT to the repository merely to bypass the missing policy configuration.
+=======
+Do not publish a GitHub Release before the VSIX is attached. A published immutable release cannot accept additional assets.
+>>>>>>> origin/main
 
 ## Release gate
 
-A phase release is promoted only after implementation and documentation are ready.
+A release is promoted only after implementation and documentation are ready.
 
-For `0.7.0`, version metadata is already promoted. After any dependency-baseline change, regenerate the lockfile under Node.js 24 before running the final gate:
+Promote the package and lock metadata together before merge:
+
+```bash
+make promote RELEASE_VERSION=<target-version>
+```
+
+For `0.8.0`, both `package.json` and `package-lock.json` must contain `0.8.0` on the release PR branch before merge.
+
+Run the final local gate under Node.js 24:
 
 ```bash
 node --version
 npm --version
-npm install --package-lock-only
-npm ci --include=dev
 make verify
 make reinstall-vsix
 ```
 
-The expected Node major is `24`. Commit the regenerated `package-lock.json` together with the manifest dependency changes.
-
-Confirm both `package.json` and `package-lock.json` contain `0.7.0` and that the local VSIX exists at:
+Confirm the expected local artifact exists:
 
 ```text
-.artifacts/vsix/gitea-pull-request-0.7.0.vsix
+.artifacts/vsix/gitea-pull-request-0.8.0.vsix
 ```
 
 Perform the final smoke pass before merging the release PR.
 
 ## GitHub release sequence
 
+<<<<<<< HEAD
 1. Merge the validated release PR into the default branch.
 2. Create tag `v<package-version>` on the merged release commit.
 3. Create and publish the corresponding GitHub Release.
@@ -74,8 +96,39 @@ Perform the final smoke pass before merging the release PR.
 6. `make ci` performs the clean dependency install, compile, lint, tests and VSIX packaging under Xvfb on the Linux runner.
 7. The generated versioned VSIX is uploaded to the GitHub Release.
 8. While trusted publishing is paused, upload that exact GitHub Release VSIX manually to the Visual Studio Marketplace.
+=======
+1. Merge the validated release PR into `main`.
+2. Create and push tag `v<package-version>` on the merged release commit.
+3. The tag push triggers `.github/workflows/release.yml`.
+4. The workflow checks out the release tag and validates tag version, package version, publisher ID and package name.
+5. `make ci` performs the clean dependency install, compile, lint, tests and VSIX packaging.
+6. The generated VSIX is uploaded as a GitHub Actions artifact for recovery/debugging purposes.
+7. The workflow creates a **draft GitHub Release** and attaches the verified VSIX.
+8. Review/edit the release title and notes while it is still a draft.
+9. Publish the draft only after confirming the VSIX is present. The release then becomes immutable.
+10. Upload that exact verified VSIX manually to the Visual Studio Marketplace publisher management page.
+>>>>>>> origin/main
 
-The workflow must fail rather than publish when the release identity is inconsistent.
+The workflow must fail rather than prepare a release when the release identity is inconsistent.
+
+## Rebuilding an existing tag
+
+`release.yml` also supports a manual `workflow_dispatch` input named `release_tag`.
+
+Use this only to rebuild/verify a tag that already exists, for example when recovering an artifact after a failed release workflow:
+
+```text
+release_tag = v0.8.0
+```
+
+Manual rebuild mode:
+
+- checks out and validates the requested tag;
+- runs the same clean CI/package path;
+- uploads the resulting VSIX as a GitHub Actions artifact;
+- **does not create, edit, delete or attach assets to an existing GitHub Release**.
+
+This is intentional: an already published immutable release cannot be modified safely. Never delete an immutable release merely to retry asset upload; GitHub prevents reuse of the same release tag name after that lifecycle.
 
 ## Workflow requirements
 
@@ -83,19 +136,40 @@ The release workflow intentionally uses:
 
 - Node.js 24;
 - VS Code 1.133.0 for extension-host tests;
-- Gitea 1.26.4 as the minimum documented/tested server baseline for `0.7.0`;
+- Gitea 1.26.4 as the minimum documented/tested server baseline;
 - the project `Makefile` as the build/test/package source of truth;
+<<<<<<< HEAD
 - Xvfb for VS Code/Electron extension-host tests on the Linux GitHub runner;
 - GitHub permission `contents: write` for attaching the VSIX to the GitHub Release;
 - immutable SHA-pinned GitHub Actions with their semantic versions retained as comments;
 - one release execution per tag through GitHub Actions concurrency;
 - no stored Marketplace credential while automated publication is paused.
+=======
+- pinned `@vscode/vsce` version `3.9.2` for packaging;
+- GitHub `contents: write` permission only;
+- one release execution per tag through GitHub Actions concurrency;
+- a 30-day recoverable workflow artifact for each verified VSIX;
+- no stored Marketplace publication credential.
+>>>>>>> origin/main
 
-## First Marketplace publication
+## Marketplace publication
 
+<<<<<<< HEAD
 The first Marketplace publication (`0.7.0`) was bootstrapped manually from the VSIX produced by the GitHub Release workflow.
 
 Before re-enabling automated Marketplace publication, confirm that the Marketplace publisher portal can define a trusted-publishing policy for the exact repository/workflow identity above. If that capability remains unavailable, keep Marketplace publication manual or contact Marketplace support rather than silently introducing a long-lived token.
+=======
+Before uploading a release VSIX, confirm in the Marketplace publisher portal that:
+
+- publisher display name is **Rémy Canal** and publisher ID is `zheddhe`;
+- the extension identity is `zheddhe.gitea-pull-request`;
+- Marketplace-facing README, icon, repository, support and license information are correct;
+- the VSIX being uploaded is exactly the artifact verified by the corresponding release workflow.
+
+For normal releases, prefer the VSIX attached to the draft/published GitHub Release. For recovery of an already immutable release, use the exact VSIX produced by manual rebuild mode.
+
+Marketplace automation can be reconsidered later if a stable trusted-publishing path becomes available and is deliberately re-enabled. Until then, manual upload is the documented release path.
+>>>>>>> origin/main
 
 ## License and origin
 

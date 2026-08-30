@@ -321,11 +321,10 @@ export class PostMergePullRequestViewProvider
       <div class="section">
         <div class="section-title">Next action</div>
         <div class="actions">
-          <button id="create" ${disabled}>Create New Pull Request…</button>
-          <button id="delete" ${cleanupDisabled}>Delete Branch…</button>
-          <button id="checkout" class="secondary" ${disabled}>Checkout '${escapeHtml(pr.base.ref)}' without deleting branch</button>
+          <button id="delete" title="Recommended: return to the base branch and clean up the merged source branch." ${cleanupDisabled}>✓ Checkout Base / Delete Source</button>
+          <button id="checkout" ${disabled}>Checkout Base / Keep Source</button>
+          <button id="create" ${disabled}>Create New Pull Request</button>
         </div>
-        <p class="muted">Use the ↻ title action to refresh branch state, or × to keep branches and finish.</p>
       </div>
       <script>
         const vscode = acquireVsCodeApi();
@@ -353,11 +352,9 @@ export class PostMergePullRequestViewProvider
   dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 12px; }
   dt { color: var(--vscode-descriptionForeground); }
   dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
-  .actions { display: grid; gap: 7px; margin-top: 8px; }
-  button { color: var(--vscode-button-foreground); background: var(--vscode-button-background); border: 0; padding: 7px 12px; cursor: pointer; text-align: left; }
+  .actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 8px; }
+  button { font: inherit; color: var(--vscode-button-foreground); background: var(--vscode-button-background); border: 1px solid transparent; padding: 6px 10px; cursor: pointer; text-align: left; }
   button:hover { background: var(--vscode-button-hoverBackground); }
-  button.secondary { color: var(--vscode-button-secondaryForeground); background: var(--vscode-button-secondaryBackground); }
-  button.secondary:hover { background: var(--vscode-button-secondaryHoverBackground); }
   button:disabled { opacity: .55; cursor: default; }
   .warning { color: var(--vscode-errorForeground); }
 </style>

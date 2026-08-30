@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import type { GiteaApiClient } from "../../../api/giteaApiClient";
 import type { RepoManager } from "../../../context/repoManager";
 import type { PullRequestProvider } from "../../../views/pullRequestProvider";
-import { log } from "../../../debug/outputChannel";
+import { debug, error as logError } from "../../../debug/outputChannel";
 import type { PullRequestSessionService } from "../services/pullRequestSessionService";
 
 export function registerRefreshActivePullRequestCommand(
@@ -30,7 +30,7 @@ export function registerRefreshActivePullRequestCommand(
       }
 
       try {
-        log(
+        debug(
           `[pr-refresh] refreshing active PR repo=${repoInfo.label} pr=#${state.pullRequest.number}`,
         );
         const pullRequest = await api.getPullRequest(
@@ -43,11 +43,11 @@ export function registerRefreshActivePullRequestCommand(
           state.checkoutState,
         );
         prProvider.refresh();
-        log(
+        debug(
           `[pr-refresh] refreshed active PR repo=${repoInfo.label} pr=#${pullRequest.number} head=${pullRequest.head.sha}`,
         );
       } catch (error) {
-        log(`[pr-refresh] failed: ${(error as Error).message}`);
+        logError(`[pr-refresh] failed: ${(error as Error).message}`);
         vscode.window.showErrorMessage(
           `Unable to refresh active pull request: ${(error as Error).message}`,
         );

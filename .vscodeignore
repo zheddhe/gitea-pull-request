@@ -7,7 +7,6 @@ src/**
 .markdownlint.json
 eslint.config.js
 Makefile
-PLAN.md
 tsconfig.json
 **/*.map
 **/*.ts

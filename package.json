@@ -3,44 +3,16 @@
   "displayName": "Gitea Pull Request",
   "description": "Pull requests, reviews, issues and CI context for self-hosted Gitea, directly in Visual Studio Code",
   "readme": "./README.md",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "publisher": "zheddhe",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/zheddhe/gitea-pull-request"
-  },
-  "bugs": {
-    "url": "https://github.com/zheddhe/gitea-pull-request/issues"
-  },
+  "repository": {"type":"git","url":"https://github.com/zheddhe/gitea-pull-request"},
+  "bugs": {"url":"https://github.com/zheddhe/gitea-pull-request/issues"},
   "homepage": "https://github.com/zheddhe/gitea-pull-request#readme",
-  "keywords": [
-    "gitea",
-    "git",
-    "pull request",
-    "code review",
-    "issues",
-    "CI",
-    "actions",
-    "self-hosted",
-    "scm",
-    "diff",
-    "devops",
-    "forge",
-    "gitops"
-  ],
-  "galleryBanner": {
-    "color": "#161B22",
-    "theme": "dark"
-  },
-  "engines": {
-    "vscode": "^1.133.0"
-  },
-  "categories": [
-    "SCM Providers"
-  ],
-  "activationEvents": [
-    "onStartupFinished"
-  ],
+  "keywords": ["gitea","git","pull request","code review","issues","CI","actions","self-hosted","scm","diff","devops","forge","gitops"],
+  "galleryBanner": {"color":"#161B22","theme":"dark"},
+  "engines": {"vscode":"^1.133.0"},
+  "categories": ["SCM Providers"],
+  "activationEvents": ["onStartupFinished"],
   "main": "./out/extension.js",
   "icon": "resources/gitea.png",
   "contributes": {
@@ -54,498 +26,118 @@
           "items": {
             "type": "object",
             "properties": {
-              "url": {
-                "type": "string",
-                "description": "Gitea server base URL"
-              },
-              "label": {
-                "type": "string",
-                "description": "Display label for this server"
-              }
+              "url": {"type":"string","description":"Gitea server base URL"},
+              "label": {"type":"string","description":"Display label for this server"}
             },
-            "required": [
-              "url"
-            ]
+            "required": ["url"]
           }
         },
-        "gitea.defaultServer": {
-          "type": "string",
-          "default": "",
-          "description": "Default Gitea server URL"
-        },
-        "gitea.reviewsPerPage": {
-          "type": "number",
-          "default": 20,
-          "description": "Number of items to fetch per page"
-        },
-        "gitea.serverUrl": {
-          "type": "string",
-          "default": "",
-          "description": "Override the Gitea server URL for all detected repositories. Use this when your git remote uses a different hostname than the web UI (e.g. SSH host vs HTTPS host). Example: https://code.example.com"
-        },
-        "gitea.itemsPerPage": {
-          "type": "number",
-          "default": 20,
-          "description": "Number of pull requests / CI runs to show per page"
-        }
+        "gitea.defaultServer": {"type":"string","default":"","description":"Default Gitea server URL"},
+        "gitea.reviewsPerPage": {"type":"number","default":20,"description":"Number of items to fetch per page"},
+        "gitea.serverUrl": {"type":"string","default":"","description":"Override the Gitea server URL for all detected repositories. Use this when your git remote uses a different hostname than the web UI (e.g. SSH host vs HTTPS host). Example: https://code.example.com"},
+        "gitea.itemsPerPage": {"type":"number","default":20,"description":"Number of pull requests / CI runs to show per page"}
       }
     },
     "viewsContainers": {
       "activitybar": [
-        {
-          "id": "giteaPullRequest",
-          "title": "Gitea",
-          "icon": "resources/gitea-forge-activity.svg"
-        },
-        {
-          "id": "giteaPullRequestContext",
-          "title": "Gitea Pull Request",
-          "icon": "resources/gitea-pr-activity.svg"
-        }
+        {"id":"giteaPullRequest","title":"Gitea","icon":"resources/gitea-forge-activity.svg"},
+        {"id":"giteaPullRequestContext","title":"Gitea Pull Request","icon":"resources/gitea-pr-activity.svg"}
       ]
     },
     "views": {
       "giteaPullRequest": [
-        {
-          "id": "gitea.pullRequests",
-          "name": "Pull Requests",
-          "icon": "resources/gitea-activity.svg",
-          "when": "!gitea.prSession.creating"
-        },
-        {
-          "id": "gitea.pullRequestsCreateMode",
-          "name": "Pull Requests",
-          "icon": "resources/gitea-activity.svg",
-          "when": "gitea.prSession.creating",
-          "initialSize": 2
-        },
-        {
-          "id": "gitea.createPullRequest",
-          "name": "Create Pull Request",
-          "type": "webview",
-          "when": "gitea.prSession.creating",
-          "initialSize": 8
-        },
-        {
-          "id": "gitea.issues",
-          "name": "Issues",
-          "icon": "resources/gitea-activity.svg",
-          "when": "!gitea.prSession.creating"
-        },
-        {
-          "id": "gitea.issuesCreateCompact",
-          "name": "Issues",
-          "icon": "resources/gitea-activity.svg",
-          "when": "gitea.prSession.creating",
-          "visibility": "collapsed"
-        },
-        {
-          "id": "gitea.ciRuns",
-          "name": "CI / Actions",
-          "icon": "resources/gitea-activity.svg",
-          "when": "!gitea.prSession.creating"
-        },
-        {
-          "id": "gitea.ciRunsCreateCompact",
-          "name": "CI / Actions",
-          "icon": "resources/gitea-activity.svg",
-          "when": "gitea.prSession.creating",
-          "visibility": "collapsed"
-        }
+        {"id":"gitea.pullRequests","name":"Pull Requests","icon":"resources/gitea-activity.svg","when":"!gitea.prSession.creating"},
+        {"id":"gitea.pullRequestsCreateMode","name":"Pull Requests","icon":"resources/gitea-activity.svg","when":"gitea.prSession.creating","initialSize":2},
+        {"id":"gitea.createPullRequest","name":"Create Pull Request","type":"webview","when":"gitea.prSession.creating","initialSize":8},
+        {"id":"gitea.issues","name":"Issues","icon":"resources/gitea-activity.svg","when":"!gitea.prSession.creating"},
+        {"id":"gitea.issuesCreateCompact","name":"Issues","icon":"resources/gitea-activity.svg","when":"gitea.prSession.creating","visibility":"collapsed"},
+        {"id":"gitea.ciRuns","name":"CI / Actions","icon":"resources/gitea-activity.svg","when":"!gitea.prSession.creating"},
+        {"id":"gitea.ciRunsCreateCompact","name":"CI / Actions","icon":"resources/gitea-activity.svg","when":"gitea.prSession.creating","visibility":"collapsed"}
       ],
       "giteaPullRequestContext": [
-        {
-          "id": "gitea.prDiff",
-          "name": "Changes in Pull Request",
-          "when": "gitea.prSession.active || gitea.prDiffVisible",
-          "icon": "resources/gitea-pr-activity.svg"
-        },
-        {
-          "id": "gitea.reviewPullRequest",
-          "name": "Review Pull Request",
-          "type": "webview",
-          "when": "gitea.prSession.active"
-        },
-        {
-          "id": "gitea.postMergePullRequest",
-          "name": "Pull Request Merged",
-          "type": "webview",
-          "when": "gitea.prSession.merged"
-        }
+        {"id":"gitea.prDiff","name":"Changes in Pull Request","when":"gitea.prSession.active || gitea.prDiffVisible","icon":"resources/gitea-pr-activity.svg"},
+        {"id":"gitea.reviewPullRequest","name":"Review Pull Request","type":"webview","when":"gitea.prSession.active"},
+        {"id":"gitea.postMergePullRequest","name":"Pull Request Merged","type":"webview","when":"gitea.prSession.merged"}
       ]
     },
     "viewsWelcome": [
-      {
-        "view": "gitea.pullRequests",
-        "contents": "No pull requests are currently listed.\n[Create Pull Request](command:gitea.createPRSidebar)"
-      },
-      {
-        "view": "gitea.pullRequestsCreateMode",
-        "contents": "No pull requests are currently listed."
-      }
+      {"view":"gitea.pullRequests","contents":"No pull requests are currently listed.\n[Create Pull Request](command:gitea.createPRSidebar)"},
+      {"view":"gitea.pullRequestsCreateMode","contents":"No pull requests are currently listed."}
     ],
     "commands": [
-      {
-        "command": "gitea.signIn",
-        "title": "Gitea: Sign In"
-      },
-      {
-        "command": "gitea.signOut",
-        "title": "Gitea: Sign Out"
-      },
-      {
-        "command": "gitea.addServer",
-        "title": "Gitea: Add Server"
-      },
-      {
-        "command": "gitea.refreshPRs",
-        "title": "Gitea: Refresh Pull Requests",
-        "icon": "$(refresh)"
-      },
-      {
-        "command": "gitea.refreshActivePR",
-        "title": "Gitea: Refresh Active Pull Request",
-        "icon": "$(refresh)"
-      },
-      {
-        "command": "gitea.viewActivePRDetail",
-        "title": "Gitea: View Active Pull Request Details",
-        "icon": "$(eye)"
-      },
-      {
-        "command": "gitea.openActivePR",
-        "title": "Gitea: Open Active Pull Request in Browser",
-        "icon": "$(link-external)"
-      },
-      {
-        "command": "gitea.refreshCreatePR",
-        "title": "Gitea: Refresh Pull Request Branches",
-        "icon": "$(refresh)"
-      },
-      {
-        "command": "gitea.refreshPostMerge",
-        "title": "Gitea: Refresh Post-Merge Branch State",
-        "icon": "$(refresh)"
-      },
-      {
-        "command": "gitea.refreshCI",
-        "title": "Gitea: Refresh CI Runs",
-        "icon": "$(refresh)"
-      },
-      {
-        "command": "gitea.refreshRepo",
-        "title": "Gitea: Refresh Repository CI",
-        "icon": "$(refresh)"
-      },
-      {
-        "command": "gitea.refreshJob",
-        "title": "Gitea: Refresh Job Status",
-        "icon": "$(refresh)"
-      },
-      {
-        "command": "gitea.refreshIssues",
-        "title": "Gitea: Refresh Issues",
-        "icon": "$(refresh)"
-      },
-      {
-        "command": "gitea.activatePR",
-        "title": "Gitea: Activate Pull Request",
-        "icon": "$(target)"
-      },
-      {
-        "command": "gitea.clearActivePR",
-        "title": "Gitea: Clear Active Pull Request",
-        "icon": "$(close)"
-      },
-      {
-        "command": "gitea.cancelCreatePR",
-        "title": "Gitea: Cancel Pull Request Creation",
-        "icon": "$(close)"
-      },
-      {
-        "command": "gitea.finishPostMerge",
-        "title": "Gitea: Keep Branches and Finish",
-        "icon": "$(close)"
-      },
-      {
-        "command": "gitea.viewPRDetail",
-        "title": "Gitea: Open Full Pull Request Details"
-      },
-      {
-        "command": "gitea.openPR",
-        "title": "Gitea: Open Pull Request in Browser"
-      },
-      {
-        "command": "gitea.checkoutPR",
-        "title": "Gitea: Checkout Pull Request Branch"
-      },
-      {
-        "command": "gitea.createPRSidebar",
-        "title": "Gitea: Create Pull Request",
-        "icon": "$(git-pull-request-create)"
-      },
-      {
-        "command": "gitea.mergePR",
-        "title": "Gitea: Merge Pull Request"
-      },
-      {
-        "command": "gitea.approvePR",
-        "title": "Gitea: Approve Pull Request"
-      },
-      {
-        "command": "gitea.requestChangesPR",
-        "title": "Gitea: Request Changes on Pull Request"
-      },
-      {
-        "command": "gitea.addComment",
-        "title": "Gitea: Add Comment"
-      },
-      {
-        "command": "gitea.openRunInBrowser",
-        "title": "Gitea: Open Run in Browser"
-      },
-      {
-        "command": "gitea.rerunWorkflow",
-        "title": "Gitea: Re-run Workflow"
-      },
-      {
-        "command": "gitea.cancelRun",
-        "title": "Gitea: Cancel Run"
-      },
-      {
-        "command": "gitea.viewLogs",
-        "title": "Gitea: View Job Logs"
-      },
-      {
-        "command": "gitea.switchRepo",
-        "title": "Gitea: Switch Repository"
-      },
-      {
-        "command": "gitea.openIssue",
-        "title": "Gitea: Open Issue in Browser"
-      },
-      {
-        "command": "gitea.viewIssueDetail",
-        "title": "Gitea: View Issue Details"
-      },
-      {
-        "command": "gitea.createIssue",
-        "title": "Gitea: Create Issue"
-      },
-      {
-        "command": "gitea.closeIssue",
-        "title": "Gitea: Close Issue"
-      },
-      {
-        "command": "gitea.reopenIssue",
-        "title": "Gitea: Re-open Issue"
-      },
-      {
-        "command": "gitea.addIssueComment",
-        "title": "Gitea: Add Issue Comment"
-      }
+      {"command":"gitea.signIn","title":"Gitea: Sign In"},
+      {"command":"gitea.signOut","title":"Gitea: Sign Out"},
+      {"command":"gitea.addServer","title":"Gitea: Add Server"},
+      {"command":"gitea.refreshPRs","title":"Gitea: Refresh Pull Requests","icon":"$(refresh)"},
+      {"command":"gitea.refreshActivePR","title":"Gitea: Refresh Active Pull Request","icon":"$(refresh)"},
+      {"command":"gitea.viewActivePRDetail","title":"Gitea: View Active Pull Request Details","icon":"$(eye)"},
+      {"command":"gitea.openActivePR","title":"Gitea: Open Active Pull Request in Browser","icon":"$(link-external)"},
+      {"command":"gitea.refreshCreatePR","title":"Gitea: Refresh Pull Request Branches","icon":"$(refresh)"},
+      {"command":"gitea.refreshPostMerge","title":"Gitea: Refresh Post-Merge Branch State","icon":"$(refresh)"},
+      {"command":"gitea.refreshCI","title":"Gitea: Refresh CI Runs","icon":"$(refresh)"},
+      {"command":"gitea.refreshRepo","title":"Gitea: Refresh Repository CI","icon":"$(refresh)"},
+      {"command":"gitea.refreshIssues","title":"Gitea: Refresh Issues","icon":"$(refresh)"},
+      {"command":"gitea.activatePR","title":"Gitea: Activate Pull Request","icon":"$(arrow-right)"},
+      {"command":"gitea.clearActivePR","title":"Gitea: Clear Active Pull Request","icon":"$(close)"},
+      {"command":"gitea.cancelCreatePR","title":"Gitea: Cancel Pull Request Creation","icon":"$(close)"},
+      {"command":"gitea.finishPostMerge","title":"Gitea: Keep Branches and Finish","icon":"$(close)"},
+      {"command":"gitea.viewPRDetail","title":"Gitea: Open Full Pull Request Details","icon":"$(eye)"},
+      {"command":"gitea.openPR","title":"Gitea: Open Pull Request in Browser","icon":"$(link-external)"},
+      {"command":"gitea.createPRSidebar","title":"Gitea: Create Pull Request","icon":"$(git-pull-request-create)"},
+      {"command":"gitea.addComment","title":"Gitea: Add Comment"},
+      {"command":"gitea.openRunInBrowser","title":"Gitea: Open Run in Browser","icon":"$(link-external)"},
+      {"command":"gitea.rerunWorkflow","title":"Gitea: Re-run Workflow","icon":"$(debug-rerun)"},
+      {"command":"gitea.cancelRun","title":"Gitea: Cancel Run","icon":"$(stop-circle)"},
+      {"command":"gitea.viewLogs","title":"Gitea: View Job Logs","icon":"$(output)"},
+      {"command":"gitea.rerunJob","title":"Gitea: Re-run Job","icon":"$(debug-rerun)"},
+      {"command":"gitea.switchRepo","title":"Gitea: Switch Repository"},
+      {"command":"gitea.openIssue","title":"Gitea: Open Issue in Browser","icon":"$(link-external)"},
+      {"command":"gitea.viewIssueDetail","title":"Gitea: View Issue Details","icon":"$(eye)"},
+      {"command":"gitea.createIssue","title":"Gitea: Create Issue"},
+      {"command":"gitea.closeIssue","title":"Gitea: Close Issue","icon":"$(issue-closed)"},
+      {"command":"gitea.reopenIssue","title":"Gitea: Re-open Issue","icon":"$(history)"},
+      {"command":"gitea.addIssueComment","title":"Gitea: Add Issue Comment","icon":"$(comment-add)"}
     ],
     "menus": {
       "view/title": [
-        {
-          "command": "gitea.refreshPRs",
-          "when": "view == gitea.pullRequests || view == gitea.pullRequestsCreateMode",
-          "group": "navigation"
-        },
-        {
-          "command": "gitea.createPRSidebar",
-          "when": "view == gitea.pullRequests && !gitea.prSession.creating",
-          "group": "navigation"
-        },
-        {
-          "command": "gitea.refreshCreatePR",
-          "when": "view == gitea.createPullRequest && gitea.prSession.creating",
-          "group": "navigation@1"
-        },
-        {
-          "command": "gitea.cancelCreatePR",
-          "when": "view == gitea.createPullRequest && gitea.prSession.creating",
-          "group": "navigation@2"
-        },
-        {
-          "command": "gitea.viewActivePRDetail",
-          "when": "view == gitea.prDiff && gitea.prSession.active",
-          "group": "navigation@0"
-        },
-        {
-          "command": "gitea.openActivePR",
-          "when": "view == gitea.prDiff && gitea.prSession.active",
-          "group": "navigation@1"
-        },
-        {
-          "command": "gitea.refreshActivePR",
-          "when": "view == gitea.prDiff && gitea.prSession.active",
-          "group": "navigation@2"
-        },
-        {
-          "command": "gitea.clearActivePR",
-          "when": "view == gitea.prDiff && gitea.prSession.active",
-          "group": "navigation@3"
-        },
-        {
-          "command": "gitea.viewActivePRDetail",
-          "when": "view == gitea.reviewPullRequest && gitea.prSession.active",
-          "group": "navigation@0"
-        },
-        {
-          "command": "gitea.openActivePR",
-          "when": "view == gitea.reviewPullRequest && gitea.prSession.active",
-          "group": "navigation@1"
-        },
-        {
-          "command": "gitea.refreshActivePR",
-          "when": "view == gitea.reviewPullRequest && gitea.prSession.active",
-          "group": "navigation@2"
-        },
-        {
-          "command": "gitea.clearActivePR",
-          "when": "view == gitea.reviewPullRequest && gitea.prSession.active",
-          "group": "navigation@3"
-        },
-        {
-          "command": "gitea.refreshPostMerge",
-          "when": "view == gitea.postMergePullRequest && gitea.prSession.merged",
-          "group": "navigation@1"
-        },
-        {
-          "command": "gitea.finishPostMerge",
-          "when": "view == gitea.postMergePullRequest && gitea.prSession.merged",
-          "group": "navigation@2"
-        },
-        {
-          "command": "gitea.refreshCI",
-          "when": "view == gitea.ciRuns || view == gitea.ciRunsCreateCompact",
-          "group": "navigation"
-        },
-        {
-          "command": "gitea.refreshIssues",
-          "when": "view == gitea.issues || view == gitea.issuesCreateCompact",
-          "group": "navigation"
-        },
-        {
-          "command": "gitea.createIssue",
-          "when": "view == gitea.issues || view == gitea.issuesCreateCompact",
-          "group": "navigation"
-        }
+        {"command":"gitea.refreshPRs","when":"view == gitea.pullRequests || view == gitea.pullRequestsCreateMode","group":"navigation"},
+        {"command":"gitea.createPRSidebar","when":"view == gitea.pullRequests && !gitea.prSession.creating","group":"navigation"},
+        {"command":"gitea.refreshCreatePR","when":"view == gitea.createPullRequest && gitea.prSession.creating","group":"navigation@1"},
+        {"command":"gitea.cancelCreatePR","when":"view == gitea.createPullRequest && gitea.prSession.creating","group":"navigation@2"},
+        {"command":"gitea.viewActivePRDetail","when":"view == gitea.prDiff && gitea.prSession.active","group":"navigation@0"},
+        {"command":"gitea.openActivePR","when":"view == gitea.prDiff && gitea.prSession.active","group":"navigation@1"},
+        {"command":"gitea.refreshActivePR","when":"view == gitea.prDiff && gitea.prSession.active","group":"navigation@2"},
+        {"command":"gitea.clearActivePR","when":"view == gitea.prDiff && gitea.prSession.active","group":"navigation@3"},
+        {"command":"gitea.viewActivePRDetail","when":"view == gitea.reviewPullRequest && gitea.prSession.active","group":"navigation@0"},
+        {"command":"gitea.openActivePR","when":"view == gitea.reviewPullRequest && gitea.prSession.active","group":"navigation@1"},
+        {"command":"gitea.refreshActivePR","when":"view == gitea.reviewPullRequest && gitea.prSession.active","group":"navigation@2"},
+        {"command":"gitea.clearActivePR","when":"view == gitea.reviewPullRequest && gitea.prSession.active","group":"navigation@3"},
+        {"command":"gitea.refreshPostMerge","when":"view == gitea.postMergePullRequest && gitea.prSession.merged","group":"navigation@1"},
+        {"command":"gitea.finishPostMerge","when":"view == gitea.postMergePullRequest && gitea.prSession.merged","group":"navigation@2"},
+        {"command":"gitea.refreshCI","when":"view == gitea.ciRuns || view == gitea.ciRunsCreateCompact","group":"navigation"},
+        {"command":"gitea.refreshIssues","when":"view == gitea.issues || view == gitea.issuesCreateCompact","group":"navigation"},
+        {"command":"gitea.createIssue","when":"view == gitea.issues || view == gitea.issuesCreateCompact","group":"navigation"}
       ],
       "view/item/context": [
-        {
-          "command": "gitea.activatePR",
-          "when": "viewItem == pullRequest",
-          "group": "inline@1"
-        },
-        {
-          "command": "gitea.checkoutPR",
-          "when": "viewItem == pullRequest",
-          "group": "pr@1"
-        },
-        {
-          "command": "gitea.viewPRDetail",
-          "when": "viewItem == pullRequest",
-          "group": "pr@2"
-        },
-        {
-          "command": "gitea.openPR",
-          "when": "viewItem == pullRequest",
-          "group": "pr@3"
-        },
-        {
-          "command": "gitea.approvePR",
-          "when": "viewItem == pullRequest",
-          "group": "pr@4"
-        },
-        {
-          "command": "gitea.mergePR",
-          "when": "viewItem == pullRequest",
-          "group": "pr@5"
-        },
-        {
-          "command": "gitea.refreshRepo",
-          "when": "viewItem == repoGroup",
-          "group": "inline"
-        },
-        {
-          "command": "gitea.refreshJob",
-          "when": "viewItem == ciJob",
-          "group": "inline"
-        },
-        {
-          "command": "gitea.viewLogs",
-          "when": "viewItem == ciJob",
-          "group": "ci@1"
-        },
-        {
-          "command": "gitea.openRunInBrowser",
-          "when": "viewItem == ciRun",
-          "group": "ci@2"
-        },
-        {
-          "command": "gitea.rerunWorkflow",
-          "when": "viewItem == ciRun",
-          "group": "ci@3"
-        },
-        {
-          "command": "gitea.cancelRun",
-          "when": "viewItem == ciRun",
-          "group": "ci@4"
-        },
-        {
-          "command": "gitea.viewIssueDetail",
-          "when": "viewItem == issue_open || viewItem == issue_closed",
-          "group": "issue@1"
-        },
-        {
-          "command": "gitea.openIssue",
-          "when": "viewItem == issue_open || viewItem == issue_closed",
-          "group": "issue@2"
-        },
-        {
-          "command": "gitea.addIssueComment",
-          "when": "viewItem == issue_open || viewItem == issue_closed",
-          "group": "issue@3"
-        },
-        {
-          "command": "gitea.closeIssue",
-          "when": "viewItem == issue_open",
-          "group": "issue@4"
-        },
-        {
-          "command": "gitea.reopenIssue",
-          "when": "viewItem == issue_closed",
-          "group": "issue@4"
-        }
+        {"command":"gitea.viewPRDetail","when":"viewItem == pullRequest","group":"inline@1"},
+        {"command":"gitea.openPR","when":"viewItem == pullRequest","group":"inline@2"},
+        {"command":"gitea.activatePR","when":"viewItem == pullRequest","group":"inline@3"},
+        {"command":"gitea.refreshRepo","when":"viewItem == repoGroup","group":"inline@1"},
+        {"command":"gitea.openRunInBrowser","when":"viewItem == ciRun_active || viewItem == ciRun_complete","group":"inline@1"},
+        {"command":"gitea.rerunWorkflow","when":"viewItem == ciRun_complete","group":"inline@2"},
+        {"command":"gitea.cancelRun","when":"viewItem == ciRun_active","group":"inline@2"},
+        {"command":"gitea.viewLogs","when":"viewItem == ciJob_active || viewItem == ciJob_complete","group":"inline@1"},
+        {"command":"gitea.rerunJob","when":"viewItem == ciJob_complete","group":"inline@2"},
+        {"command":"gitea.viewIssueDetail","when":"viewItem == issue_open || viewItem == issue_closed","group":"inline@1"},
+        {"command":"gitea.openIssue","when":"viewItem == issue_open || viewItem == issue_closed","group":"inline@2"},
+        {"command":"gitea.addIssueComment","when":"viewItem == issue_open || viewItem == issue_closed","group":"inline@3"},
+        {"command":"gitea.closeIssue","when":"viewItem == issue_open","group":"inline@4"},
+        {"command":"gitea.reopenIssue","when":"viewItem == issue_closed","group":"inline@4"}
       ]
     }
   },
-  "scripts": {
-    "vscode:prepublish": "npm run compile",
-    "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./",
-    "lint": "eslint src --max-warnings=0",
-    "test": "node ./out/test/runTest.js",
-    "package": "vsce package"
-  },
-  "dependencies": {
-    "marked": "^18.0.9"
-  },
-  "devDependencies": {
-    "@types/mocha": "^10.0.0",
-    "@types/node": "^24.0.0",
-    "@types/vscode": "^1.125.0",
-    "@typescript-eslint/eslint-plugin": "^8.0.0",
-    "@vscode/test-electron": "^3.1.0",
-    "eslint": "^9.0.0",
-    "mocha": "^11.0.0",
-    "typescript": "^5.3.0"
-  },
-  "overrides": {
-    "diff": "^9.0.0",
-    "serialize-javascript": "^7.0.7",
-    "glob": "^13.0.0"
-  }
+  "scripts": {"vscode:prepublish":"npm run compile","compile":"tsc -p ./","watch":"tsc -watch -p ./","lint":"eslint src --max-warnings=0","test":"node ./out/test/runTest.js","package":"vsce package"},
+  "dependencies": {"marked":"^18.0.9"},
+  "devDependencies": {"@types/mocha":"^10.0.0","@types/node":"^24.0.0","@types/vscode":"^1.125.0","@typescript-eslint/eslint-plugin":"^8.0.0","@vscode/test-electron":"^3.1.0","eslint":"^9.0.0","mocha":"^11.0.0","typescript":"^5.3.0"},
+  "overrides": {"diff":"^9.0.0","serialize-javascript":"^7.0.7","glob":"^13.0.0"}
 }

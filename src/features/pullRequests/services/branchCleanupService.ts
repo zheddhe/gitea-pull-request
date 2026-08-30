@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import type { RepoInfo } from "../../../context/repoManager";
-import { log } from "../../../debug/outputChannel";
+import { debug, info, warn } from "../../../debug/outputChannel";
 
 const execFileAsync = promisify(execFile);
 
@@ -242,7 +242,7 @@ export class BranchCleanupService {
   ): Promise<BranchIdentity> {
     const repository = await this.gitRepository(repoInfo);
     if (!repository) {
-      log(`[branch-cleanup] repository unavailable repo=${repoInfo.label}`);
+      warn(`[branch-cleanup] repository unavailable repo=${repoInfo.label}`);
       return {
         prHead,
         base,
@@ -253,15 +253,15 @@ export class BranchCleanupService {
     try {
       await repository.fetch({ remote: "origin" });
     } catch (error) {
-      log(`[branch-cleanup] fetch best-effort failed repo=${repoInfo.label}: ${(error as Error).message}`);
+      warn(`[branch-cleanup] fetch best-effort failed repo=${repoInfo.label}: ${(error as Error).message}`);
     }
 
     let refs = repository.state.refs;
     try {
       refs = await this.branchRefs(repoInfo);
-      log(`[branch-cleanup] git refs loaded repo=${repoInfo.label} count=${refs.length}`);
+      debug(`[branch-cleanup] git refs loaded repo=${repoInfo.label} count=${refs.length}`);
     } catch (error) {
-      log(`[branch-cleanup] git refs fallback repo=${repoInfo.label}: ${(error as Error).message}`);
+      warn(`[branch-cleanup] git refs fallback repo=${repoInfo.label}: ${(error as Error).message}`);
     }
 
     const identity = resolveBranchIdentity(
@@ -270,7 +270,7 @@ export class BranchCleanupService {
       prHead,
       base,
     );
-    log(
+    debug(
       `[branch-cleanup] discovered repo=${repoInfo.label} prHead=${prHead} localHead=${identity.localHead ?? "none"} remoteHead=${identity.remoteHead?.refName ?? "none"} base=${base} localBase=${identity.localBase ?? "none"} remoteBase=${identity.remoteBase?.refName ?? "none"} current=${identity.currentBranch ?? "detached"}`,
     );
     return identity;
@@ -289,7 +289,7 @@ export class BranchCleanupService {
         newBranchName: identity.base,
       });
     }
-    log(`[branch-cleanup] checked out base repo=${repoInfo.label} branch=${identity.base}`);
+    info(`[branch-cleanup] checked out base repo=${repoInfo.label} branch=${identity.base}`);
   }
 
   async cleanup(
@@ -302,18 +302,18 @@ export class BranchCleanupService {
       checkoutBase: async () => this.checkoutBase(repoInfo, identity),
       deleteLocal: async (branch) => {
         await this.git(repoInfo, ["branch", "-D", "--", branch]);
-        log(`[branch-cleanup] deleted local branch repo=${repoInfo.label} branch=${branch}`);
+        info(`[branch-cleanup] deleted local branch repo=${repoInfo.label} branch=${branch}`);
       },
       deleteRemote: async (remote, branch) => {
         await this.git(repoInfo, ["push", remote, "--delete", branch]);
-        log(`[branch-cleanup] deleted remote branch repo=${repoInfo.label} branch=${remote}/${branch}`);
+        info(`[branch-cleanup] deleted remote branch repo=${repoInfo.label} branch=${remote}/${branch}`);
       },
     });
 
     if (result.errors.length > 0) {
-      log(`[branch-cleanup] cleanup partial failure repo=${repoInfo.label} errors=${result.errors.join(" | ")}`);
+      warn(`[branch-cleanup] cleanup partial failure repo=${repoInfo.label} errors=${result.errors.join(" | ")}`);
     } else {
-      log(
+      info(
         `[branch-cleanup] cleanup complete repo=${repoInfo.label} local=${result.localDeleted} remote=${result.remoteDeleted} checkout=${result.checkedOutBase}`,
       );
     }
@@ -350,7 +350,7 @@ export class BranchCleanupService {
         .getAPI(1)
         .repositories.find((repo) => repo.rootUri.fsPath === repoInfo.rootPath);
     } catch (error) {
-      log(`[branch-cleanup] git repository lookup failed repo=${repoInfo.label}: ${(error as Error).message}`);
+      warn(`[branch-cleanup] git repository lookup failed repo=${repoInfo.label}: ${(error as Error).message}`);
       return undefined;
     }
   }

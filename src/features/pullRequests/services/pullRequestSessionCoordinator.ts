@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import { GiteaApiClient } from "../../../api/giteaApiClient";
 import { RepoInfo, RepoManager } from "../../../context/repoManager";
-import { log } from "../../../debug/outputChannel";
+import { debug, warn } from "../../../debug/outputChannel";
 import { PRDiffProvider } from "../../../views/prDiffProvider";
 import { PullRequestWorkspaceState } from "../domain/pullRequestState";
 import { PullRequestSessionService } from "./pullRequestSessionService";
@@ -37,13 +37,13 @@ export class PullRequestSessionCoordinator implements vscode.Disposable {
   }
 
   private async handleRepositoriesChanged(repos: RepoInfo[]): Promise<void> {
-    log(`[pr-coordinator] repositories changed count=${repos.length}`);
+    debug(`[pr-coordinator] repositories changed count=${repos.length}`);
     await this.session.invalidateIfRepositoryUnavailable(repos.map((repo) => repo.key));
   }
 
   private async applySessionState(state: PullRequestWorkspaceState): Promise<void> {
     if (state.kind !== "active") {
-      log(`[pr-coordinator] state=${state.kind}; clearing contextual diff`);
+      debug(`[pr-coordinator] state=${state.kind}; clearing contextual diff`);
       PRDiffProvider.clearAll();
       await vscode.commands.executeCommand("setContext", "gitea.prDiffVisible", false);
       return;
@@ -54,12 +54,12 @@ export class PullRequestSessionCoordinator implements vscode.Disposable {
       .find((repo) => repo.key === state.repository.key);
 
     if (!repoInfo) {
-      log(`[pr-coordinator] active repository missing key=${state.repository.key}; clearing session`);
+      warn(`[pr-coordinator] active repository missing key=${state.repository.key}; clearing session`);
       await this.session.clear();
       return;
     }
 
-    log(`[pr-coordinator] bind diff repo=${repoInfo.label} pr=#${state.pullRequest.number}`);
+    debug(`[pr-coordinator] bind diff repo=${repoInfo.label} pr=#${state.pullRequest.number}`);
     await vscode.commands.executeCommand("setContext", "gitea.prDiffVisible", true);
     await PRDiffProvider.show(this.api, repoInfo, state.pullRequest);
   }

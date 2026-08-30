@@ -37,12 +37,6 @@ export class SidebarPullRequestProvider extends PullRequestProvider {
         // VS Code remains free to persist their subsequent tree interaction.
         item.collapsibleState = vscode.TreeItemCollapsibleState.Expanded;
       }
-
-      if (item.contextValue === "category-waiting") {
-        // The category aggregates PRs with potentially different review states;
-        // keep the category icon neutral and color the individual PR icons only.
-        item.iconPath = new vscode.ThemeIcon("folder");
-      }
     }
 
     if (element instanceof PullRequestItem && element.pr.body?.trim()) {

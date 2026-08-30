@@ -11,8 +11,6 @@ interface RepoCIState {
   loading: boolean;
 }
 
-// ── Status icon helper ────────────────────────────────────────────────────────
-
 export function iconForStatus(status: string): vscode.ThemeIcon {
   switch (status) {
     case "success":
@@ -48,7 +46,41 @@ export function iconForStatus(status: string): vscode.ThemeIcon {
   }
 }
 
-// ── Tree items ────────────────────────────────────────────────────────────────
+function cleanMetadata(value: string | undefined | null): string | undefined {
+  const cleaned = value?.trim();
+  return cleaned ? cleaned : undefined;
+}
+
+export function isActiveRunStatus(status: string): boolean {
+  return ["running", "waiting", "pending", "in_progress"].includes(status);
+}
+
+export function displayStatusForRun(run: GiteaWorkflowRun): string {
+  const status = cleanMetadata(run.status) ?? "unknown";
+  if (status === "completed") {
+    return cleanMetadata(run.conclusion) ?? status;
+  }
+  return status;
+}
+
+export function formatRunDateTime(run: GiteaWorkflowRun): string | undefined {
+  const raw = cleanMetadata(run.run_started_at) ?? cleanMetadata(run.created_at);
+  if (!raw) return undefined;
+
+  const value = new Date(raw);
+  if (Number.isNaN(value.getTime())) return undefined;
+
+  return value.toLocaleString(undefined, {
+    dateStyle: "short",
+    timeStyle: "short",
+  });
+}
+
+export function runSecondaryMetadata(run: GiteaWorkflowRun): string[] {
+  return [cleanMetadata(run.event), formatRunDateTime(run)].filter(
+    (value): value is string => !!value,
+  );
+}
 
 export class RepoGroupItem extends vscode.TreeItem {
   constructor(
@@ -61,9 +93,7 @@ export class RepoGroupItem extends vscode.TreeItem {
     );
     this.id = `repo:${repoInfo.key}`;
     this.contextValue = "repoGroup";
-    this.description = repoInfo.currentBranch
-      ? `(${repoInfo.currentBranch})`
-      : "";
+    this.description = repoInfo.currentBranch ? `(${repoInfo.currentBranch})` : "";
     this.iconPath = new vscode.ThemeIcon(authed ? "repo" : "repo-forked");
     this.tooltip = `${repoInfo.serverUrl}/${repoInfo.owner}/${repoInfo.repo}`;
   }
@@ -79,21 +109,31 @@ export class CIRunItem extends vscode.TreeItem {
       vscode.TreeItemCollapsibleState.Collapsed,
     );
     this.id = `run:${repoInfo.key}:${run.id}`;
-    this.contextValue = "ciRun";
-    const eventDesc = `${run.event} · ${run.head_branch}`;
-    const isRunning =
-      run.status === "running" ||
-      run.status === "waiting" ||
-      run.status === "pending" ||
-      run.status === "in_progress";
-    this.description = isRunning ? `🔴 ${eventDesc}` : eventDesc;
-    this.tooltip = new vscode.MarkdownString(
-      `**${run.display_title || run.name}**\n\n` +
-        `Status: \`${run.status}\` | Event: \`${run.event}\`\n\n` +
-        `Branch: \`${run.head_branch}\` · ${run.head_commit?.message ?? ""}` +
-        (isRunning ? "\n\n🔴 **Live**" : ""),
+
+    const status = displayStatusForRun(run);
+    const isRunning = isActiveRunStatus(run.status);
+    this.contextValue = isRunning ? "ciRun_active" : "ciRun_complete";
+    const secondaryMetadata = runSecondaryMetadata(run);
+    this.description = [isRunning ? `🔴 ${status}` : status, ...secondaryMetadata].join(
+      " · ",
     );
-    this.iconPath = iconForStatus(run.status);
+
+    const tooltipLines = [
+      `**${run.display_title || run.name || `Run #${run.run_number}`}**`,
+      "",
+      `Status: \`${status}\``,
+    ];
+    const event = cleanMetadata(run.event);
+    if (event) tooltipLines.push(`Event: \`${event}\``);
+    const dateTime = formatRunDateTime(run);
+    if (dateTime) tooltipLines.push(`Date: ${dateTime}`);
+    const branch = cleanMetadata(run.head_branch);
+    const commitMessage = cleanMetadata(run.head_commit?.message);
+    if (branch) tooltipLines.push("", `Branch: \`${branch}\``);
+    if (commitMessage) tooltipLines.push(`Commit: ${commitMessage}`);
+    if (isRunning) tooltipLines.push("", "🔴 **Live**");
+    this.tooltip = new vscode.MarkdownString(tooltipLines.join("\n\n"));
+    this.iconPath = iconForStatus(status);
   }
 }
 
@@ -103,40 +143,18 @@ export class CIJobItem extends vscode.TreeItem {
     public readonly runId: number,
     public readonly repoInfo: RepoInfo,
   ) {
-    const isRunning = 
-      job.status === "running" || 
-      job.status === "waiting" ||
-      job.status === "in_progress";
-    
-    // Jobs are not expandable since Gitea API doesn't provide step details
+    const isRunning = ["running", "waiting", "pending", "in_progress"].includes(
+      job.status,
+    );
+
     super(job.name, vscode.TreeItemCollapsibleState.None);
     this.id = `job:${repoInfo.key}:${runId}:${job.id}`;
-    this.contextValue = "ciJob";
+    this.contextValue = isRunning ? "ciJob_active" : "ciJob_complete";
     const status = job.conclusion || job.status;
-    
+
     this.description = isRunning ? `🔴 ${status}` : status;
     this.iconPath = iconForStatus(status);
     this.tooltip = `${job.name} — ${status}${isRunning ? " (Live)" : ""}\n\nNote: Gitea API does not expose step-level details.\nView logs for detailed execution information.`;
-  }
-}
-
-export class CIStepItem extends vscode.TreeItem {
-  constructor(stepName: string, status: string, number: number) {
-    super(`${number}. ${stepName}`, vscode.TreeItemCollapsibleState.None);
-    const isRunning = status === "running" || status === "in_progress";
-    const isCompleted = status === "success" || status === "completed";
-    
-    // Highlight currently executing step
-    if (isRunning) {
-      this.description = `⚡ EXECUTING`;
-      this.tooltip = `Currently running: ${stepName}`;
-    } else if (isCompleted) {
-      this.description = "✓ completed";
-    } else {
-      this.description = status;
-    }
-    
-    this.iconPath = iconForStatus(status);
   }
 }
 
@@ -152,8 +170,6 @@ export class CILoadMoreItem extends vscode.TreeItem {
     };
   }
 }
-
-// ── Provider ──────────────────────────────────────────────────────────────────
 
 export class CIRunsProvider
   implements vscode.TreeDataProvider<vscode.TreeItem>, vscode.Disposable
@@ -173,7 +189,6 @@ export class CIRunsProvider
   ) {
     repoManager.onDidChange(() => this.refresh());
     auth.onDidChangeSession(() => this.refresh());
-    // Auto-polling disabled - use manual refresh instead
   }
 
   refresh(): void {
@@ -185,7 +200,6 @@ export class CIRunsProvider
   async refreshRepo(repoKey: string): Promise<void> {
     const state = this.stateMap.get(repoKey);
     if (state) {
-      // Don't show loading indicator during refresh
       const wasLoading = state.loading;
       state.loading = false;
       state.page = 1;
@@ -197,36 +211,12 @@ export class CIRunsProvider
     }
   }
 
-  async refreshJob(jobId: number, runId: number, repoInfo: RepoInfo): Promise<void> {
-    try {
-      const job = await this.api.getWorkflowJob(repoInfo, jobId);
-      // Update job in cache
-      const jobs = this.jobCache.get(runId);
-      if (jobs) {
-        const index = jobs.findIndex((j) => j.id === jobId);
-        if (index !== -1) {
-          jobs[index] = job;
-          // Only fire update for this specific job's parent run
-          this._onDidChangeTreeData.fire();
-        }
-      }
-    } catch (err) {
-      vscode.window.showErrorMessage(
-        `Failed to refresh job: ${(err as Error).message}`,
-      );
-    }
-  }
-
   async loadMore(repoKey: string): Promise<void> {
     const state = this.stateMap.get(repoKey);
-    if (!state || state.loading || !state.hasMore) {
-      return;
-    }
+    if (!state || state.loading || !state.hasMore) return;
     state.page += 1;
     const repoInfo = this.repoManager.getRepos().find((r) => r.key === repoKey);
-    if (repoInfo) {
-      await this.fetchForRepo(repoInfo, state);
-    }
+    if (repoInfo) await this.fetchForRepo(repoInfo, state);
   }
 
   getTreeItem(element: vscode.TreeItem): vscode.TreeItem {
@@ -272,8 +262,6 @@ export class CIRunsProvider
       return this.getJobsForRun(element.run.id, element.repoInfo);
     }
 
-    // Jobs are not expandable - Gitea API doesn't support step-level details
-
     return [];
   }
 
@@ -306,9 +294,7 @@ export class CIRunsProvider
     const items: vscode.TreeItem[] = state.runs.map(
       (r) => new CIRunItem(r, repoInfo),
     );
-    if (state.hasMore) {
-      items.push(new CILoadMoreItem(repoInfo.key));
-    }
+    if (state.hasMore) items.push(new CILoadMoreItem(repoInfo.key));
     return items;
   }
 
@@ -317,9 +303,7 @@ export class CIRunsProvider
     state: RepoCIState,
     silentRefresh: boolean = false,
   ): Promise<void> {
-    if (state.loading && !silentRefresh) {
-      return;
-    }
+    if (state.loading && !silentRefresh) return;
     const shouldShowLoading = !silentRefresh;
     if (shouldShowLoading) {
       state.loading = true;
@@ -344,9 +328,7 @@ export class CIRunsProvider
       state.runs = [];
       state.hasMore = false;
     } finally {
-      if (shouldShowLoading) {
-        state.loading = false;
-      }
+      if (shouldShowLoading) state.loading = false;
       this._onDidChangeTreeData.fire();
     }
   }

@@ -1,7 +1,6 @@
 import * as vscode from "vscode";
 import { GiteaApiClient } from "../api/giteaApiClient";
 import { CIRunsProvider, CIRunItem, CIJobItem, RepoGroupItem } from "../views/ciRunsProvider";
-import { CIDetailPanel } from "../views/ciDetailPanel";
 import { LiveLogPanel } from "../views/liveLogPanel";
 import type { GiteaWorkflowRun } from "../api/types";
 import type { RepoInfo } from "../context/repoManager";
@@ -23,13 +22,6 @@ export function registerCICommands(
       }
     }),
 
-    vscode.commands.registerCommand("gitea.refreshJob", async (arg: CIJobItem) => {
-      if (arg instanceof CIJobItem) {
-        await ciProvider.refreshJob(arg.job.id, arg.runId, arg.repoInfo);
-        vscode.window.showInformationMessage(`Refreshed job: ${arg.job.name}`);
-      }
-    }),
-
     vscode.commands.registerCommand("gitea.loadMoreCI", (repoKey: string) => {
       ciProvider.loadMore(repoKey);
     }),
@@ -39,16 +31,6 @@ export function registerCICommands(
       async (arg: CIRunItem | GiteaWorkflowRun) => {
         const run = arg instanceof CIRunItem ? arg.run : arg;
         await vscode.env.openExternal(vscode.Uri.parse(run.html_url));
-      },
-    ),
-
-    vscode.commands.registerCommand(
-      "gitea.viewCIDetail",
-      async (arg: CIRunItem) => {
-        if (!(arg instanceof CIRunItem)) {
-          return;
-        }
-        await CIDetailPanel.show(api, arg.repoInfo, arg.run);
       },
     ),
 
@@ -92,6 +74,17 @@ export function registerCICommands(
         await LiveLogPanel.show(api, arg.repoInfo, arg.job);
       },
     ),
+
+    vscode.commands.registerCommand(
+      "gitea.rerunJob",
+      async (arg: CIJobItem) => {
+        if (!(arg instanceof CIJobItem)) {
+          vscode.window.showWarningMessage("Select a job to re-run.");
+          return;
+        }
+        await rerunJob(api, arg, ciProvider);
+      },
+    ),
   );
 }
 
@@ -123,6 +116,39 @@ async function rerunWorkflow(
       } catch (err) {
         vscode.window.showErrorMessage(
           `Re-run failed: ${(err as Error).message}`,
+        );
+      }
+    },
+  );
+}
+
+async function rerunJob(
+  api: GiteaApiClient,
+  item: CIJobItem,
+  ciProvider: CIRunsProvider,
+): Promise<void> {
+  const confirm = await vscode.window.showWarningMessage(
+    `Re-run job ${item.job.name}?`,
+    { modal: true },
+    "Re-run Job",
+  );
+  if (confirm !== "Re-run Job") {
+    return;
+  }
+
+  await vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      title: `Re-running ${item.job.name}...`,
+    },
+    async () => {
+      try {
+        await api.rerunWorkflowJob(item.repoInfo, item.runId, item.job.id);
+        vscode.window.showInformationMessage(`Job re-run triggered: ${item.job.name}`);
+        setTimeout(() => ciProvider.refresh(), 2000);
+      } catch (err) {
+        vscode.window.showErrorMessage(
+          `Job re-run failed: ${(err as Error).message}`,
         );
       }
     },

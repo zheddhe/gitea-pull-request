@@ -11,9 +11,12 @@ import { registerCICommands } from "./commands/ciCommands";
 import { registerAuthCommands } from "./commands/authCommands";
 import { registerIssueCommands } from "./commands/issueCommands";
 import { initOutputChannel } from "./debug/outputChannel";
+import { registerConflictResolutionCommands } from "./features/pullRequests/commands/conflictResolutionCommands";
 import { registerPullRequestSessionCommands } from "./features/pullRequests/commands/sessionCommands";
 import { registerRefreshActivePullRequestCommand } from "./features/pullRequests/commands/refreshActivePullRequestCommand";
 import { BranchCleanupService } from "./features/pullRequests/services/branchCleanupService";
+import { ConflictResolutionCoordinator } from "./features/pullRequests/services/conflictResolutionCoordinator";
+import { ConflictResolutionService } from "./features/pullRequests/services/conflictResolutionService";
 import { PullRequestSessionCoordinator } from "./features/pullRequests/services/pullRequestSessionCoordinator";
 import { PullRequestSessionService } from "./features/pullRequests/services/pullRequestSessionService";
 import { PullRequestReviewApi } from "./features/pullRequests/services/pullRequestReviewApi";
@@ -36,10 +39,17 @@ export async function activate(
   const reviewApi = new PullRequestReviewApi(auth);
   const prSession = new PullRequestSessionService();
   const branchCleanup = new BranchCleanupService();
+  const conflictResolution = new ConflictResolutionService();
   const prSessionCoordinator = new PullRequestSessionCoordinator(
     api,
     repoManager,
     prSession,
+  );
+  const conflictResolutionCoordinator = new ConflictResolutionCoordinator(
+    repoManager,
+    prSession,
+    conflictResolution,
+    reviewApi,
   );
 
   const prProvider = new SidebarPullRequestProvider(api, repoManager, auth);
@@ -73,10 +83,12 @@ export async function activate(
     vscode.window.registerWebviewViewProvider(
       CreatePullRequestViewProvider.viewType,
       createPullRequestView,
+      { webviewOptions: { retainContextWhenHidden: true } },
     ),
     vscode.window.registerWebviewViewProvider(
       ReviewPullRequestViewProvider.viewType,
       reviewPullRequestView,
+      { webviewOptions: { retainContextWhenHidden: true } },
     ),
     vscode.window.registerWebviewViewProvider(
       PostMergePullRequestViewProvider.viewType,
@@ -127,6 +139,7 @@ export async function activate(
     reviewPullRequestView,
     postMergePullRequestView,
     prSessionCoordinator,
+    conflictResolutionCoordinator,
     prSession,
     ciProvider,
     statusBar,
@@ -142,6 +155,12 @@ export async function activate(
     statusBar,
   );
   registerPullRequestSessionCommands(context, prSession);
+  registerConflictResolutionCommands(
+    context,
+    repoManager,
+    prSession,
+    conflictResolution,
+  );
   registerRefreshActivePullRequestCommand(
     context,
     api,
@@ -157,6 +176,7 @@ export async function activate(
   await repoManager.initialize();
   await prSession.initialize();
   await prSessionCoordinator.initialize();
+  await conflictResolutionCoordinator.initialize();
   statusBar.refresh();
 
   const session = await auth.getSession();

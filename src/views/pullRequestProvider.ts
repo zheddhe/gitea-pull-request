@@ -44,21 +44,16 @@ export class CategoryItem extends vscode.TreeItem {
       : category === "waiting" ? "Waiting for my review"
       : "Created by me";
     const icon =
-      category === "all" ? "folder"
+      category === "all" ? "git-pull-request"
       : category === "waiting" ? "eye"
-      : "folder";
-    const color =
-      category === "waiting" ? "charts.yellow"
-      : undefined;
+      : "person";
     super(
       `${label} (${prs.length})`,
       vscode.TreeItemCollapsibleState.Collapsed,
     );
     this.id = `pr-cat:${repoInfo.key}:${category}`;
     this.contextValue = `category-${category}`;
-    this.iconPath = color
-      ? new vscode.ThemeIcon(icon, new vscode.ThemeColor(color))
-      : new vscode.ThemeIcon(icon);
+    this.iconPath = new vscode.ThemeIcon(icon);
   }
 }
 
@@ -70,15 +65,41 @@ export class PullRequestItem extends vscode.TreeItem {
   ) {
     super(
       `#${pr.number} ${pr.title}`,
-      vscode.TreeItemCollapsibleState.Collapsed,
+      vscode.TreeItemCollapsibleState.None,
     );
     this.id = `pr:${repoInfo.key}:${pr.number}`;
     this.contextValue = "pullRequest";
-    this.tooltip = new vscode.MarkdownString(
-      `**#${pr.number}** ${pr.title}\n\n` +
-        `By **${pr.user.login}** · ${pr.state} · ${pr.comments} comment(s)\n\n` +
-        `\`${pr.head.ref}\` → \`${pr.base.ref}\``,
-    );
+
+    const tooltipLines = [
+      `**#${pr.number}** ${pr.title}`,
+      "",
+      `By **${pr.user.login}** · ${pr.state} · ${pr.comments} comment(s) · ${pr.review_comments} review comment(s)`,
+      "",
+      `\`${pr.head.ref}\` → \`${pr.base.ref}\``,
+    ];
+    if (pr.assignees?.length) {
+      tooltipLines.push("", `Assignees: ${pr.assignees.map((a) => a.login).join(", ")}`);
+    }
+    if (pr.labels?.length) {
+      tooltipLines.push(`Labels: ${pr.labels.map((l) => l.name).join(", ")}`);
+    }
+    const hasDiffStats =
+      typeof pr.additions === "number" &&
+      typeof pr.deletions === "number" &&
+      typeof pr.changed_files === "number";
+    if (hasDiffStats) {
+      tooltipLines.push(
+        `Changes: +${pr.additions} / -${pr.deletions} · ${pr.changed_files} file(s)`,
+      );
+    }
+    if (pr.body?.trim()) {
+      tooltipLines.push("", "---", "", pr.body.trim());
+    }
+    const tooltip = new vscode.MarkdownString(tooltipLines.join("\n\n"));
+    tooltip.isTrusted = false;
+    tooltip.supportHtml = false;
+    this.tooltip = tooltip;
+
     this.iconPath = this.getIcon(pr, reviewState);
     this.description = `${pr.user.login} · ${relativeTime(pr.updated_at)}`;
   }
@@ -101,18 +122,6 @@ export class PullRequestItem extends vscode.TreeItem {
       : reviewState === "REQUEST_CHANGES" ? "charts.red"
       : "charts.yellow";
     return new vscode.ThemeIcon("git-pull-request", new vscode.ThemeColor(color));
-  }
-}
-
-export class PRChildItem extends vscode.TreeItem {
-  constructor(label: string, description?: string, icon?: vscode.ThemeIcon) {
-    super(label, vscode.TreeItemCollapsibleState.None);
-    if (description) {
-      this.description = description;
-    }
-    if (icon) {
-      this.iconPath = icon;
-    }
   }
 }
 
@@ -222,10 +231,6 @@ export class PullRequestProvider implements vscode.TreeDataProvider<vscode.TreeI
       });
     }
 
-    if (element instanceof PullRequestItem) {
-      return buildPRChildren(element);
-    }
-
     return [];
   }
 
@@ -262,8 +267,7 @@ export class PullRequestProvider implements vscode.TreeDataProvider<vscode.TreeI
       const isAssigned =
         pr.assignee?.login === username ||
         pr.assignees?.some((a) => a.login === username);
-      if (!isAssigned) return false;
-      return true;
+      return isAssigned;
     });
     const createdPrs = allPrs.filter((pr) => pr.user.login === username);
 
@@ -279,41 +283,6 @@ export class PullRequestProvider implements vscode.TreeDataProvider<vscode.TreeI
     }
 
     return categories;
-  }
-
-  private async getRepoChildren(
-    repoInfo: RepoInfo,
-  ): Promise<vscode.TreeItem[]> {
-    let state = this.stateMap.get(repoInfo.key);
-    if (!state) {
-      state = { prs: [], page: 1, hasMore: false, loading: false };
-      this.stateMap.set(repoInfo.key, state);
-      await this.fetchForRepo(repoInfo, state);
-      return [];
-    }
-    if (state.loading) {
-      const item = new vscode.TreeItem(
-        "Loading...",
-        vscode.TreeItemCollapsibleState.None,
-      );
-      item.iconPath = new vscode.ThemeIcon("loading~spin");
-      return [item];
-    }
-    if (state.prs.length === 0) {
-      const empty = new vscode.TreeItem(
-        `No ${this.filter} pull requests`,
-        vscode.TreeItemCollapsibleState.None,
-      );
-      empty.iconPath = new vscode.ThemeIcon("info");
-      return [empty];
-    }
-    const items: vscode.TreeItem[] = state.prs.map(
-      (pr) => new PullRequestItem(pr, repoInfo),
-    );
-    if (state.hasMore) {
-      items.push(new LoadMorePRItem(repoInfo.key, this.filter));
-    }
-    return items;
   }
 
   private async fetchForRepo(
@@ -384,96 +353,4 @@ function relativeTime(iso: string): string {
     return `${hrs}h ago`;
   }
   return `${Math.floor(hrs / 24)}d ago`;
-}
-
-function buildPRChildren(item: PullRequestItem): vscode.TreeItem[] {
-  const { pr } = item;
-  const children: vscode.TreeItem[] = [];
-
-  const detailItem = new PRChildItem(
-    "View Details",
-    undefined,
-    new vscode.ThemeIcon("eye"),
-  );
-  detailItem.command = {
-    command: "gitea.viewPRDetail",
-    title: "View PR Details",
-    arguments: [item],
-  };
-  if (pr.body?.trim()) {
-    const preview = new vscode.MarkdownString(pr.body);
-    preview.isTrusted = false;
-    preview.supportHtml = false;
-    detailItem.tooltip = preview;
-  }
-  children.push(detailItem);
-
-  children.push(
-    new PRChildItem(
-      `${pr.head.ref} → ${pr.base.ref}`,
-      undefined,
-      new vscode.ThemeIcon("git-branch"),
-    ),
-  );
-
-  const hasDiffStats =
-    typeof pr.additions === "number" &&
-    typeof pr.deletions === "number" &&
-    typeof pr.changed_files === "number";
-  if (hasDiffStats) {
-    const diffItem = new PRChildItem(
-      `+${pr.additions} / -${pr.deletions}`,
-      `${pr.changed_files} file(s) changed`,
-      new vscode.ThemeIcon("diff-multiple"),
-    );
-    diffItem.command = {
-      command: "gitea.openPRDiff",
-      title: "Open PR Diff",
-      arguments: [item],
-    };
-    diffItem.tooltip = new vscode.MarkdownString("Click to view full diff tree");
-    children.push(diffItem);
-  }
-
-  if (pr.comments > 0 || pr.review_comments > 0) {
-    children.push(
-      new PRChildItem(
-        `${pr.comments} comment(s), ${pr.review_comments} review comment(s)`,
-        undefined,
-        new vscode.ThemeIcon("comment-discussion"),
-      ),
-    );
-  }
-  if (pr.labels && pr.labels.length > 0) {
-    children.push(
-      new PRChildItem(
-        pr.labels.map((l) => l.name).join(", "),
-        "labels",
-        new vscode.ThemeIcon("tag"),
-      ),
-    );
-  }
-  if (pr.assignees && pr.assignees.length > 0) {
-    children.push(
-      new PRChildItem(
-        pr.assignees.map((a) => a.login).join(", "),
-        "assignees",
-        new vscode.ThemeIcon("person"),
-      ),
-    );
-  }
-
-  const openItem = new PRChildItem(
-    "Open in Browser",
-    undefined,
-    new vscode.ThemeIcon("link-external"),
-  );
-  openItem.command = {
-    command: "gitea.openPR",
-    title: "Open PR in Browser",
-    arguments: [item],
-  };
-  children.push(openItem);
-
-  return children;
 }

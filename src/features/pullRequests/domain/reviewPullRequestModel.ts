@@ -5,6 +5,7 @@ import type {
 } from "../../../api/types";
 
 export type MergeMethod = "merge" | "squash" | "rebase";
+export type EffectiveReviewState = "approved" | "changes_requested" | "neutral";
 
 export interface RepositoryMergeSettings {
   allow_merge_commits?: boolean;
@@ -27,6 +28,12 @@ export interface MergeReadiness {
   warnings: string[];
   ciLabel: string;
   reviewLabel: string;
+}
+
+export interface EffectiveReviewSummary {
+  state: EffectiveReviewState;
+  approvals: number;
+  changesRequested: number;
 }
 
 export function isWorkInProgress(pr: GiteaPullRequest): boolean {
@@ -79,6 +86,30 @@ export function preferredMergeMethod(
           : undefined;
   if (normalized && supported.includes(normalized)) return normalized;
   return supported[0];
+}
+
+export function summarizeEffectiveReviews(
+  reviews: GiteaReview[] | undefined,
+): EffectiveReviewSummary {
+  const reviewList = Array.isArray(reviews) ? reviews : [];
+  const effectiveReviews = latestReviewsByUser(reviewList);
+  const approvals = effectiveReviews.filter(
+    (review) => review.state === "APPROVED",
+  ).length;
+  const changesRequested = effectiveReviews.filter(
+    (review) => review.state === "REQUEST_CHANGES" || review.state === "REJECTED",
+  ).length;
+
+  return {
+    state:
+      changesRequested > 0
+        ? "changes_requested"
+        : approvals > 0
+          ? "approved"
+          : "neutral",
+    approvals,
+    changesRequested,
+  };
 }
 
 export function evaluateMergeReadiness(
@@ -135,12 +166,7 @@ export function evaluateMergeReadiness(
     warnings.push("Target branch requires status checks, but combined status could not be read");
   }
 
-  const reviewList = Array.isArray(reviews) ? reviews : [];
-  const effectiveReviews = latestReviewsByUser(reviewList);
-  const approvals = effectiveReviews.filter((review) => review.state === "APPROVED").length;
-  const changesRequested = effectiveReviews.filter(
-    (review) => review.state === "REQUEST_CHANGES" || review.state === "REJECTED",
-  ).length;
+  const { approvals, changesRequested } = summarizeEffectiveReviews(reviews);
   const requiredApprovals =
     typeof policy?.required_approvals === "number" && policy.required_approvals > 0
       ? policy.required_approvals
