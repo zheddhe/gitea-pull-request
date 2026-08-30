@@ -3,7 +3,10 @@ import * as vscode from "vscode";
 import type { GiteaPullRequest } from "../../../api/types";
 import type { RepoInfo, RepoManager } from "../../../context/repoManager";
 import { info } from "../../../debug/outputChannel";
-import { evaluateWorkingFileBridge } from "../domain/workingFileBridge";
+import {
+  evaluateWorkingFileBridge,
+  type WorkingRepositoryCandidate,
+} from "../domain/workingFileBridge";
 
 export type OpenWorkingFileResult =
   | { kind: "opened"; uri: vscode.Uri }
@@ -48,12 +51,6 @@ export class WorkingFileBridgeService {
     return this.openFromVerifiedWorkspace(decision.repository, pr, filename);
   }
 
-  /**
-   * Opens a file after a Git preparation service has already verified that the
-   * supplied workspace is checked out exactly at the pull request source head.
-   * This intentionally supports fork PRs checked out through a dedicated
-   * source remote in the base repository workspace.
-   */
   async openPrepared(
     preparedRepo: RepoInfo,
     pr: GiteaPullRequest,
@@ -63,7 +60,7 @@ export class WorkingFileBridgeService {
   }
 
   private async openFromVerifiedWorkspace(
-    repoInfo: RepoInfo,
+    repoInfo: WorkingRepositoryCandidate,
     pr: GiteaPullRequest,
     filename: string,
   ): Promise<OpenWorkingFileResult> {
