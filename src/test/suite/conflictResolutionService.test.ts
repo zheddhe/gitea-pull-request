@@ -2,8 +2,10 @@ import * as assert from "assert";
 import {
   classifySourceSynchronization,
   executeConflictResolutionPreparation,
+  executeSourceBranchPreparation,
   type ConflictResolutionOperations,
   type ConflictResolutionPlan,
+  type SourceBranchPreparationOperations,
 } from "../../features/pullRequests/services/conflictResolutionService";
 
 const plan: ConflictResolutionPlan = {
@@ -109,6 +111,58 @@ suite("ConflictResolutionService", () => {
     }
   });
 
+  test("source-only preparation refuses a dirty working tree before fetch", async () => {
+    const calls: string[] = [];
+    const operations = fakeSourceOperations(calls, {
+      inspect: async () => ({
+        dirty: true,
+        mergeInProgress: false,
+        currentBranch: "main",
+      }),
+    });
+
+    await assert.rejects(
+      () => executeSourceBranchPreparation(plan, operations),
+      /working tree contains local changes/i,
+    );
+    assert.deepStrictEqual(calls, ["inspect"]);
+  });
+
+  test("source-only preparation refuses an existing merge before fetch", async () => {
+    const calls: string[] = [];
+    const operations = fakeSourceOperations(calls, {
+      inspect: async () => ({
+        dirty: false,
+        mergeInProgress: true,
+        currentBranch: "main",
+      }),
+    });
+
+    await assert.rejects(
+      () => executeSourceBranchPreparation(plan, operations),
+      /merge is already in progress/i,
+    );
+    assert.deepStrictEqual(calls, ["inspect"]);
+  });
+
+  test("source-only preparation fetches only the source remote before checkout", async () => {
+    const calls: string[] = [];
+    const forkPlan: ConflictResolutionPlan = {
+      ...plan,
+      sourceRemote: "contributor",
+      sourceRemoteRef: "contributor/feature/conflict",
+    };
+    const operations = fakeSourceOperations(calls);
+
+    await executeSourceBranchPreparation(forkPlan, operations);
+
+    assert.deepStrictEqual(calls, [
+      "inspect",
+      "fetch:contributor",
+      "checkout:contributor/feature/conflict",
+    ]);
+  });
+
   test("keeps an exact local pull request source unchanged", () => {
     assert.strictEqual(
       classifySourceSynchronization("abc", "abc", true),
@@ -165,6 +219,29 @@ function fakeOperations(
   };
 }
 
+function fakeSourceOperations(
+  calls: string[],
+  overrides: Partial<SourceBranchPreparationOperations> = {},
+): SourceBranchPreparationOperations {
+  return {
+    inspect: async () => {
+      calls.push("inspect");
+      return {
+        dirty: false,
+        mergeInProgress: false,
+        currentBranch: "main",
+      };
+    },
+    fetch: async (remote) => {
+      calls.push(`fetch:${remote}`);
+    },
+    checkoutSource: async (resolvedPlan) => {
+      calls.push(`checkout:${resolvedPlan.sourceRemoteRef}`);
+    },
+    ...wrapSourceOverrides(calls, overrides),
+  };
+}
+
 function wrapOverrides(
   calls: string[],
   overrides: Partial<ConflictResolutionOperations>,
@@ -180,6 +257,20 @@ function wrapOverrides(
     wrapped.mergeBase = async (resolvedPlan) => {
       calls.push(`merge:${resolvedPlan.baseRemoteRef}`);
       return overrides.mergeBase!(resolvedPlan);
+    };
+  }
+  return wrapped;
+}
+
+function wrapSourceOverrides(
+  calls: string[],
+  overrides: Partial<SourceBranchPreparationOperations>,
+): Partial<SourceBranchPreparationOperations> {
+  const wrapped: Partial<SourceBranchPreparationOperations> = { ...overrides };
+  if (overrides.inspect) {
+    wrapped.inspect = async () => {
+      calls.push("inspect");
+      return overrides.inspect!();
     };
   }
   return wrapped;
