@@ -1,8 +1,10 @@
 export interface GiteaServerCapabilities {
   version: string;
+  inlineReviewResolution: boolean;
   inlineReviewReplies: boolean;
 }
 
+const INLINE_REVIEW_RESOLUTION_MIN_VERSION = [1, 26, 0] as const;
 const INLINE_REVIEW_REPLIES_MIN_VERSION = [1, 27, 0] as const;
 
 export function evaluateGiteaServerCapabilities(
@@ -10,6 +12,10 @@ export function evaluateGiteaServerCapabilities(
 ): GiteaServerCapabilities {
   return {
     version,
+    inlineReviewResolution: isAtLeastVersion(
+      version,
+      INLINE_REVIEW_RESOLUTION_MIN_VERSION,
+    ),
     inlineReviewReplies: isAtLeastVersion(
       version,
       INLINE_REVIEW_REPLIES_MIN_VERSION,
