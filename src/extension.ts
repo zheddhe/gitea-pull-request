@@ -21,6 +21,7 @@ import { PullRequestSessionCoordinator } from "./features/pullRequests/services/
 import { PullRequestSessionService } from "./features/pullRequests/services/pullRequestSessionService";
 import { PullRequestReviewApi } from "./features/pullRequests/services/pullRequestReviewApi";
 import { ResilientGiteaApiClient } from "./features/pullRequests/services/resilientGiteaApiClient";
+import { ReviewedFileStateService } from "./features/pullRequests/services/reviewedFileStateService";
 import { CreatePullRequestViewProvider } from "./features/pullRequests/views/createPullRequestView";
 import { PostMergePullRequestViewProvider } from "./features/pullRequests/views/postMergePullRequestView";
 import { ReviewPullRequestViewProvider } from "./features/pullRequests/views/reviewPullRequestView";
@@ -40,10 +41,12 @@ export async function activate(
   const prSession = new PullRequestSessionService();
   const branchCleanup = new BranchCleanupService();
   const conflictResolution = new ConflictResolutionService();
+  const reviewedFiles = new ReviewedFileStateService(context.workspaceState, api);
   const prSessionCoordinator = new PullRequestSessionCoordinator(
     api,
     repoManager,
     prSession,
+    reviewedFiles,
   );
   const conflictResolutionCoordinator = new ConflictResolutionCoordinator(
     repoManager,
@@ -168,7 +171,14 @@ export async function activate(
     prSession,
     prProvider,
   );
-  registerPRCommands(context, api, repoManager, auth, prProvider);
+  registerPRCommands(
+    context,
+    api,
+    repoManager,
+    auth,
+    prProvider,
+    reviewedFiles,
+  );
   registerCICommands(context, api, ciProvider);
   registerIssueCommands(context, api, repoManager, auth, issuesProvider);
 
