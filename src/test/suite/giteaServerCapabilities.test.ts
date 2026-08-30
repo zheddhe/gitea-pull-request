@@ -5,6 +5,28 @@ import {
 } from "../../features/pullRequests/domain/giteaServerCapabilities";
 
 suite("GiteaServerCapabilities", () => {
+  test("enables inline review resolution from Gitea 1.26.0", () => {
+    assert.strictEqual(
+      evaluateGiteaServerCapabilities("1.26.0").inlineReviewResolution,
+      true,
+    );
+    assert.strictEqual(
+      evaluateGiteaServerCapabilities("1.27.0").inlineReviewResolution,
+      true,
+    );
+  });
+
+  test("keeps inline review resolution disabled on older servers", () => {
+    assert.strictEqual(
+      evaluateGiteaServerCapabilities("1.25.4").inlineReviewResolution,
+      false,
+    );
+    assert.strictEqual(
+      evaluateGiteaServerCapabilities("1.24.7").inlineReviewResolution,
+      false,
+    );
+  });
+
   test("enables inline review replies from Gitea 1.27.0", () => {
     assert.strictEqual(
       evaluateGiteaServerCapabilities("1.27.0").inlineReviewReplies,
