@@ -44,6 +44,28 @@ suite("ReviewConversationModel", () => {
     assert.deepStrictEqual(conversationCommentIds(conversations[0]), [1, 2, 3]);
   });
 
+  test("groups comments on the same Gitea code anchor when reply metadata is absent", () => {
+    const conversations = buildReviewConversations([
+      comment(1),
+      comment(2),
+      comment(3),
+    ]);
+
+    assert.strictEqual(conversations.length, 1);
+    assert.strictEqual(conversations[0].root.id, 1);
+    assert.deepStrictEqual(conversations[0].replies.map((reply) => reply.id), [2, 3]);
+  });
+
+  test("keeps comments on different code anchors in separate conversations", () => {
+    const conversations = buildReviewConversations([
+      comment(1, { position: 10, original_position: 10 }),
+      comment(2, { position: 11, original_position: 11 }),
+      comment(3, { path: "src/other.ts", position: 10, original_position: 10 }),
+    ]);
+
+    assert.strictEqual(conversations.length, 3);
+  });
+
   test("defensively resolves a reply-to-reply relation to the conversation root", () => {
     const conversations = buildReviewConversations([
       comment(1),
@@ -55,12 +77,15 @@ suite("ReviewConversationModel", () => {
     assert.deepStrictEqual(conversations[0].replies.map((reply) => reply.id), [2, 3]);
   });
 
-  test("marks a conversation resolved when Gitea returns a resolver on its root", () => {
+  test("marks a conversation resolved when any Gitea comment on the anchor has a resolver", () => {
+    const resolver = { ...user, id: 2, login: "resolver" };
     const conversations = buildReviewConversations([
-      comment(1, { resolver: { ...user, id: 2, login: "resolver" } }),
+      comment(1),
+      comment(2, { resolver }),
     ]);
 
     assert.strictEqual(conversations[0].resolved, true);
+    assert.strictEqual(conversations[0].resolver?.login, "resolver");
   });
 
   test("keeps orphan replies explicit instead of attaching them to an unrelated line", () => {
