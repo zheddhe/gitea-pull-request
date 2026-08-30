@@ -86,7 +86,7 @@
       {"command":"gitea.createPRSidebar","title":"Gitea: Create Pull Request","icon":"$(git-pull-request-create)"},
       {"command":"gitea.addComment","title":"Gitea: Add Comment"},
       {"command":"gitea.openWorkingFile","title":"Gitea: Open Working File","icon":"$(go-to-file)"},
-      {"command":"gitea.checkoutSourceAndOpenWorkingFile","title":"Gitea: Checkout Source and Open File","icon":"$(git-checkout)"},
+      {"command":"gitea.checkoutSourceAndOpenWorkingFile","title":"Gitea: Checkout Source and Open File","icon":"$(git-branch)"},
       {"command":"gitea.openRunInBrowser","title":"Gitea: Open Run in Browser","icon":"$(link-external)"},
       {"command":"gitea.rerunWorkflow","title":"Gitea: Re-run Workflow","icon":"$(debug-rerun)"},
       {"command":"gitea.cancelRun","title":"Gitea: Cancel Run","icon":"$(stop-circle)"},
