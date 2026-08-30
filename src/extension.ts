@@ -22,6 +22,7 @@ import { PullRequestSessionService } from "./features/pullRequests/services/pull
 import { PullRequestReviewApi } from "./features/pullRequests/services/pullRequestReviewApi";
 import { ResilientGiteaApiClient } from "./features/pullRequests/services/resilientGiteaApiClient";
 import { ReviewedFileStateService } from "./features/pullRequests/services/reviewedFileStateService";
+import { WorkingFileBridgeService } from "./features/pullRequests/services/workingFileBridgeService";
 import { CreatePullRequestViewProvider } from "./features/pullRequests/views/createPullRequestView";
 import { PostMergePullRequestViewProvider } from "./features/pullRequests/views/postMergePullRequestView";
 import { ReviewPullRequestViewProvider } from "./features/pullRequests/views/reviewPullRequestView";
@@ -42,6 +43,7 @@ export async function activate(
   const branchCleanup = new BranchCleanupService();
   const conflictResolution = new ConflictResolutionService();
   const reviewedFiles = new ReviewedFileStateService(context.workspaceState, api);
+  const workingFileBridge = new WorkingFileBridgeService(repoManager);
   const prSessionCoordinator = new PullRequestSessionCoordinator(
     api,
     repoManager,
@@ -178,6 +180,7 @@ export async function activate(
     auth,
     prProvider,
     reviewedFiles,
+    workingFileBridge,
   );
   registerCICommands(context, api, ciProvider);
   registerIssueCommands(context, api, repoManager, auth, issuesProvider);
