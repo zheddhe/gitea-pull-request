@@ -686,11 +686,13 @@ export class ReviewPullRequestViewProvider
             ? "Not mergeable (Gitea)"
             : "Mergeability unknown";
     const disabled = this.busy ? " disabled" : "";
-    const readiness = this.currentReadiness(active.state);
+    const readiness = this.readiness.loading
+      ? undefined
+      : this.currentReadiness(active.state);
     const supported = supportedMergeMethods(this.readiness.mergeSettings);
     const selected = this.selectedMergeMethod();
     const mergeDisabled =
-      this.busy || this.readiness.loading || !readiness.canMerge || !selected;
+      this.busy || this.readiness.loading || !readiness?.canMerge || !selected;
     const methodOptions = supported
       .map(
         (method) =>
@@ -704,12 +706,16 @@ export class ReviewPullRequestViewProvider
           `<option value="${escapeHtml(branch)}"${branch === pr.base.ref ? " selected" : ""}>${escapeHtml(branch)}</option>`,
       )
       .join("");
-    const blockers = readiness.blockingReasons
-      .map((reason) => `<li>${escapeHtml(reason)}</li>`)
-      .join("");
-    const warnings = readiness.warnings
-      .map((warning) => `<li>${escapeHtml(warning)}</li>`)
-      .join("");
+    const blockers = readiness
+      ? readiness.blockingReasons
+          .map((reason) => `<li>${escapeHtml(reason)}</li>`)
+          .join("")
+      : "";
+    const warnings = readiness
+      ? readiness.warnings
+          .map((warning) => `<li>${escapeHtml(warning)}</li>`)
+          .join("")
+      : "";
     const statuses = this.readiness.status?.statuses ?? [];
     const successfulChecks = statuses.filter(
       (status) => status.state === "success",
@@ -739,6 +745,14 @@ export class ReviewPullRequestViewProvider
         return `<li class="check check-${status.state}"><span class="check-state">${escapeHtml(checkStateLabel(status.state))}</span><span>${name}${description}</span></li>`;
       })
       .join("");
+    const readinessHtml = this.readiness.loading
+      ? '<div class="muted">Refreshing merge readiness…</div>'
+      : readiness
+        ? `<div>${stateLabel} · ${mergeable}</div>
+    <div class="muted">${escapeHtml(readiness.reviewLabel)} · ${escapeHtml(readiness.ciLabel)}</div>
+    ${blockers ? `<ul class="blocked">${blockers}</ul>` : '<div class="ready">No blocking condition detected from available Gitea signals.</div>'}
+    ${warnings ? `<ul class="muted">${warnings}</ul>` : ""}`
+        : '<div class="muted">Merge readiness unavailable.</div>';
 
     const icon = (path: string) =>
       `<svg class="section-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="${path}"/></svg>`;
@@ -803,11 +817,7 @@ export class ReviewPullRequestViewProvider
 
   <div class="section">
     <div class="section-title">${readinessIcon}<span>Merge readiness</span></div>
-    <div>${stateLabel} · ${mergeable}</div>
-    <div class="muted">${escapeHtml(readiness.reviewLabel)} · ${escapeHtml(readiness.ciLabel)}</div>
-    ${this.readiness.loading ? '<div class="muted">Refreshing merge readiness…</div>' : ""}
-    ${blockers ? `<ul class="blocked">${blockers}</ul>` : '<div class="ready">No blocking condition detected from available Gitea signals.</div>'}
-    ${warnings ? `<ul class="muted">${warnings}</ul>` : ""}
+    ${readinessHtml}
   </div>
 
   <div class="section">
