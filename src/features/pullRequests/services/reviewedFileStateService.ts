@@ -57,11 +57,10 @@ export class ReviewedFileStateService {
   ): Promise<void> {
     if (filenames.length === 0) return;
     const selected = new Set(filenames);
-    const identities = await this.currentIdentities(repoInfo, pr);
-    const identityByFilename = new Map(
-      identities.map((identity) => [identity.filename, identity] as const),
-    );
 
+    // Persist the user's explicit review decision first. Fingerprints are an
+    // optional enrichment used only to preserve Reviewed across a later head.
+    // A temporary API/diff failure must never make the checkbox state ephemeral.
     await this.queueWrite(async () => {
       const allRecords = this.storedRecords();
       const retained = allRecords.filter(
@@ -71,25 +70,22 @@ export class ReviewedFileStateService {
           ),
       );
       const additions: ReviewedFileRecord[] = reviewed
-        ? filenames.flatMap((filename) => {
-            const identity = identityByFilename.get(filename);
-            if (!identity) return [];
-            return [
-              {
-                repositoryKey: repoInfo.key,
-                pullRequestNumber: pr.number,
-                filename,
-                reviewedAtHead: pr.head.sha,
-                fingerprint: identity.fingerprint,
-              },
-            ];
-          })
+        ? filenames.map((filename) => ({
+            repositoryKey: repoInfo.key,
+            pullRequestNumber: pr.number,
+            filename,
+            reviewedAtHead: pr.head.sha,
+          }))
         : [];
       await this.workspaceState.update(REVIEWED_FILES_STATE_KEY, [
         ...retained,
         ...additions,
       ]);
     });
+
+    if (reviewed) {
+      void this.enrichFingerprints(repoInfo, pr, selected);
+    }
   }
 
   async filenamesUnder(
@@ -107,6 +103,42 @@ export class ReviewedFileStateService {
     return (await this.currentIdentities(repoInfo, pr)).map(
       (identity) => identity.filename,
     );
+  }
+
+  private async enrichFingerprints(
+    repoInfo: RepoInfo,
+    pr: GiteaPullRequest,
+    selected: Set<string>,
+  ): Promise<void> {
+    let identities: CurrentReviewedFileIdentity[];
+    try {
+      identities = await this.currentIdentities(repoInfo, pr);
+    } catch {
+      return;
+    }
+
+    const fingerprintByFilename = new Map(
+      identities
+        .filter(
+          (identity) => selected.has(identity.filename) && !!identity.fingerprint,
+        )
+        .map((identity) => [identity.filename, identity.fingerprint] as const),
+    );
+    if (fingerprintByFilename.size === 0) return;
+
+    await this.queueWrite(async () => {
+      const records = this.storedRecords().map((record) => {
+        if (
+          !this.isScope(record, repoInfo, pr) ||
+          record.reviewedAtHead !== pr.head.sha
+        ) {
+          return record;
+        }
+        const fingerprint = fingerprintByFilename.get(record.filename);
+        return fingerprint ? { ...record, fingerprint } : record;
+      });
+      await this.workspaceState.update(REVIEWED_FILES_STATE_KEY, records);
+    });
   }
 
   private storedRecords(): ReviewedFileRecord[] {
