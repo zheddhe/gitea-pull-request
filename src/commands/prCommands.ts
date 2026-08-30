@@ -19,6 +19,7 @@ import {
 } from "../views/prDiffProvider";
 import type { GiteaPullRequest } from "../api/types";
 import type { ReviewedFileStateService } from "../features/pullRequests/services/reviewedFileStateService";
+import type { WorkingFileBridgeService } from "../features/pullRequests/services/workingFileBridgeService";
 
 type PRDetailTarget =
   | PullRequestItem
@@ -31,6 +32,7 @@ export function registerPRCommands(
   auth: AuthManager,
   prProvider: PullRequestProvider,
   reviewedFiles: ReviewedFileStateService,
+  workingFileBridge: WorkingFileBridgeService,
 ): void {
   context.subscriptions.push(
     PRDiffProvider.onDidChangeCheckboxState(({ provider, event }) => {
@@ -104,6 +106,43 @@ export function registerPRCommands(
           fileItem.pr,
           fileItem.filename,
         );
+      },
+    ),
+
+    vscode.commands.registerCommand(
+      "gitea.openWorkingFile",
+      async (fileItem: PRDiffFileItem) => {
+        const provider = PRDiffProvider.getActive();
+        if (!provider || !fileItem) return;
+
+        const result = await workingFileBridge.open(
+          provider.repoInfo,
+          provider.pr,
+          fileItem.filename,
+        );
+        if (result.kind === "opened") return;
+
+        switch (result.reason) {
+          case "sourceRepositoryNotInWorkspace":
+            vscode.window.showInformationMessage(
+              `Working file unavailable: PR source repository '${provider.pr.head.repo.full_name}' is not open in this workspace. The PR diff remains available.`,
+            );
+            return;
+          case "sourceBranchNotCheckedOut":
+            vscode.window.showInformationMessage(
+              `Working file unavailable: source branch '${result.expectedBranch}' is not checked out${result.currentBranch ? ` (current: '${result.currentBranch}')` : ""}. This action does not switch branches automatically.`,
+            );
+            return;
+          case "fileNotFound":
+            vscode.window.showInformationMessage(
+              `Working file unavailable: '${fileItem.filename}' does not exist in the checked-out source workspace.`,
+            );
+            return;
+          case "pathOutsideWorkspace":
+            vscode.window.showWarningMessage(
+              `Refusing to open '${fileItem.filename}' because it resolves outside the source workspace.`,
+            );
+        }
       },
     ),
 
