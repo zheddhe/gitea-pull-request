@@ -96,6 +96,8 @@ export interface GiteaReviewComment {
   body: string;
   path: string;
   pull_request_review_id?: number;
+  /** Top-level review comment id when this comment is a threaded reply. */
+  in_reply_to_id?: number;
   commit_id?: string;
   original_commit_id?: string;
   diff_hunk?: string;
