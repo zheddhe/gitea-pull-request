@@ -14,6 +14,7 @@ import { initOutputChannel } from "./debug/outputChannel";
 import { registerConflictResolutionCommands } from "./features/pullRequests/commands/conflictResolutionCommands";
 import { registerPullRequestSessionCommands } from "./features/pullRequests/commands/sessionCommands";
 import { registerRefreshActivePullRequestCommand } from "./features/pullRequests/commands/refreshActivePullRequestCommand";
+import { registerWorkingFileCommands } from "./features/pullRequests/commands/workingFileCommands";
 import { BranchCleanupService } from "./features/pullRequests/services/branchCleanupService";
 import { ConflictResolutionCoordinator } from "./features/pullRequests/services/conflictResolutionCoordinator";
 import { ConflictResolutionService } from "./features/pullRequests/services/conflictResolutionService";
@@ -165,6 +166,11 @@ export async function activate(
     repoManager,
     prSession,
     conflictResolution,
+  );
+  registerWorkingFileCommands(
+    context,
+    conflictResolution,
+    workingFileBridge,
   );
   registerRefreshActivePullRequestCommand(
     context,
