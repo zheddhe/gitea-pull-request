@@ -28,6 +28,7 @@ import { CreatePullRequestViewProvider } from "./features/pullRequests/views/cre
 import { PostMergePullRequestViewProvider } from "./features/pullRequests/views/postMergePullRequestView";
 import { ReviewPullRequestViewProvider } from "./features/pullRequests/views/reviewPullRequestView";
 import { SidebarPullRequestProvider } from "./features/pullRequests/views/sidebarPullRequestProvider";
+import type { RepoInfo } from "./context/repoManager";
 
 export async function activate(
   context: vscode.ExtensionContext,
@@ -112,6 +113,23 @@ export async function activate(
     ),
     vscode.commands.registerCommand("gitea.refreshPostMerge", () =>
       postMergePullRequestView.refreshBranchState(),
+    ),
+    vscode.commands.registerCommand(
+      "gitea.replyInlineReviewComment",
+      async (
+        repoInfo: RepoInfo,
+        pullRequestNumber: number,
+        commentId: number,
+        body: string,
+      ) => {
+        if (!body?.trim()) return;
+        await reviewApi.replyToReviewComment(
+          repoInfo,
+          pullRequestNumber,
+          commentId,
+          body.trim(),
+        );
+      },
     ),
     vscode.commands.registerCommand("gitea.openActivePR", async () => {
       const state = prSession.current;
