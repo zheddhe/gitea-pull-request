@@ -88,8 +88,9 @@ suite("PR detail presentation", () => {
     assert.ok(inlineTab >= 0 && historyTab > inlineTab && discussionTab > historyTab);
     assert.match(source, /id="tab-inline-reviews" class="tab-content active"/);
     assert.match(source, /id="tab-review-history" class="tab-content"/);
-    assert.match(source, /Inline Reviews \(\$\{reviewComments\.length\}\)/);
+    assert.match(source, /Inline Reviews \(\$\{reviewConversations\.length\}\)/);
     assert.match(source, /Review History \(\$\{activeReviews\.length\}\)/);
+    assert.match(source, /const reviewConversations = buildReviewConversations\(reviewComments\)/);
     assert.match(source, /id="submit-inline"/);
     assert.match(source, /submitInlineReview/);
     assert.match(source, /Pending inline comments: 0/);
@@ -127,14 +128,24 @@ suite("PR detail presentation", () => {
     assert.match(source, /diff-del \.lc/);
   });
 
-  test("places existing inline comments by either side of the diff", () => {
-    assert.match(source, /const byNewLine = new Map/);
-    assert.match(source, /const byOldLine = new Map/);
+  test("places existing inline conversations by either side of the diff", () => {
+    assert.match(source, /const byNewLine = new Map<number, ReviewConversation\[\]>/);
+    assert.match(source, /const byOldLine = new Map<number, ReviewConversation\[\]>/);
     assert.match(source, /byNewLine\.get\(line\.newLine\)/);
     assert.match(source, /byOldLine\.get\(line\.oldLine\)/);
+    assert.match(source, /conversationCommentIds\(conversation\)/);
     assert.match(source, /matchedCommentIds/);
-    assert.match(source, /Unplaced inline comments/);
+    assert.match(source, /Unplaced inline conversations/);
+    assert.match(source, /review-conversation/);
     assert.match(source, /review-comment-body markdown-body/);
+  });
+
+  test("renders and submits replies against the conversation root", () => {
+    assert.match(source, /class="btn sec reply-toggle" data-comment-id="\$\{root\.id\}"/);
+    assert.match(source, /id="reply-form-\$\{root\.id\}"/);
+    assert.match(source, /case "replyInlineComment"/);
+    assert.match(source, /"gitea\.replyInlineReviewComment"/);
+    assert.match(source, /post\('replyInlineComment',\{commentId:Number\(id\),body\}\)/);
   });
 
   test("uses aligned Description and Comments section bars", () => {
