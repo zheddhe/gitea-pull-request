@@ -140,14 +140,23 @@ suite("PR detail presentation", () => {
     assert.match(source, /review-comment-body markdown-body/);
   });
 
-  test("renders and submits replies against the conversation root", () => {
+  test("renders and submits replies against the conversation root when supported", () => {
     assert.match(source, /const REPLY_ICON = `<svg/);
+    assert.match(source, /conversation\.orphaned \|\| !inlineReviewReplies/);
     assert.match(source, /class="icon-btn reply-toggle" data-comment-id="\$\{root\.id\}"/);
     assert.match(source, /title="Reply to conversation"/);
     assert.match(source, /id="reply-form-\$\{root\.id\}"/);
     assert.match(source, /case "replyInlineComment"/);
     assert.match(source, /"gitea\.replyInlineReviewComment"/);
     assert.match(source, /post\('replyInlineComment',\{commentId:Number\(id\),body\}\)/);
+  });
+
+  test("hides unsupported reply actions and explains the server capability once", () => {
+    assert.match(source, /"gitea\.getReviewCapabilities"/);
+    assert.match(source, /capabilities\.inlineReviewReplies/);
+    assert.match(source, /Replies require Gitea 1\.27\+/);
+    assert.match(source, /class="capability-note"/);
+    assert.match(source, /\.capability-note\{[^}]*margin-left:auto/);
   });
 
   test("visually distinguishes roots replies and reply actions", () => {
