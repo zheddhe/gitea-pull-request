@@ -17,6 +17,9 @@ import {
 import { log } from "../debug/outputChannel";
 
 const REPLY_ICON = `<svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M6.7 3 2 7l4.7 4V8.5c3.4 0 5.5 1 7.3 3.5-.5-4.6-2.8-7-7.3-7V3z"/></svg>`;
+const RESOLVE_ICON = `<svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="m6.4 11.2-3-3 .8-.8 2.2 2.2 5.4-5.4.8.8-6.2 6.2z"/></svg>`;
+const REOPEN_ICON = `<svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M13.2 3.8A6 6 0 1 0 14 9h-1.2a4.8 4.8 0 1 1-.7-4.3L10 6h5V1l-1.8 2.8z"/></svg>`;
+const RESOLVED_EVENT_ICON = `<svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="m6.4 11.2-3-3 .8-.8 2.2 2.2 5.4-5.4.8.8-6.2 6.2z"/></svg>`;
 
 function parseRawDiff(raw: string): Map<string, string> {
   const map = new Map<string, string>();
@@ -45,6 +48,7 @@ interface DiffRowsResult {
 
 interface ReviewCapabilities {
   version: string;
+  inlineReviewResolution: boolean;
   inlineReviewReplies: boolean;
 }
 
@@ -152,6 +156,12 @@ export class PRDetailPanel {
           (message.body as string) ?? "",
         );
         break;
+      case "resolveInlineConversation":
+        await this.setInlineConversationResolved(Number(message.commentId), true);
+        break;
+      case "reopenInlineConversation":
+        await this.setInlineConversationResolved(Number(message.commentId), false);
+        break;
       case "addComment":
         await this.addPRComment((message.body as string) ?? "");
         break;
@@ -209,6 +219,27 @@ export class PRDetailPanel {
     }
   }
 
+  private async setInlineConversationResolved(
+    commentId: number,
+    resolved: boolean,
+  ): Promise<void> {
+    if (!Number.isFinite(commentId) || commentId <= 0) return;
+    try {
+      await vscode.commands.executeCommand(
+        resolved
+          ? "gitea.resolveInlineReviewConversation"
+          : "gitea.reopenInlineReviewConversation",
+        this.repoInfo,
+        commentId,
+      );
+      await this.update(this.pr);
+    } catch (error) {
+      vscode.window.showErrorMessage(
+        `Failed to ${resolved ? "resolve" : "reopen"} inline review conversation: ${(error as Error).message}`,
+      );
+    }
+  }
+
   private async loadReviewCapabilities(): Promise<ReviewCapabilities> {
     try {
       const capabilities = await vscode.commands.executeCommand<ReviewCapabilities>(
@@ -219,7 +250,11 @@ export class PRDetailPanel {
     } catch (error) {
       log(`[review-capabilities] unavailable: ${(error as Error).message}`);
     }
-    return { version: "", inlineReviewReplies: false };
+    return {
+      version: "",
+      inlineReviewResolution: false,
+      inlineReviewReplies: false,
+    };
   }
 
   private async openExternal(rawUrl: string): Promise<void> {
@@ -383,12 +418,12 @@ export class PRDetailPanel {
   private renderReviewConversation(
     conversation: ReviewConversation,
     reviewCommentBodies: Map<number, string>,
-    inlineReviewReplies: boolean,
+    capabilities: ReviewCapabilities,
     standalone = false,
   ): string {
     const root = conversation.root;
-    const resolvedHtml = conversation.resolved
-      ? `<span class="conversation-state resolved">Resolved${root.resolver?.login ? ` by ${escHtml(root.resolver.login)}` : ""}</span>`
+    const resolvedEventHtml = conversation.resolved
+      ? `<div class="conversation-event resolved-event">${RESOLVED_EVENT_ICON}<span><strong>${escHtml(root.resolver?.login || "Someone")}</strong> resolved this conversation</span></div>`
       : "";
     const orphanHtml = conversation.orphaned
       ? '<span class="conversation-state muted">Reply parent unavailable</span>'
@@ -399,10 +434,26 @@ export class PRDetailPanel {
           `<div class="review-reply"><div class="review-comment-header"><strong>${escHtml(reply.user.login)}</strong><span class="muted">${escHtml(new Date(reply.created_at).toLocaleString())}</span></div><div class="review-comment-body markdown-body">${reviewCommentBodies.get(reply.id) ?? escHtml(reply.body)}</div></div>`,
       )
       .join("");
-    const replyControls = conversation.orphaned || !inlineReviewReplies
-      ? ""
-      : `<div class="conversation-actions"><button class="icon-btn reply-toggle" data-comment-id="${root.id}" title="Reply to conversation" aria-label="Reply to review conversation">${REPLY_ICON}</button></div><div class="reply-form" id="reply-form-${root.id}" hidden><textarea aria-label="Reply to inline review comment" placeholder="Reply to this review conversation..."></textarea><div class="inline-actions"><button class="btn submit-reply" data-comment-id="${root.id}">Reply</button><button class="btn sec cancel-reply" data-comment-id="${root.id}">Cancel</button></div></div>`;
-    return `<div class="review-conversation${conversation.resolved ? " conversation-resolved" : ""}${standalone ? " standalone" : ""}" data-root-comment-id="${root.id}"><div class="review-comment-card conversation-root"><div class="review-comment-header"><strong>${escHtml(root.user.login)}</strong><span class="muted">${escHtml(new Date(root.created_at).toLocaleString())}</span>${resolvedHtml}${orphanHtml}</div><div class="review-comment-body markdown-body">${reviewCommentBodies.get(root.id) ?? escHtml(root.body)}</div></div>${repliesHtml}${replyControls}</div>`;
+    const actions: string[] = [];
+    if (!conversation.orphaned && capabilities.inlineReviewReplies) {
+      actions.push(
+        `<button class="icon-btn reply-toggle" data-comment-id="${root.id}" title="Reply to conversation" aria-label="Reply to review conversation">${REPLY_ICON}</button>`,
+      );
+    }
+    if (!conversation.orphaned && capabilities.inlineReviewResolution) {
+      actions.push(
+        conversation.resolved
+          ? `<button class="icon-btn reopen-conversation" data-comment-id="${root.id}" title="Reopen conversation" aria-label="Reopen review conversation">${REOPEN_ICON}</button>`
+          : `<button class="icon-btn resolve-conversation" data-comment-id="${root.id}" title="Resolve conversation" aria-label="Resolve review conversation">${RESOLVE_ICON}</button>`,
+      );
+    }
+    const actionHtml = actions.length
+      ? `<div class="conversation-actions">${actions.join("")}</div>`
+      : "";
+    const replyForm = !conversation.orphaned && capabilities.inlineReviewReplies
+      ? `<div class="reply-form" id="reply-form-${root.id}" hidden><textarea aria-label="Reply to inline review comment" placeholder="Reply to this review conversation..."></textarea><div class="inline-actions"><button class="btn submit-reply" data-comment-id="${root.id}">Reply</button><button class="btn sec cancel-reply" data-comment-id="${root.id}">Cancel</button></div></div>`
+      : "";
+    return `<div class="review-conversation${conversation.resolved ? " conversation-resolved" : ""}${standalone ? " standalone" : ""}" data-root-comment-id="${root.id}">${resolvedEventHtml}<div class="review-comment-card conversation-root"><div class="review-comment-header"><strong>${escHtml(root.user.login)}</strong><span class="muted">${escHtml(new Date(root.created_at).toLocaleString())}</span>${orphanHtml}</div><div class="review-comment-body markdown-body">${reviewCommentBodies.get(root.id) ?? escHtml(root.body)}</div></div>${repliesHtml}${actionHtml}${replyForm}</div>`;
   }
 
   private buildDiffRows(
@@ -411,7 +462,7 @@ export class PRDetailPanel {
     filename: string,
     reviewConversations: ReviewConversation[],
     reviewCommentBodies: Map<number, string>,
-    inlineReviewReplies: boolean,
+    capabilities: ReviewCapabilities,
   ): DiffRowsResult {
     const lines = parsePatch(patch);
     const matchedCommentIds = new Set<number>();
@@ -483,7 +534,7 @@ export class PRDetailPanel {
         for (const id of conversationCommentIds(conversation)) {
           matchedCommentIds.add(id);
         }
-        rows += `<tr class="existing-review-comment"><td colspan="3">${this.renderReviewConversation(conversation, reviewCommentBodies, inlineReviewReplies)}</td></tr>`;
+        rows += `<tr class="existing-review-comment"><td colspan="3">${this.renderReviewConversation(conversation, reviewCommentBodies, capabilities)}</td></tr>`;
       }
     }
     return { html: rows, matchedCommentIds };
@@ -617,7 +668,7 @@ export class PRDetailPanel {
           file.filename,
           reviewConversations,
           reviewCommentBodyById,
-          capabilities.inlineReviewReplies,
+          capabilities,
         );
         for (const id of diffRows.matchedCommentIds) matchedReviewCommentIds.add(id);
         const statusClass = `file-status-${file.status}`;
@@ -632,7 +683,7 @@ export class PRDetailPanel {
     );
     const unplacedInlineHtml = unplacedConversations.length
       ? `<section class="unplaced-inline"><h2 class="section-heading">Unplaced inline conversations (${unplacedConversations.length})</h2><p class="muted">These conversations cannot be safely attached to a line in the current diff.</p>${unplacedConversations
-          .map((conversation) => this.renderReviewConversation(conversation, reviewCommentBodyById, capabilities.inlineReviewReplies, true))
+          .map((conversation) => this.renderReviewConversation(conversation, reviewCommentBodyById, capabilities, true))
           .join("")}</section>`
       : "";
     const replyCapabilityHtml = capabilities.inlineReviewReplies
@@ -661,7 +712,7 @@ export class PRDetailPanel {
 textarea,input[type="text"],select{background:var(--input-bg);color:var(--input-fg);border:1px solid var(--input-border);border-radius:2px;padding:6px 8px}textarea,input[type="text"]{width:100%;resize:vertical}.markdown-body{line-height:1.5;overflow-wrap:anywhere}.markdown-body h1{font-size:1.28em}.markdown-body h2{font-size:1.16em}.markdown-body h3{font-size:1.06em}.markdown-body code,.sha,.file-path,.diff-table{font-family:var(--mono)}.markdown-body pre{overflow:auto}.avatar{width:20px;height:20px;border-radius:50%}.time{margin-left:auto;color:var(--muted);font-size:.92em}.empty,.muted{color:var(--muted)}
 .submitted-review{border-left-width:3px}.submitted-review-approved{border-left-color:var(--success)}.submitted-review-request_changes{border-left-color:var(--danger)}.submitted-review-comment,.submitted-review-commented{border-left-color:var(--info)}.review-badge{font-size:.78em;border:1px solid currentColor;border-radius:999px;padding:1px 6px}.review-badge-approved{color:var(--success)}.review-badge-request_changes{color:var(--danger)}.review-badge-comment,.submitted-review-commented{color:var(--info)}.section-heading{font-size:1em;font-weight:600;margin:14px 0 8px}.review-history-toolbar{display:flex;justify-content:flex-end;align-items:center;gap:8px;margin:0 0 10px}.review-history-toolbar label{color:var(--muted);font-size:.9em}.review-history-toolbar select{width:auto;min-width:130px}.review-inline-summary{border-top:1px solid var(--border);padding:8px 10px}.review-inline-summary>strong{display:block;margin-bottom:6px}.review-inline-message{padding:7px 0;border-top:1px solid var(--border)}.review-inline-message:first-of-type{border-top:0}.review-inline-location{display:flex;align-items:center;gap:8px;color:var(--muted);margin-bottom:4px}.review-inline-location code{color:var(--fg)}
 .commit-entry{display:grid;grid-template-columns:max-content minmax(0,1fr) max-content;gap:10px;padding:7px 4px;border-bottom:1px solid var(--border)}.commit-author{color:var(--muted)}.file-header{width:100%;display:flex;align-items:center;gap:8px;border:0;background:var(--subtle);color:var(--fg);padding:7px 10px;cursor:pointer;text-align:left}.file-status{display:inline-flex;width:17px;height:17px;align-items:center;justify-content:center;border:1px solid currentColor;border-radius:2px;font-size:.72em;font-weight:600}.file-status-added{color:var(--success)}.file-status-deleted{color:var(--danger)}.file-status-modified,.file-status-changed{color:var(--warning)}.file-status-renamed{color:var(--info)}.file-path{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--fg)}.additions{color:var(--success)}.deletions{color:var(--danger)}.chevron{color:var(--muted)}.file-diff{overflow:auto;border-top:1px solid var(--border)}.diff-table{width:100%;border-collapse:collapse;font-size:.9em;table-layout:fixed}.ln{width:44px;text-align:right;padding:0 6px;color:var(--muted);background:var(--subtle);border-right:1px solid var(--border)}.lc{padding:0 8px;white-space:pre}.lc pre{margin:0;font:inherit}.diff-add .lc{background:color-mix(in srgb,var(--success) 12%,transparent)}.diff-del .lc{background:color-mix(in srgb,var(--danger) 12%,transparent)}.diff-hunk td{background:color-mix(in srgb,var(--info) 10%,transparent);color:var(--info)}.clickable-line{cursor:pointer}.review-comment-card,.pending-review-comment{padding:8px 12px;background:var(--subtle)}.review-comment-card{border-left:3px solid var(--info)}.review-comment-header{display:flex;align-items:center;gap:8px}.review-comment-body{margin-top:6px}.pending-review-comment{border-left:3px dashed var(--warning);display:flex;gap:8px}.pending-body{flex:1}.remove-pending{background:none;border:0;color:var(--muted);cursor:pointer}
-.review-conversation{position:relative;margin:8px 0;border:1px solid var(--border);border-left:3px solid var(--info);border-radius:3px;background:transparent;overflow:hidden}.review-conversation.standalone{margin:8px 0}.review-conversation.conversation-resolved{border-left-color:var(--success);opacity:.82}.conversation-root{border-left:0;background:var(--subtle);padding:10px 12px}.review-reply{position:relative;margin-left:22px;padding:9px 12px 9px 16px;border-top:1px solid var(--border);border-left:1px solid var(--border);background:color-mix(in srgb,var(--subtle) 55%,transparent)}.review-reply::before{content:"";position:absolute;left:-1px;top:17px;width:10px;border-top:1px solid var(--border)}.conversation-actions{display:flex;justify-content:flex-start;margin-left:22px;padding:5px 10px 7px 12px;border-left:1px solid var(--border)}.conversation-actions .icon-btn{width:24px;height:24px}.conversation-state{margin-left:auto;font-size:.82em}.conversation-state.resolved{color:var(--success)}.reply-form{margin-left:22px;padding:9px 12px 11px 16px;border-top:1px solid var(--border);border-left:1px solid var(--border);background:color-mix(in srgb,var(--subtle) 45%,transparent)}.reply-form textarea{min-height:70px}.reply-form .inline-actions{justify-content:flex-end}
+.review-conversation{position:relative;margin:8px 0;border:1px solid var(--border);border-left:3px solid var(--info);border-radius:3px;background:transparent;overflow:hidden}.review-conversation.standalone{margin:8px 0}.review-conversation.conversation-resolved{border-left-color:var(--success);opacity:.86}.conversation-event{display:flex;align-items:center;gap:7px;padding:5px 10px;border-bottom:1px solid var(--border);background:color-mix(in srgb,var(--success) 7%,var(--subtle));color:var(--muted);font-size:.86em}.conversation-event svg{width:14px;height:14px;flex:0 0 14px;color:var(--success)}.conversation-event strong{color:var(--fg)}.conversation-root{border-left:0;background:var(--subtle);padding:10px 12px}.review-reply{position:relative;margin-left:22px;padding:9px 12px 9px 16px;border-top:1px solid var(--border);border-left:1px solid var(--border);background:color-mix(in srgb,var(--subtle) 55%,transparent)}.review-reply::before{content:"";position:absolute;left:-1px;top:17px;width:10px;border-top:1px solid var(--border)}.conversation-actions{display:flex;justify-content:flex-start;gap:2px;margin-left:22px;padding:5px 10px 7px 12px;border-left:1px solid var(--border)}.conversation-actions .icon-btn{width:24px;height:24px}.conversation-state{margin-left:auto;font-size:.82em}.reply-form{margin-left:22px;padding:9px 12px 11px 16px;border-top:1px solid var(--border);border-left:1px solid var(--border);background:color-mix(in srgb,var(--subtle) 45%,transparent)}.reply-form textarea{min-height:70px}.reply-form .inline-actions{justify-content:flex-end}
 </style>
 </head>
 <body>
@@ -704,6 +755,7 @@ document.getElementById('edit-title')?.addEventListener('click',()=>setTitleEdit
 document.getElementById('open-browser')?.addEventListener('click',()=>post('openInBrowser'));document.getElementById('refresh')?.addEventListener('click',()=>post('refresh'));document.getElementById('edit-body')?.addEventListener('click',()=>setBodyEditing(true));document.getElementById('cancel-body')?.addEventListener('click',()=>setBodyEditing(false));document.getElementById('save-body')?.addEventListener('click',()=>post('editBody',{body:document.getElementById('body-input').value||''}));
 document.querySelectorAll('.edit-comment').forEach((button)=>button.addEventListener('click',()=>setCommentEditing(button.dataset.commentId,true)));document.querySelectorAll('.cancel-comment').forEach((button)=>button.addEventListener('click',()=>setCommentEditing(button.dataset.commentId,false)));document.querySelectorAll('.save-comment').forEach((button)=>button.addEventListener('click',()=>{const id=button.dataset.commentId;const input=document.getElementById('comment-input-'+id);const body=(input?.value||'').trim();if(!body)return;post('editComment',{commentId:Number(id),body});}));
 document.querySelectorAll('.reply-toggle').forEach((button)=>button.addEventListener('click',()=>{const id=button.dataset.commentId;const form=document.getElementById('reply-form-'+id);if(!form)return;form.hidden=!form.hidden;if(!form.hidden)form.querySelector('textarea')?.focus();}));document.querySelectorAll('.cancel-reply').forEach((button)=>button.addEventListener('click',()=>{const form=document.getElementById('reply-form-'+button.dataset.commentId);if(form)form.hidden=true;}));document.querySelectorAll('.submit-reply').forEach((button)=>button.addEventListener('click',()=>{const id=button.dataset.commentId;const form=document.getElementById('reply-form-'+id);const input=form?.querySelector('textarea');const body=(input?.value||'').trim();if(!body)return;button.disabled=true;post('replyInlineComment',{commentId:Number(id),body});}));
+document.querySelectorAll('.resolve-conversation').forEach((button)=>button.addEventListener('click',()=>{button.disabled=true;post('resolveInlineConversation',{commentId:Number(button.dataset.commentId)});}));document.querySelectorAll('.reopen-conversation').forEach((button)=>button.addEventListener('click',()=>{button.disabled=true;post('reopenInlineConversation',{commentId:Number(button.dataset.commentId)});}));
 document.getElementById('post-comment')?.addEventListener('click',()=>{const input=document.getElementById('comment-body');const body=(input.value||'').trim();if(!body)return;post('addComment',{body});input.value='';});document.querySelectorAll('[data-tab]').forEach((button)=>button.addEventListener('click',()=>showTab(button.dataset.tab,button)));document.getElementById('submit-inline')?.addEventListener('click',()=>post('submitInlineReview',{comments:pendingComments.filter(Boolean)}));document.getElementById('review-history-sort')?.addEventListener('change',(event)=>sortReviewHistory(event.currentTarget.value));
 document.querySelectorAll('[data-file-toggle]').forEach((button)=>button.addEventListener('click',()=>{const index=button.dataset.fileToggle;const diff=document.getElementById('file-diff-'+index);const expanded=button.getAttribute('aria-expanded')==='true';button.setAttribute('aria-expanded',String(!expanded));if(diff)diff.hidden=expanded;}));document.querySelectorAll('.clickable-line').forEach((row)=>row.addEventListener('click',()=>{const key=row.dataset.fileIndex+'-'+row.dataset.pos;const form=document.getElementById('comment-form-'+key);if(!form)return;if(openFormKey&&openFormKey!==key){const previous=document.getElementById('comment-form-'+openFormKey);if(previous)previous.hidden=true;}form.hidden=!form.hidden;openFormKey=form.hidden?null:key;if(!form.hidden)form.querySelector('textarea')?.focus();}));document.querySelectorAll('.cancel-inline').forEach((button)=>button.addEventListener('click',(event)=>{event.stopPropagation();button.closest('tr').hidden=true;openFormKey=null;}));document.querySelectorAll('.add-inline').forEach((button)=>button.addEventListener('click',(event)=>{event.stopPropagation();const row=button.closest('tr');const input=row.querySelector('textarea');const body=(input.value||'').trim();if(!body)return;const index=pendingComments.length;pendingComments.push({path:row.dataset.path,new_position:parseInt(row.dataset.newLine||'0',10),old_position:parseInt(row.dataset.oldLine||'0',10),body});const pending=document.createElement('tr');pending.innerHTML='<td colspan="3"><div class="pending-review-comment"><span class="pending-body"></span><button class="remove-pending" title="Remove">×</button></div></td>';pending.querySelector('.pending-body').textContent=body;pending.querySelector('.remove-pending').addEventListener('click',()=>{pendingComments[index]=null;pending.remove();updatePendingCount();});row.after(pending);row.hidden=true;input.value='';openFormKey=null;updatePendingCount();}));document.querySelectorAll('.markdown-body a[href]').forEach((link)=>link.addEventListener('click',(event)=>{event.preventDefault();post('openExternal',{url:link.getAttribute('href')});}));const restoredTab=typeof savedState.activeTab==='string'?savedState.activeTab:'inline-reviews';const restoredButton=document.querySelector('[data-tab="'+restoredTab+'"]');if(restoredButton)showTab(restoredTab,restoredButton,false);updatePendingCount();
 </script>
