@@ -14,6 +14,10 @@ import {
   conversationCommentIds,
   type ReviewConversation,
 } from "../features/pullRequests/domain/reviewConversationModel";
+import type {
+  PendingReviewSession,
+  PendingReviewSubmissionResult,
+} from "../features/pullRequests/domain/pendingReviewSession";
 import { log } from "../debug/outputChannel";
 
 const REPLY_ICON = `<svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M6.7 3 2 7l4.7 4V8.5c3.4 0 5.5 1 7.3 3.5-.5-4.6-2.8-7-7.3-7V3z"/></svg>`;
@@ -142,6 +146,15 @@ export class PRDetailPanel {
     [key: string]: unknown;
   }): Promise<void> {
     switch (message.command) {
+      case "submitPendingReview":
+        await this.submitPendingReview(
+          (message.session as PendingReviewSession) ?? {
+            inlineComments: [],
+            replies: [],
+            conversationActions: [],
+          },
+        );
+        break;
       case "submitInlineReview":
         await this.submitInlineComments(
           (message.comments as Array<{
@@ -197,6 +210,87 @@ export class PRDetailPanel {
         break;
       default:
         log(`PR unknown message: ${message.command}`);
+    }
+  }
+
+  private async submitPendingReview(session: PendingReviewSession): Promise<void> {
+    const result: PendingReviewSubmissionResult = {
+      succeededInlineCommentIds: [],
+      succeededReplyIds: [],
+      succeededConversationActionIds: [],
+      errors: [],
+    };
+
+    const inlineComments = (session.inlineComments ?? []).filter(
+      (item) => item?.id && item.path && item.body?.trim(),
+    );
+    if (inlineComments.length > 0) {
+      try {
+        await this.api.createReview(
+          this.repoInfo,
+          this.pr.number,
+          "COMMENT",
+          "",
+          inlineComments.map((item) => ({
+            path: item.path,
+            new_position: item.new_position,
+            old_position: item.old_position,
+            body: item.body.trim(),
+          })),
+        );
+        result.succeededInlineCommentIds.push(
+          ...inlineComments.map((item) => item.id),
+        );
+      } catch (error) {
+        result.errors.push(`Inline comments: ${(error as Error).message}`);
+      }
+    }
+
+    for (const reply of session.replies ?? []) {
+      if (!reply?.id || !Number.isFinite(reply.rootCommentId) || !reply.body?.trim()) {
+        continue;
+      }
+      try {
+        await vscode.commands.executeCommand(
+          "gitea.replyInlineReviewComment",
+          this.repoInfo,
+          this.pr.number,
+          reply.rootCommentId,
+          reply.body.trim(),
+        );
+        result.succeededReplyIds.push(reply.id);
+      } catch (error) {
+        result.errors.push(`Reply on #${reply.rootCommentId}: ${(error as Error).message}`);
+      }
+    }
+
+    for (const action of session.conversationActions ?? []) {
+      if (!action?.id || !Number.isFinite(action.rootCommentId)) continue;
+      try {
+        await vscode.commands.executeCommand(
+          action.action === "resolve"
+            ? "gitea.resolveInlineReviewConversation"
+            : "gitea.reopenInlineReviewConversation",
+          this.repoInfo,
+          action.rootCommentId,
+        );
+        result.succeededConversationActionIds.push(action.id);
+      } catch (error) {
+        result.errors.push(
+          `${action.action === "resolve" ? "Resolve" : "Reopen"} #${action.rootCommentId}: ${(error as Error).message}`,
+        );
+      }
+    }
+
+    await this.panel.webview.postMessage({
+      type: "pendingReviewSubmissionResult",
+      result,
+    });
+
+    if (result.errors.length > 0) {
+      vscode.window.showWarningMessage(
+        `Review changes partially submitted: ${result.errors.join(" | ")}`,
+      );
     }
   }
 
@@ -424,11 +518,12 @@ export class PRDetailPanel {
     standalone = false,
   ): string {
     const root = conversation.root;
+    const resolver = conversation.resolver ?? root.resolver;
     const resolvedControls = conversation.resolved
       ? `<span class="conversation-event-actions"><button class="icon-btn conversation-collapse-toggle" data-comment-id="${root.id}" title="Expand conversation" aria-label="Expand resolved review conversation" aria-expanded="false"><span class="expand-icon">${EXPAND_ICON}</span><span class="collapse-icon">${COLLAPSE_ICON}</span></button>${!conversation.orphaned && capabilities.inlineReviewResolution ? `<button class="icon-btn reopen-conversation" data-comment-id="${root.id}" title="Reopen conversation" aria-label="Reopen review conversation">${REOPEN_ICON}</button>` : ""}</span>`
       : "";
     const resolvedEventHtml = conversation.resolved
-      ? `<div class="conversation-event resolved-event">${RESOLVED_EVENT_ICON}<span><strong>${escHtml(root.resolver?.login || "Someone")}</strong> resolved this conversation</span>${resolvedControls}</div>`
+      ? `<div class="conversation-event resolved-event">${RESOLVED_EVENT_ICON}<span><strong>${escHtml(resolver?.login || "Someone")}</strong> resolved this conversation</span>${resolvedControls}</div>`
       : "";
     const orphanHtml = conversation.orphaned
       ? '<span class="conversation-state muted">Reply parent unavailable</span>'
@@ -456,9 +551,9 @@ export class PRDetailPanel {
     }
     const actionHtml = actions.length
       ? `<div class="conversation-actions">${actions.join("")}</div>`
-      : "";
+      : `<div class="conversation-actions"></div>`;
     const replyForm = !conversation.orphaned && capabilities.inlineReviewReplies
-      ? `<div class="reply-form" id="reply-form-${root.id}" hidden><textarea aria-label="Reply to inline review comment" placeholder="Reply to this review conversation..."></textarea><div class="inline-actions"><button class="btn submit-reply" data-comment-id="${root.id}">Reply</button><button class="btn sec cancel-reply" data-comment-id="${root.id}">Cancel</button></div></div>`
+      ? `<div class="reply-form" id="reply-form-${root.id}" hidden><textarea aria-label="Reply to inline review comment" placeholder="Reply to this review conversation..."></textarea><div class="inline-actions"><button class="btn submit-reply" data-comment-id="${root.id}">Add pending reply</button><button class="btn sec cancel-reply" data-comment-id="${root.id}">Cancel</button></div></div>`
       : "";
     const contentHtml = `<div class="conversation-content"><div class="review-comment-card conversation-root"><div class="review-comment-header"><strong>${escHtml(root.user.login)}</strong><span class="muted">${escHtml(new Date(root.created_at).toLocaleString())}</span>${orphanHtml}</div><div class="review-comment-body markdown-body">${reviewCommentBodies.get(root.id) ?? escHtml(root.body)}</div></div>${repliesHtml}${actionHtml}${replyForm}</div>`;
     return `<div class="review-conversation${conversation.resolved ? " conversation-resolved conversation-collapsed" : ""}${standalone ? " standalone" : ""}" data-root-comment-id="${root.id}">${resolvedEventHtml}${contentHtml}</div>`;
@@ -720,7 +815,7 @@ export class PRDetailPanel {
 textarea,input[type="text"],select{background:var(--input-bg);color:var(--input-fg);border:1px solid var(--input-border);border-radius:2px;padding:6px 8px}textarea,input[type="text"]{width:100%;resize:vertical}.markdown-body{line-height:1.5;overflow-wrap:anywhere}.markdown-body h1{font-size:1.28em}.markdown-body h2{font-size:1.16em}.markdown-body h3{font-size:1.06em}.markdown-body code,.sha,.file-path,.diff-table{font-family:var(--mono)}.markdown-body pre{overflow:auto}.avatar{width:20px;height:20px;border-radius:50%}.time{margin-left:auto;color:var(--muted);font-size:.92em}.empty,.muted{color:var(--muted)}
 .submitted-review{border-left-width:3px}.submitted-review-approved{border-left-color:var(--success)}.submitted-review-request_changes{border-left-color:var(--danger)}.submitted-review-comment,.submitted-review-commented{border-left-color:var(--info)}.review-badge{font-size:.78em;border:1px solid currentColor;border-radius:999px;padding:1px 6px}.review-badge-approved{color:var(--success)}.review-badge-request_changes{color:var(--danger)}.review-badge-comment,.submitted-review-commented{color:var(--info)}.section-heading{font-size:1em;font-weight:600;margin:14px 0 8px}.review-history-toolbar{display:flex;justify-content:flex-end;align-items:center;gap:8px;margin:0 0 10px}.review-history-toolbar label{color:var(--muted);font-size:.9em}.review-history-toolbar select{width:auto;min-width:130px}.review-inline-summary{border-top:1px solid var(--border);padding:8px 10px}.review-inline-summary>strong{display:block;margin-bottom:6px}.review-inline-message{padding:7px 0;border-top:1px solid var(--border)}.review-inline-message:first-of-type{border-top:0}.review-inline-location{display:flex;align-items:center;gap:8px;color:var(--muted);margin-bottom:4px}.review-inline-location code{color:var(--fg)}
 .commit-entry{display:grid;grid-template-columns:max-content minmax(0,1fr) max-content;gap:10px;padding:7px 4px;border-bottom:1px solid var(--border)}.commit-author{color:var(--muted)}.file-header{width:100%;display:flex;align-items:center;gap:8px;border:0;background:var(--subtle);color:var(--fg);padding:7px 10px;cursor:pointer;text-align:left}.file-status{display:inline-flex;width:17px;height:17px;align-items:center;justify-content:center;border:1px solid currentColor;border-radius:2px;font-size:.72em;font-weight:600}.file-status-added{color:var(--success)}.file-status-deleted{color:var(--danger)}.file-status-modified,.file-status-changed{color:var(--warning)}.file-status-renamed{color:var(--info)}.file-path{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--fg)}.additions{color:var(--success)}.deletions{color:var(--danger)}.chevron{color:var(--muted)}.file-diff{overflow:auto;border-top:1px solid var(--border)}.diff-table{width:100%;border-collapse:collapse;font-size:.9em;table-layout:fixed}.ln{width:44px;text-align:right;padding:0 6px;color:var(--muted);background:var(--subtle);border-right:1px solid var(--border)}.lc{padding:0 8px;white-space:pre}.lc pre{margin:0;font:inherit}.diff-add .lc{background:color-mix(in srgb,var(--success) 12%,transparent)}.diff-del .lc{background:color-mix(in srgb,var(--danger) 12%,transparent)}.diff-hunk td{background:color-mix(in srgb,var(--info) 10%,transparent);color:var(--info)}.clickable-line{cursor:pointer}.review-comment-card,.pending-review-comment{padding:8px 12px;background:var(--subtle)}.review-comment-card{border-left:3px solid var(--info)}.review-comment-header{display:flex;align-items:center;gap:8px}.review-comment-body{margin-top:6px}.pending-review-comment{border-left:3px dashed var(--warning);display:flex;gap:8px}.pending-body{flex:1}.remove-pending{background:none;border:0;color:var(--muted);cursor:pointer}
-.review-conversation{position:relative;margin:8px 0;border:1px solid var(--border);border-left:3px solid var(--info);border-radius:3px;background:transparent;overflow:hidden}.review-conversation.standalone{margin:8px 0}.review-conversation.conversation-resolved{border-left-color:var(--success);opacity:.86}.conversation-event{display:flex;align-items:center;gap:7px;padding:5px 10px;border-bottom:1px solid var(--border);background:color-mix(in srgb,var(--success) 7%,var(--subtle));color:var(--muted);font-size:.86em}.conversation-event>svg{width:14px;height:14px;flex:0 0 14px;color:var(--success)}.conversation-event strong{color:var(--fg)}.conversation-event-actions{display:flex;align-items:center;gap:2px;margin-left:auto}.conversation-event-actions .icon-btn{width:24px;height:24px}.conversation-collapse-toggle .collapse-icon{display:none}.conversation-resolved:not(.conversation-collapsed) .conversation-collapse-toggle .expand-icon{display:none}.conversation-resolved:not(.conversation-collapsed) .conversation-collapse-toggle .collapse-icon{display:inline-flex}.conversation-resolved.conversation-collapsed .conversation-content{display:none}.conversation-resolved.conversation-collapsed .conversation-event{border-bottom:0}.conversation-root{border-left:0;background:var(--subtle);padding:10px 12px}.review-reply{position:relative;margin-left:22px;padding:9px 12px 9px 16px;border-top:1px solid var(--border);border-left:1px solid var(--border);background:color-mix(in srgb,var(--subtle) 55%,transparent)}.review-reply::before{content:"";position:absolute;left:-1px;top:17px;width:10px;border-top:1px solid var(--border)}.conversation-actions{display:flex;justify-content:flex-start;gap:2px;margin-left:22px;padding:5px 10px 7px 12px;border-left:1px solid var(--border)}.conversation-actions .icon-btn{width:24px;height:24px}.conversation-state{margin-left:auto;font-size:.82em}.reply-form{margin-left:22px;padding:9px 12px 11px 16px;border-top:1px solid var(--border);border-left:1px solid var(--border);background:color-mix(in srgb,var(--subtle) 45%,transparent)}.reply-form textarea{min-height:70px}.reply-form .inline-actions{justify-content:flex-end}
+.review-conversation{position:relative;margin:8px 0;border:1px solid var(--border);border-left:3px solid var(--info);border-radius:3px;background:transparent;overflow:hidden}.review-conversation.standalone{margin:8px 0}.review-conversation.conversation-resolved{border-left-color:var(--success);opacity:.86}.conversation-event{display:flex;align-items:center;gap:7px;padding:5px 10px;border-bottom:1px solid var(--border);background:color-mix(in srgb,var(--success) 7%,var(--subtle));color:var(--muted);font-size:.86em}.conversation-event>svg{width:14px;height:14px;flex:0 0 14px;color:var(--success)}.conversation-event strong{color:var(--fg)}.conversation-event-actions{display:flex;align-items:center;gap:2px;margin-left:auto}.conversation-event-actions .icon-btn{width:24px;height:24px}.conversation-collapse-toggle .collapse-icon{display:none}.conversation-resolved:not(.conversation-collapsed) .conversation-collapse-toggle .expand-icon{display:none}.conversation-resolved:not(.conversation-collapsed) .conversation-collapse-toggle .collapse-icon{display:inline-flex}.conversation-resolved.conversation-collapsed .conversation-content{display:none}.conversation-resolved.conversation-collapsed .conversation-event{border-bottom:0}.conversation-root{border-left:0;background:var(--subtle);padding:10px 12px}.review-reply{position:relative;margin-left:22px;padding:9px 12px 9px 16px;border-top:1px solid var(--border);border-left:1px solid var(--border);background:color-mix(in srgb,var(--subtle) 55%,transparent)}.review-reply::before{content:"";position:absolute;left:-1px;top:17px;width:10px;border-top:1px solid var(--border)}.conversation-actions{display:flex;justify-content:flex-start;align-items:center;gap:2px;margin-left:22px;padding:5px 10px 7px 12px;border-left:1px solid var(--border);min-height:36px}.conversation-actions .icon-btn{width:24px;height:24px}.conversation-state{margin-left:auto;font-size:.82em}.reply-form{margin-left:22px;padding:9px 12px 11px 16px;border-top:1px solid var(--border);border-left:1px solid var(--border);background:color-mix(in srgb,var(--subtle) 45%,transparent)}.reply-form textarea{min-height:70px}.reply-form .inline-actions{justify-content:flex-end}.pending-review-operation{border-left-color:var(--warning)!important;background:color-mix(in srgb,var(--warning) 7%,var(--subtle))!important}.pending-review-operation .pending-operation-label{color:var(--warning);font-size:.82em}.pending-conversation-action{display:inline-flex;align-items:center;gap:5px;margin-left:4px;padding:2px 6px;border:1px dashed var(--warning);border-radius:3px;color:var(--warning);font-size:.82em}.pending-conversation-action button{border:0;background:transparent;color:inherit;cursor:pointer;padding:0 2px}.pending-review-warning{color:var(--warning);font-size:.82em}
 </style>
 </head>
 <body>
@@ -739,7 +834,7 @@ textarea,input[type="text"],select{background:var(--input-bg);color:var(--input-
 </header>
 <nav class="tabs" role="tablist" aria-label="Pull request detail sections"><button class="tab active" id="inline-reviews-tab" data-tab="inline-reviews" role="tab" aria-selected="true">${inlineIcon}<span>Inline Reviews (${reviewConversations.length})</span></button><button class="tab" id="review-history-tab" data-tab="review-history" role="tab" aria-selected="false">${historyIcon}<span>Review History (${activeReviews.length})</span></button><button class="tab" id="discussion-tab" data-tab="discussion" role="tab" aria-selected="false">${discussionIcon}<span>Discussion (${comments.length})</span></button><button class="tab" id="commits-tab" data-tab="commits" role="tab" aria-selected="false">Commits (${commits.length})</button></nav>
 <section id="tab-inline-reviews" class="tab-content active" role="tabpanel" aria-labelledby="inline-reviews-tab">
-  <div class="inline-review-toolbar"><button id="submit-inline" class="btn submit-inline">Submit inline comments</button><span id="pending-inline-label" class="pending-label">Pending inline comments: 0</span>${replyCapabilityHtml}</div>
+  <div class="inline-review-toolbar"><button id="submit-review" class="btn submit-inline">Submit review changes</button><button id="discard-review" class="btn sec submit-inline">Discard pending</button><span id="pending-review-label" class="pending-label">Pending review actions: 0</span><span id="pending-review-warning" class="pending-review-warning"></span>${replyCapabilityHtml}</div>
   ${filesHtml}
   ${unplacedInlineHtml}
 </section>
@@ -750,26 +845,40 @@ textarea,input[type="text"],select{background:var(--input-bg);color:var(--input-
 </section>
 <section id="tab-commits" class="tab-content" role="tabpanel" aria-labelledby="commits-tab">${commitsHtml}</section>
 <script nonce="${nonce}">
-const vscode=acquireVsCodeApi();const savedState=vscode.getState()||{};const expandedResolvedConversations=new Set(Array.isArray(savedState.expandedResolvedConversations)?savedState.expandedResolvedConversations.map(String):[]);let pendingComments=[];let openFormKey=null;let titleCancelled=false;const originalTitle=${JSON.stringify(pr.title)};
+const vscode=acquireVsCodeApi();const savedState=vscode.getState()||{};const expandedResolvedConversations=new Set(Array.isArray(savedState.expandedResolvedConversations)?savedState.expandedResolvedConversations.map(String):[]);const restoredPending=savedState.pendingReviewSession&&typeof savedState.pendingReviewSession==='object'?savedState.pendingReviewSession:{};let pendingReviewSession={inlineComments:Array.isArray(restoredPending.inlineComments)?restoredPending.inlineComments:[],replies:Array.isArray(restoredPending.replies)?restoredPending.replies:[],conversationActions:Array.isArray(restoredPending.conversationActions)?restoredPending.conversationActions:[]};let openFormKey=null;let titleCancelled=false;const originalTitle=${JSON.stringify(pr.title)};
 function post(command,extra){vscode.postMessage(Object.assign({command},extra||{}));}
+function makePendingId(prefix){return prefix+'-'+Date.now()+'-'+Math.random().toString(36).slice(2,8);}
+function persistPendingReview(){vscode.setState(Object.assign({},vscode.getState()||{},{pendingReviewSession:pendingReviewSession}));}
 function persistExpandedResolved(){vscode.setState(Object.assign({},vscode.getState()||{},{expandedResolvedConversations:Array.from(expandedResolvedConversations)}));}
 function setResolvedConversationExpanded(conversation,expanded,persist=true){if(!conversation)return;const id=conversation.dataset.rootCommentId;conversation.classList.toggle('conversation-collapsed',!expanded);const toggle=conversation.querySelector('.conversation-collapse-toggle');if(toggle){toggle.setAttribute('aria-expanded',String(expanded));toggle.title=expanded?'Collapse conversation':'Expand conversation';toggle.setAttribute('aria-label',(expanded?'Collapse':'Expand')+' resolved review conversation');}if(id){if(expanded)expandedResolvedConversations.add(String(id));else expandedResolvedConversations.delete(String(id));}if(persist)persistExpandedResolved();}
+function pendingReviewCount(){return pendingReviewSession.inlineComments.length+pendingReviewSession.replies.length+pendingReviewSession.conversationActions.length;}
+function updatePendingCount(){const count=pendingReviewCount();const submit=document.getElementById('submit-review');const discard=document.getElementById('discard-review');const label=document.getElementById('pending-review-label');if(submit)submit.classList.toggle('visible',count>0);if(discard)discard.classList.toggle('visible',count>0);if(label)label.textContent='Pending review actions: '+count;}
+function showPendingWarning(count){const warning=document.getElementById('pending-review-warning');if(warning)warning.textContent=count>0?count+' pending operation'+(count===1?'':'s')+' cannot be safely reattached to the current diff.':'';}
+function removePendingInline(id){pendingReviewSession.inlineComments=pendingReviewSession.inlineComments.filter((item)=>item.id!==id);document.querySelectorAll('[data-pending-id="'+id+'"]').forEach((el)=>el.remove());persistPendingReview();updatePendingCount();restorePendingReviewOverlays();}
+function renderPendingInline(item){if(document.querySelector('[data-pending-id="'+item.id+'"]'))return true;const rows=Array.from(document.querySelectorAll('.comment-form-row'));const row=rows.find((candidate)=>candidate.dataset.path===item.path&&Number(candidate.dataset.newLine||0)===Number(item.new_position||0)&&Number(candidate.dataset.oldLine||0)===Number(item.old_position||0));if(!row)return false;const pending=document.createElement('tr');pending.dataset.pendingId=item.id;pending.innerHTML='<td colspan="3"><div class="pending-review-comment"><span class="pending-body"></span><button class="remove-pending" title="Remove pending comment">×</button></div></td>';pending.querySelector('.pending-body').textContent=item.body;pending.querySelector('.remove-pending').addEventListener('click',()=>removePendingInline(item.id));row.after(pending);return true;}
+function removePendingReply(id){pendingReviewSession.replies=pendingReviewSession.replies.filter((item)=>item.id!==id);document.querySelectorAll('[data-pending-id="'+id+'"]').forEach((el)=>el.remove());persistPendingReview();updatePendingCount();restorePendingReviewOverlays();}
+function renderPendingReply(item){if(document.querySelector('[data-pending-id="'+item.id+'"]'))return true;const conversation=document.querySelector('.review-conversation[data-root-comment-id="'+item.rootCommentId+'"]');const content=conversation?.querySelector('.conversation-content');if(!content)return false;const pending=document.createElement('div');pending.className='review-reply pending-review-operation';pending.dataset.pendingId=item.id;const header=document.createElement('div');header.className='review-comment-header';const label=document.createElement('strong');label.className='pending-operation-label';label.textContent='Pending reply';const remove=document.createElement('button');remove.className='remove-pending';remove.title='Remove pending reply';remove.textContent='×';remove.addEventListener('click',()=>removePendingReply(item.id));header.append(label,remove);const body=document.createElement('div');body.className='review-comment-body';body.textContent=item.body;pending.append(header,body);const actions=content.querySelector('.conversation-actions');if(actions)content.insertBefore(pending,actions);else content.appendChild(pending);return true;}
+function removePendingConversationAction(id){pendingReviewSession.conversationActions=pendingReviewSession.conversationActions.filter((item)=>item.id!==id);document.querySelectorAll('[data-pending-id="'+id+'"]').forEach((el)=>el.remove());persistPendingReview();updatePendingCount();restorePendingReviewOverlays();}
+function renderPendingConversationAction(item){if(document.querySelector('[data-pending-id="'+item.id+'"]'))return true;const conversation=document.querySelector('.review-conversation[data-root-comment-id="'+item.rootCommentId+'"]');if(!conversation)return false;const target=conversation.classList.contains('conversation-resolved')?conversation.querySelector('.conversation-event-actions'):conversation.querySelector('.conversation-actions');if(!target)return false;const chip=document.createElement('span');chip.className='pending-conversation-action';chip.dataset.pendingId=item.id;const label=document.createElement('span');label.textContent=(item.action==='resolve'?'Resolve':'Reopen')+' pending';const remove=document.createElement('button');remove.title='Cancel pending lifecycle action';remove.textContent='×';remove.addEventListener('click',()=>removePendingConversationAction(item.id));chip.append(label,remove);target.appendChild(chip);return true;}
+function restorePendingReviewOverlays(){document.querySelectorAll('[data-pending-id]').forEach((el)=>el.remove());let unmatched=0;pendingReviewSession.inlineComments.forEach((item)=>{if(!renderPendingInline(item))unmatched+=1;});pendingReviewSession.replies.forEach((item)=>{if(!renderPendingReply(item))unmatched+=1;});pendingReviewSession.conversationActions.forEach((item)=>{if(!renderPendingConversationAction(item))unmatched+=1;});showPendingWarning(unmatched);updatePendingCount();}
+function queueConversationAction(rootCommentId,action){pendingReviewSession.conversationActions=pendingReviewSession.conversationActions.filter((item)=>Number(item.rootCommentId)!==Number(rootCommentId));pendingReviewSession.conversationActions.push({id:makePendingId('action'),rootCommentId:Number(rootCommentId),action:action});persistPendingReview();restorePendingReviewOverlays();}
 function showTab(name,button,persist=true){document.querySelectorAll('.tab-content').forEach((el)=>el.classList.remove('active'));document.querySelectorAll('.tab').forEach((el)=>{el.classList.remove('active');el.setAttribute('aria-selected','false');});document.getElementById('tab-'+name)?.classList.add('active');button.classList.add('active');button.setAttribute('aria-selected','true');if(persist)vscode.setState(Object.assign({},vscode.getState()||{},{activeTab:name}));}
 function setTitleEditing(editing){document.getElementById('title-row').classList.toggle('editing',editing);if(editing){titleCancelled=false;const input=document.getElementById('title-input');input.focus();input.select();}}
 function saveTitle(){if(titleCancelled)return;const input=document.getElementById('title-input');const title=(input.value||'').trim();if(!title){input.value=originalTitle;setTitleEditing(false);return;}if(title===originalTitle){setTitleEditing(false);return;}post('editTitle',{title});}
 function setBodyEditing(editing){document.getElementById('body-view').hidden=editing;document.getElementById('body-editor').hidden=!editing;if(editing)document.getElementById('body-input')?.focus();}
 function setCommentEditing(id,editing){const view=document.getElementById('comment-view-'+id);const editor=document.getElementById('comment-editor-'+id);if(view)view.hidden=editing;if(editor)editor.hidden=!editing;if(editing)document.getElementById('comment-input-'+id)?.focus();}
-function updatePendingCount(){const count=pendingComments.filter(Boolean).length;const submit=document.getElementById('submit-inline');const label=document.getElementById('pending-inline-label');if(submit)submit.classList.toggle('visible',count>0);if(label)label.textContent='Pending inline comments: '+count;}
 function sortReviewHistory(direction){const list=document.getElementById('review-history-list');if(!list)return;const items=Array.from(list.querySelectorAll('.submitted-review'));items.sort((left,right)=>{const a=Number(left.dataset.reviewTime||0);const b=Number(right.dataset.reviewTime||0);return direction==='desc'?b-a:a-b;});items.forEach((item)=>list.appendChild(item));}
 document.querySelectorAll('.conversation-resolved').forEach((conversation)=>setResolvedConversationExpanded(conversation,expandedResolvedConversations.has(String(conversation.dataset.rootCommentId)),false));
 document.querySelectorAll('.conversation-collapse-toggle').forEach((button)=>button.addEventListener('click',()=>{const conversation=button.closest('.review-conversation');if(!conversation)return;setResolvedConversationExpanded(conversation,conversation.classList.contains('conversation-collapsed'));}));
 document.getElementById('edit-title')?.addEventListener('click',()=>setTitleEditing(true));document.getElementById('title-input')?.addEventListener('blur',saveTitle);document.getElementById('title-input')?.addEventListener('keydown',(event)=>{if(event.key==='Escape'){titleCancelled=true;event.currentTarget.value=originalTitle;setTitleEditing(false);}else if(event.key==='Enter'){event.preventDefault();saveTitle();}});
-document.getElementById('open-browser')?.addEventListener('click',()=>post('openInBrowser'));document.getElementById('refresh')?.addEventListener('click',()=>post('refresh'));document.getElementById('edit-body')?.addEventListener('click',()=>setBodyEditing(true));document.getElementById('cancel-body')?.addEventListener('click',()=>setBodyEditing(false));document.getElementById('save-body')?.addEventListener('click',()=>post('editBody',{body:document.getElementById('body-input').value||''}));
+document.getElementById('open-browser')?.addEventListener('click',()=>post('openInBrowser'));document.getElementById('refresh')?.addEventListener('click',()=>{persistPendingReview();post('refresh');});document.getElementById('edit-body')?.addEventListener('click',()=>setBodyEditing(true));document.getElementById('cancel-body')?.addEventListener('click',()=>setBodyEditing(false));document.getElementById('save-body')?.addEventListener('click',()=>post('editBody',{body:document.getElementById('body-input').value||''}));
 document.querySelectorAll('.edit-comment').forEach((button)=>button.addEventListener('click',()=>setCommentEditing(button.dataset.commentId,true)));document.querySelectorAll('.cancel-comment').forEach((button)=>button.addEventListener('click',()=>setCommentEditing(button.dataset.commentId,false)));document.querySelectorAll('.save-comment').forEach((button)=>button.addEventListener('click',()=>{const id=button.dataset.commentId;const input=document.getElementById('comment-input-'+id);const body=(input?.value||'').trim();if(!body)return;post('editComment',{commentId:Number(id),body});}));
-document.querySelectorAll('.reply-toggle').forEach((button)=>button.addEventListener('click',()=>{const id=button.dataset.commentId;const form=document.getElementById('reply-form-'+id);if(!form)return;form.hidden=!form.hidden;if(!form.hidden)form.querySelector('textarea')?.focus();}));document.querySelectorAll('.cancel-reply').forEach((button)=>button.addEventListener('click',()=>{const form=document.getElementById('reply-form-'+button.dataset.commentId);if(form)form.hidden=true;}));document.querySelectorAll('.submit-reply').forEach((button)=>button.addEventListener('click',()=>{const id=button.dataset.commentId;const form=document.getElementById('reply-form-'+id);const input=form?.querySelector('textarea');const body=(input?.value||'').trim();if(!body)return;button.disabled=true;post('replyInlineComment',{commentId:Number(id),body});}));
-document.querySelectorAll('.resolve-conversation').forEach((button)=>button.addEventListener('click',()=>{button.disabled=true;post('resolveInlineConversation',{commentId:Number(button.dataset.commentId)});}));document.querySelectorAll('.reopen-conversation').forEach((button)=>button.addEventListener('click',()=>{button.disabled=true;const id=String(button.dataset.commentId||'');if(id){expandedResolvedConversations.delete(id);persistExpandedResolved();}post('reopenInlineConversation',{commentId:Number(button.dataset.commentId)});}));
-document.getElementById('post-comment')?.addEventListener('click',()=>{const input=document.getElementById('comment-body');const body=(input.value||'').trim();if(!body)return;post('addComment',{body});input.value='';});document.querySelectorAll('[data-tab]').forEach((button)=>button.addEventListener('click',()=>showTab(button.dataset.tab,button)));document.getElementById('submit-inline')?.addEventListener('click',()=>post('submitInlineReview',{comments:pendingComments.filter(Boolean)}));document.getElementById('review-history-sort')?.addEventListener('change',(event)=>sortReviewHistory(event.currentTarget.value));
-document.querySelectorAll('[data-file-toggle]').forEach((button)=>button.addEventListener('click',()=>{const index=button.dataset.fileToggle;const diff=document.getElementById('file-diff-'+index);const expanded=button.getAttribute('aria-expanded')==='true';button.setAttribute('aria-expanded',String(!expanded));if(diff)diff.hidden=expanded;}));document.querySelectorAll('.clickable-line').forEach((row)=>row.addEventListener('click',()=>{const key=row.dataset.fileIndex+'-'+row.dataset.pos;const form=document.getElementById('comment-form-'+key);if(!form)return;if(openFormKey&&openFormKey!==key){const previous=document.getElementById('comment-form-'+openFormKey);if(previous)previous.hidden=true;}form.hidden=!form.hidden;openFormKey=form.hidden?null:key;if(!form.hidden)form.querySelector('textarea')?.focus();}));document.querySelectorAll('.cancel-inline').forEach((button)=>button.addEventListener('click',(event)=>{event.stopPropagation();button.closest('tr').hidden=true;openFormKey=null;}));document.querySelectorAll('.add-inline').forEach((button)=>button.addEventListener('click',(event)=>{event.stopPropagation();const row=button.closest('tr');const input=row.querySelector('textarea');const body=(input.value||'').trim();if(!body)return;const index=pendingComments.length;pendingComments.push({path:row.dataset.path,new_position:parseInt(row.dataset.newLine||'0',10),old_position:parseInt(row.dataset.oldLine||'0',10),body});const pending=document.createElement('tr');pending.innerHTML='<td colspan="3"><div class="pending-review-comment"><span class="pending-body"></span><button class="remove-pending" title="Remove">×</button></div></td>';pending.querySelector('.pending-body').textContent=body;pending.querySelector('.remove-pending').addEventListener('click',()=>{pendingComments[index]=null;pending.remove();updatePendingCount();});row.after(pending);row.hidden=true;input.value='';openFormKey=null;updatePendingCount();}));document.querySelectorAll('.markdown-body a[href]').forEach((link)=>link.addEventListener('click',(event)=>{event.preventDefault();post('openExternal',{url:link.getAttribute('href')});}));const restoredTab=typeof savedState.activeTab==='string'?savedState.activeTab:'inline-reviews';const restoredButton=document.querySelector('[data-tab="'+restoredTab+'"]');if(restoredButton)showTab(restoredTab,restoredButton,false);updatePendingCount();
+document.querySelectorAll('.reply-toggle').forEach((button)=>button.addEventListener('click',()=>{const id=button.dataset.commentId;const form=document.getElementById('reply-form-'+id);if(!form)return;form.hidden=!form.hidden;if(!form.hidden)form.querySelector('textarea')?.focus();}));document.querySelectorAll('.cancel-reply').forEach((button)=>button.addEventListener('click',()=>{const form=document.getElementById('reply-form-'+button.dataset.commentId);if(form)form.hidden=true;}));document.querySelectorAll('.submit-reply').forEach((button)=>button.addEventListener('click',()=>{const id=button.dataset.commentId;const form=document.getElementById('reply-form-'+id);const input=form?.querySelector('textarea');const body=(input?.value||'').trim();if(!body)return;const item={id:makePendingId('reply'),rootCommentId:Number(id),body:body};pendingReviewSession.replies.push(item);persistPendingReview();input.value='';form.hidden=true;restorePendingReviewOverlays();}));
+document.querySelectorAll('.resolve-conversation').forEach((button)=>button.addEventListener('click',()=>queueConversationAction(Number(button.dataset.commentId),'resolve')));document.querySelectorAll('.reopen-conversation').forEach((button)=>button.addEventListener('click',()=>queueConversationAction(Number(button.dataset.commentId),'reopen')));
+document.getElementById('post-comment')?.addEventListener('click',()=>{const input=document.getElementById('comment-body');const body=(input.value||'').trim();if(!body)return;post('addComment',{body});input.value='';});document.querySelectorAll('[data-tab]').forEach((button)=>button.addEventListener('click',()=>showTab(button.dataset.tab,button)));document.getElementById('submit-review')?.addEventListener('click',(event)=>{const button=event.currentTarget;if(pendingReviewCount()===0)return;button.disabled=true;persistPendingReview();post('submitPendingReview',{session:pendingReviewSession});});document.getElementById('discard-review')?.addEventListener('click',()=>{pendingReviewSession={inlineComments:[],replies:[],conversationActions:[]};persistPendingReview();post('refresh');});document.getElementById('review-history-sort')?.addEventListener('change',(event)=>sortReviewHistory(event.currentTarget.value));
+document.querySelectorAll('[data-file-toggle]').forEach((button)=>button.addEventListener('click',()=>{const index=button.dataset.fileToggle;const diff=document.getElementById('file-diff-'+index);const expanded=button.getAttribute('aria-expanded')==='true';button.setAttribute('aria-expanded',String(!expanded));if(diff)diff.hidden=expanded;}));document.querySelectorAll('.clickable-line').forEach((row)=>row.addEventListener('click',()=>{const key=row.dataset.fileIndex+'-'+row.dataset.pos;const form=document.getElementById('comment-form-'+key);if(!form)return;if(openFormKey&&openFormKey!==key){const previous=document.getElementById('comment-form-'+openFormKey);if(previous)previous.hidden=true;}form.hidden=!form.hidden;openFormKey=form.hidden?null:key;if(!form.hidden)form.querySelector('textarea')?.focus();}));document.querySelectorAll('.cancel-inline').forEach((button)=>button.addEventListener('click',(event)=>{event.stopPropagation();button.closest('tr').hidden=true;openFormKey=null;}));document.querySelectorAll('.add-inline').forEach((button)=>button.addEventListener('click',(event)=>{event.stopPropagation();const row=button.closest('tr');const input=row.querySelector('textarea');const body=(input.value||'').trim();if(!body)return;const item={id:makePendingId('inline'),path:row.dataset.path,new_position:parseInt(row.dataset.newLine||'0',10),old_position:parseInt(row.dataset.oldLine||'0',10),body:body};pendingReviewSession.inlineComments.push(item);persistPendingReview();row.hidden=true;input.value='';openFormKey=null;restorePendingReviewOverlays();}));document.querySelectorAll('.markdown-body a[href]').forEach((link)=>link.addEventListener('click',(event)=>{event.preventDefault();post('openExternal',{url:link.getAttribute('href')});}));
+window.addEventListener('message',(event)=>{const message=event.data;if(!message||message.type!=='pendingReviewSubmissionResult')return;const result=message.result||{};const inlineIds=new Set(Array.isArray(result.succeededInlineCommentIds)?result.succeededInlineCommentIds:[]);const replyIds=new Set(Array.isArray(result.succeededReplyIds)?result.succeededReplyIds:[]);const actionIds=new Set(Array.isArray(result.succeededConversationActionIds)?result.succeededConversationActionIds:[]);pendingReviewSession.inlineComments=pendingReviewSession.inlineComments.filter((item)=>!inlineIds.has(item.id));pendingReviewSession.replies=pendingReviewSession.replies.filter((item)=>!replyIds.has(item.id));pendingReviewSession.conversationActions=pendingReviewSession.conversationActions.filter((item)=>!actionIds.has(item.id));persistPendingReview();const submit=document.getElementById('submit-review');if(submit)submit.disabled=false;const succeeded=inlineIds.size+replyIds.size+actionIds.size;if(succeeded>0){post('refresh');}else{restorePendingReviewOverlays();}});
+const restoredTab=typeof savedState.activeTab==='string'?savedState.activeTab:'inline-reviews';const restoredButton=document.querySelector('[data-tab="'+restoredTab+'"]');if(restoredButton)showTab(restoredTab,restoredButton,false);restorePendingReviewOverlays();
 </script>
 </body>
 </html>`;
