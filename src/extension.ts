@@ -135,6 +135,18 @@ export async function activate(
         );
       },
     ),
+    vscode.commands.registerCommand(
+      "gitea.resolveInlineReviewConversation",
+      async (repoInfo: RepoInfo, commentId: number) => {
+        await reviewApi.resolveReviewComment(repoInfo, commentId);
+      },
+    ),
+    vscode.commands.registerCommand(
+      "gitea.reopenInlineReviewConversation",
+      async (repoInfo: RepoInfo, commentId: number) => {
+        await reviewApi.reopenReviewComment(repoInfo, commentId);
+      },
+    ),
     vscode.commands.registerCommand("gitea.openActivePR", async () => {
       const state = prSession.current;
       if (state.kind !== "active") {
