@@ -43,6 +43,12 @@ export interface ConflictResolutionOperations {
   abortMerge(): Promise<void>;
 }
 
+export interface SourceBranchPreparationOperations {
+  inspect(): Promise<ConflictResolutionInspection>;
+  fetch(remote: string): Promise<void>;
+  checkoutSource(plan: ConflictResolutionPlan): Promise<void>;
+}
+
 export type SourceSynchronization = "current" | "fastForward" | "diverged";
 
 export function classifySourceSynchronization(
@@ -52,6 +58,26 @@ export function classifySourceSynchronization(
 ): SourceSynchronization {
   if (localSha === remoteSha) return "current";
   return localIsAncestorOfRemote ? "fastForward" : "diverged";
+}
+
+export async function executeSourceBranchPreparation(
+  plan: ConflictResolutionPlan,
+  operations: SourceBranchPreparationOperations,
+): Promise<void> {
+  const inspection = await operations.inspect();
+  if (inspection.mergeInProgress) {
+    throw new Error(
+      "A Git merge is already in progress. Resolve it or abort it before switching to the pull request source branch.",
+    );
+  }
+  if (inspection.dirty) {
+    throw new Error(
+      "The working tree contains local changes. Commit, stash, or discard them before switching to the pull request source branch.",
+    );
+  }
+
+  await operations.fetch(plan.sourceRemote);
+  await operations.checkoutSource(plan);
 }
 
 export async function executeConflictResolutionPreparation(
@@ -80,6 +106,29 @@ export async function executeConflictResolutionPreparation(
 }
 
 export class ConflictResolutionService {
+  async prepareSourceBranch(
+    repoInfo: RepoInfo,
+    pullRequest: GiteaPullRequest,
+  ): Promise<void> {
+    const plan = await this.plan(repoInfo, pullRequest);
+    info(
+      `[source-branch] prepare repo=${repoInfo.label} pr=#${pullRequest.number} source=${plan.sourceRemoteRef}@${plan.sourceSha.slice(0, 8)}`,
+    );
+
+    await executeSourceBranchPreparation(plan, {
+      inspect: () => this.inspect(repoInfo),
+      fetch: async (remote) => {
+        await this.git(repoInfo, ["fetch", "--prune", remote]);
+        debug(`[source-branch] fetched repo=${repoInfo.label} remote=${remote}`);
+      },
+      checkoutSource: (resolvedPlan) => this.checkoutSource(repoInfo, resolvedPlan),
+    });
+
+    info(
+      `[source-branch] prepared repo=${repoInfo.label} pr=#${pullRequest.number} branch=${plan.sourceBranch} sha=${plan.sourceSha.slice(0, 8)}`,
+    );
+  }
+
   async prepare(
     repoInfo: RepoInfo,
     pullRequest: GiteaPullRequest,
@@ -152,7 +201,7 @@ export class ConflictResolutionService {
     );
     if (!sourceRemote) {
       throw new Error(
-        `No local Git remote matches the pull request source repository '${sourceRepository}'. Add a remote for the fork before preparing conflict resolution.`,
+        `No local Git remote matches the pull request source repository '${sourceRepository}'. Add a remote for the fork before preparing the source branch.`,
       );
     }
 
@@ -176,19 +225,44 @@ export class ConflictResolutionService {
     ).trim();
     if (remoteSha !== plan.sourceSha) {
       throw new Error(
-        `The fetched source branch '${plan.sourceRemoteRef}' moved from the pull request head (${plan.sourceSha.slice(0, 8)} -> ${remoteSha.slice(0, 8)}). Refresh the pull request before preparing conflict resolution.`,
+        `The fetched source branch '${plan.sourceRemoteRef}' moved from the pull request head (${plan.sourceSha.slice(0, 8)} -> ${remoteSha.slice(0, 8)}). Refresh the pull request before switching branches.`,
       );
     }
 
+    const localRef = `refs/heads/${plan.sourceBranch}`;
     const localExists =
       (await this.gitOptional(repoInfo, [
         "show-ref",
         "--verify",
         "--quiet",
-        `refs/heads/${plan.sourceBranch}`,
+        localRef,
       ])) !== undefined;
 
+    let synchronization: SourceSynchronization = "current";
     if (localExists) {
+      const localSha = String(
+        (await this.git(repoInfo, ["rev-parse", localRef])).stdout,
+      ).trim();
+      const localIsAncestorOfRemote =
+        localSha === remoteSha ||
+        (await this.gitOptional(repoInfo, [
+          "merge-base",
+          "--is-ancestor",
+          localSha,
+          plan.sourceRemoteRef,
+        ])) !== undefined;
+      synchronization = classifySourceSynchronization(
+        localSha,
+        remoteSha,
+        localIsAncestorOfRemote,
+      );
+
+      if (synchronization === "diverged") {
+        throw new Error(
+          `Local source branch '${plan.sourceBranch}' has commits that are not part of the pull request head. Reconcile or preserve that local work before switching branches; the extension will not reset it.`,
+        );
+      }
+
       await this.git(repoInfo, ["checkout", plan.sourceBranch]);
     } else {
       await this.git(repoInfo, [
@@ -209,32 +283,10 @@ export class ConflictResolutionService {
       );
     }
 
-    const localSha = String(
-      (await this.git(repoInfo, ["rev-parse", "HEAD"])).stdout,
-    ).trim();
-    const localIsAncestorOfRemote =
-      localSha === remoteSha ||
-      (await this.gitOptional(repoInfo, [
-        "merge-base",
-        "--is-ancestor",
-        localSha,
-        plan.sourceRemoteRef,
-      ])) !== undefined;
-    const synchronization = classifySourceSynchronization(
-      localSha,
-      remoteSha,
-      localIsAncestorOfRemote,
-    );
-
-    if (synchronization === "diverged") {
-      throw new Error(
-        `Local source branch '${plan.sourceBranch}' has commits that are not part of the pull request head. Reconcile or preserve that local work before preparing conflict resolution; the extension will not reset it.`,
-      );
-    }
-    if (synchronization === "fastForward") {
+    if (localExists && synchronization === "fastForward") {
       await this.git(repoInfo, ["merge", "--ff-only", plan.sourceRemoteRef]);
       info(
-        `[conflict-resolution] fast-forwarded source repo=${repoInfo.label} branch=${plan.sourceBranch} to=${remoteSha.slice(0, 8)}`,
+        `[source-branch] fast-forwarded repo=${repoInfo.label} branch=${plan.sourceBranch} to=${remoteSha.slice(0, 8)}`,
       );
     }
 
@@ -248,7 +300,7 @@ export class ConflictResolutionService {
     }
 
     debug(
-      `[conflict-resolution] checked out source repo=${repoInfo.label} branch=${plan.sourceBranch} sha=${finalSha.slice(0, 8)}`,
+      `[source-branch] checked out repo=${repoInfo.label} branch=${plan.sourceBranch} sha=${finalSha.slice(0, 8)}`,
     );
   }
 
@@ -324,8 +376,6 @@ export class ConflictResolutionService {
     if (matches.includes("origin")) return "origin";
     if (matches.length > 0) return matches[0];
 
-    // Keep compatibility with repositories detected through SSH aliases where
-    // the remote URL cannot be normalized to the Gitea API repository name.
     if (
       normalizeRepositoryName(workspaceRepository) === normalizedTarget &&
       remotes.has("origin")
