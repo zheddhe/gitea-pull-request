@@ -49,7 +49,7 @@ export class PullRequestReviewApi {
     const capabilities = evaluateGiteaServerCapabilities(version);
     this.capabilitiesByServer.set(repoInfo.serverUrl, capabilities);
     log(
-      `[review-api] server capabilities version=${version || "unknown"} inlineReviewReplies=${capabilities.inlineReviewReplies}`,
+      `[review-api] server capabilities version=${version || "unknown"} inlineReviewResolution=${capabilities.inlineReviewResolution} inlineReviewReplies=${capabilities.inlineReviewReplies}`,
     );
     return capabilities;
   }
@@ -198,6 +198,39 @@ export class PullRequestReviewApi {
         method: "POST",
         body: JSON.stringify({ body }),
       },
+    );
+  }
+
+  async resolveReviewComment(
+    repoInfo: RepoInfo,
+    commentId: number,
+  ): Promise<void> {
+    await this.updateReviewCommentResolution(repoInfo, commentId, true);
+  }
+
+  async reopenReviewComment(
+    repoInfo: RepoInfo,
+    commentId: number,
+  ): Promise<void> {
+    await this.updateReviewCommentResolution(repoInfo, commentId, false);
+  }
+
+  private async updateReviewCommentResolution(
+    repoInfo: RepoInfo,
+    commentId: number,
+    resolved: boolean,
+  ): Promise<void> {
+    const capabilities = await this.getServerCapabilities(repoInfo);
+    if (!capabilities.inlineReviewResolution) {
+      throw new Error(
+        `Inline review resolve/reopen requires Gitea 1.26.0 or newer (server: ${capabilities.version || "unknown"}).`,
+      );
+    }
+
+    await this.request<void>(
+      repoInfo,
+      `/repos/${repoInfo.owner}/${repoInfo.repo}/pulls/comments/${commentId}/${resolved ? "resolve" : "unresolve"}`,
+      { method: "POST" },
     );
   }
 
