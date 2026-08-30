@@ -45,12 +45,34 @@ export class WorkingFileBridgeService {
       };
     }
 
-    const root = path.resolve(decision.repository.rootPath);
+    return this.openFromVerifiedWorkspace(decision.repository, pr, filename);
+  }
+
+  /**
+   * Opens a file after a Git preparation service has already verified that the
+   * supplied workspace is checked out exactly at the pull request source head.
+   * This intentionally supports fork PRs checked out through a dedicated
+   * source remote in the base repository workspace.
+   */
+  async openPrepared(
+    preparedRepo: RepoInfo,
+    pr: GiteaPullRequest,
+    filename: string,
+  ): Promise<OpenWorkingFileResult> {
+    return this.openFromVerifiedWorkspace(preparedRepo, pr, filename);
+  }
+
+  private async openFromVerifiedWorkspace(
+    repoInfo: RepoInfo,
+    pr: GiteaPullRequest,
+    filename: string,
+  ): Promise<OpenWorkingFileResult> {
+    const root = path.resolve(repoInfo.rootPath);
     const target = path.resolve(root, filename);
     const relative = path.relative(root, target);
     if (relative.startsWith("..") || path.isAbsolute(relative)) {
       info(
-        `[working-file] unavailable repo=${activeRepo.key} pr=#${pr.number} file=${filename} reason=pathOutsideWorkspace`,
+        `[working-file] unavailable repo=${repoInfo.key} pr=#${pr.number} file=${filename} reason=pathOutsideWorkspace`,
       );
       return { kind: "unavailable", reason: "pathOutsideWorkspace" };
     }
@@ -63,7 +85,7 @@ export class WorkingFileBridgeService {
       }
     } catch {
       info(
-        `[working-file] unavailable repo=${activeRepo.key} pr=#${pr.number} file=${filename} reason=fileNotFound`,
+        `[working-file] unavailable repo=${repoInfo.key} pr=#${pr.number} file=${filename} reason=fileNotFound`,
       );
       return { kind: "unavailable", reason: "fileNotFound" };
     }
@@ -73,7 +95,7 @@ export class WorkingFileBridgeService {
       preserveFocus: false,
     });
     info(
-      `[working-file] opened repo=${activeRepo.key} pr=#${pr.number} branch=${pr.head.ref} file=${filename}`,
+      `[working-file] opened repo=${repoInfo.key} pr=#${pr.number} branch=${pr.head.ref} file=${filename}`,
     );
     return { kind: "opened", uri };
   }
