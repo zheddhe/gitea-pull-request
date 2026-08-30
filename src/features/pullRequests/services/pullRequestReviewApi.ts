@@ -3,6 +3,7 @@ import type {
   GiteaCombinedStatus,
   GiteaComment,
   GiteaReview,
+  GiteaReviewComment,
 } from "../../../api/types";
 import type { RepoInfo } from "../../../context/repoManager";
 import { log } from "../../../debug/outputChannel";
@@ -151,6 +152,22 @@ export class PullRequestReviewApi {
       {
         method: "POST",
         body: JSON.stringify({ event, body, comments: [] }),
+      },
+    );
+  }
+
+  async replyToReviewComment(
+    repoInfo: RepoInfo,
+    number: number,
+    commentId: number,
+    body: string,
+  ): Promise<GiteaReviewComment> {
+    return this.request<GiteaReviewComment>(
+      repoInfo,
+      `/repos/${repoInfo.owner}/${repoInfo.repo}/pulls/${number}/comments/${commentId}/replies`,
+      {
+        method: "POST",
+        body: JSON.stringify({ body }),
       },
     );
   }
