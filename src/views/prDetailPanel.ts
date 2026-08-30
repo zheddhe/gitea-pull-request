@@ -9,6 +9,11 @@ import type {
   GiteaCommit,
   GiteaReviewComment,
 } from "../api/types";
+import {
+  buildReviewConversations,
+  conversationCommentIds,
+  type ReviewConversation,
+} from "../features/pullRequests/domain/reviewConversationModel";
 import { log } from "../debug/outputChannel";
 
 function parseRawDiff(raw: string): Map<string, string> {
@@ -134,6 +139,12 @@ export class PRDetailPanel {
           }>) ?? [],
         );
         break;
+      case "replyInlineComment":
+        await this.replyInlineComment(
+          Number(message.commentId),
+          (message.body as string) ?? "",
+        );
+        break;
       case "addComment":
         await this.addPRComment((message.body as string) ?? "");
         break;
@@ -167,6 +178,27 @@ export class PRDetailPanel {
         break;
       default:
         log(`PR unknown message: ${message.command}`);
+    }
+  }
+
+  private async replyInlineComment(commentId: number, body: string): Promise<void> {
+    if (!Number.isFinite(commentId) || commentId <= 0 || !body.trim()) return;
+    try {
+      await vscode.commands.executeCommand(
+        "gitea.replyInlineReviewComment",
+        this.repoInfo,
+        this.pr.number,
+        commentId,
+        body.trim(),
+      );
+      await this.update(this.pr);
+      vscode.window.showInformationMessage(
+        `Reply posted on PR #${this.pr.number}.`,
+      );
+    } catch (error) {
+      vscode.window.showErrorMessage(
+        `Failed to reply to inline review comment: ${(error as Error).message}`,
+      );
     }
   }
 
@@ -326,11 +358,35 @@ export class PRDetailPanel {
     }
   }
 
+  private renderReviewConversation(
+    conversation: ReviewConversation,
+    reviewCommentBodies: Map<number, string>,
+    standalone = false,
+  ): string {
+    const root = conversation.root;
+    const resolvedHtml = conversation.resolved
+      ? `<span class="conversation-state resolved">Resolved${root.resolver?.login ? ` by ${escHtml(root.resolver.login)}` : ""}</span>`
+      : "";
+    const orphanHtml = conversation.orphaned
+      ? '<span class="conversation-state muted">Reply parent unavailable</span>'
+      : "";
+    const repliesHtml = conversation.replies
+      .map(
+        (reply) =>
+          `<div class="review-reply"><div class="review-comment-header"><strong>${escHtml(reply.user.login)}</strong><span class="muted">${escHtml(new Date(reply.created_at).toLocaleString())}</span></div><div class="review-comment-body markdown-body">${reviewCommentBodies.get(reply.id) ?? escHtml(reply.body)}</div></div>`,
+      )
+      .join("");
+    const replyControls = conversation.orphaned
+      ? ""
+      : `<div class="conversation-actions"><button class="btn sec reply-toggle" data-comment-id="${root.id}">Reply</button></div><div class="reply-form" id="reply-form-${root.id}" hidden><textarea aria-label="Reply to inline review comment" placeholder="Reply to this review conversation..."></textarea><div class="inline-actions"><button class="btn submit-reply" data-comment-id="${root.id}">Reply</button><button class="btn sec cancel-reply" data-comment-id="${root.id}">Cancel</button></div></div>`;
+    return `<div class="review-conversation${conversation.resolved ? " conversation-resolved" : ""}${standalone ? " standalone" : ""}" data-root-comment-id="${root.id}"><div class="review-comment-card"><div class="review-comment-header"><strong>${escHtml(root.user.login)}</strong><span class="muted">${escHtml(new Date(root.created_at).toLocaleString())}</span>${resolvedHtml}${orphanHtml}</div><div class="review-comment-body markdown-body">${reviewCommentBodies.get(root.id) ?? escHtml(root.body)}</div></div>${repliesHtml}${replyControls}</div>`;
+  }
+
   private buildDiffRows(
     patch: string,
     fileIndex: number,
     filename: string,
-    reviewComments: GiteaReviewComment[],
+    reviewConversations: ReviewConversation[],
     reviewCommentBodies: Map<number, string>,
   ): DiffRowsResult {
     const lines = parsePatch(patch);
@@ -342,16 +398,19 @@ export class PRDetailPanel {
       };
     }
 
-    const byNewLine = new Map<number, GiteaReviewComment[]>();
-    const byOldLine = new Map<number, GiteaReviewComment[]>();
-    for (const comment of reviewComments.filter((item) => item.path === filename)) {
-      if ((comment.new_position ?? 0) > 0) {
-        const line = comment.new_position as number;
-        byNewLine.set(line, [...(byNewLine.get(line) ?? []), comment]);
+    const byNewLine = new Map<number, ReviewConversation[]>();
+    const byOldLine = new Map<number, ReviewConversation[]>();
+    for (const conversation of reviewConversations.filter(
+      (item) => !item.orphaned && item.root.path === filename,
+    )) {
+      const root = conversation.root;
+      if ((root.new_position ?? 0) > 0) {
+        const line = root.new_position as number;
+        byNewLine.set(line, [...(byNewLine.get(line) ?? []), conversation]);
       }
-      if ((comment.old_position ?? 0) > 0) {
-        const line = comment.old_position as number;
-        byOldLine.set(line, [...(byOldLine.get(line) ?? []), comment]);
+      if ((root.old_position ?? 0) > 0) {
+        const line = root.old_position as number;
+        byOldLine.set(line, [...(byOldLine.get(line) ?? []), conversation]);
       }
     }
 
@@ -385,20 +444,22 @@ export class PRDetailPanel {
         rows += `<tr class="comment-form-row" id="comment-form-${key}" data-path="${escHtml(filename)}" data-new-line="${line.newLine ?? 0}" data-old-line="${line.oldLine ?? 0}" hidden><td colspan="3"><div class="inline-comment-form"><textarea placeholder="Leave a review comment on this line..."></textarea><div class="inline-actions"><button class="btn add-inline">Add Review Comment</button><button class="btn sec cancel-inline">Cancel</button></div></div></td></tr>`;
       }
 
-      const lineComments = new Map<number, GiteaReviewComment>();
+      const lineConversations = new Map<number, ReviewConversation>();
       if (line.newLine !== undefined) {
-        for (const comment of byNewLine.get(line.newLine) ?? []) {
-          lineComments.set(comment.id, comment);
+        for (const conversation of byNewLine.get(line.newLine) ?? []) {
+          lineConversations.set(conversation.root.id, conversation);
         }
       }
       if (line.oldLine !== undefined) {
-        for (const comment of byOldLine.get(line.oldLine) ?? []) {
-          lineComments.set(comment.id, comment);
+        for (const conversation of byOldLine.get(line.oldLine) ?? []) {
+          lineConversations.set(conversation.root.id, conversation);
         }
       }
-      for (const comment of lineComments.values()) {
-        matchedCommentIds.add(comment.id);
-        rows += `<tr class="existing-review-comment"><td colspan="3"><div class="review-comment-card"><div class="review-comment-header"><strong>${escHtml(comment.user.login)}</strong><span class="muted">${escHtml(new Date(comment.created_at).toLocaleString())}</span></div><div class="review-comment-body markdown-body">${reviewCommentBodies.get(comment.id) ?? escHtml(comment.body)}</div></div></td></tr>`;
+      for (const conversation of lineConversations.values()) {
+        for (const id of conversationCommentIds(conversation)) {
+          matchedCommentIds.add(id);
+        }
+        rows += `<tr class="existing-review-comment"><td colspan="3">${this.renderReviewConversation(conversation, reviewCommentBodies)}</td></tr>`;
       }
     }
     return { html: rows, matchedCommentIds };
@@ -521,6 +582,7 @@ export class PRDetailPanel {
     reviewComments.forEach((comment, index) => {
       reviewCommentBodyById.set(comment.id, reviewCommentBodies[index] ?? "");
     });
+    const reviewConversations = buildReviewConversations(reviewComments);
     const matchedReviewCommentIds = new Set<number>();
     const filesHtml = files
       .map((file, fileIndex) => {
@@ -528,7 +590,7 @@ export class PRDetailPanel {
           file.patch,
           fileIndex,
           file.filename,
-          reviewComments,
+          reviewConversations,
           reviewCommentBodyById,
         );
         for (const id of diffRows.matchedCommentIds) matchedReviewCommentIds.add(id);
@@ -537,15 +599,14 @@ export class PRDetailPanel {
       })
       .join("");
 
-    const unplacedComments = reviewComments.filter(
-      (comment) => !matchedReviewCommentIds.has(comment.id),
+    const unplacedConversations = reviewConversations.filter((conversation) =>
+      conversationCommentIds(conversation).every(
+        (id) => !matchedReviewCommentIds.has(id),
+      ),
     );
-    const unplacedInlineHtml = unplacedComments.length
-      ? `<section class="unplaced-inline"><h2 class="section-heading">Unplaced inline comments (${unplacedComments.length})</h2><p class="muted">These comments refer to lines that are no longer present in the current diff.</p>${unplacedComments
-          .map(
-            (comment) =>
-              `<article class="review-comment-card standalone"><div class="review-comment-header"><strong>${escHtml(comment.user.login)}</strong><code>${escHtml(comment.path)}</code><span class="time">${escHtml(new Date(comment.created_at).toLocaleString())}</span></div><div class="review-comment-body markdown-body">${reviewCommentBodyById.get(comment.id) ?? escHtml(comment.body)}</div></article>`,
-          )
+    const unplacedInlineHtml = unplacedConversations.length
+      ? `<section class="unplaced-inline"><h2 class="section-heading">Unplaced inline conversations (${unplacedConversations.length})</h2><p class="muted">These conversations cannot be safely attached to a line in the current diff.</p>${unplacedConversations
+          .map((conversation) => this.renderReviewConversation(conversation, reviewCommentBodyById, true))
           .join("")}</section>`
       : "";
 
@@ -570,7 +631,8 @@ export class PRDetailPanel {
 .section-card,.comment,.submitted-review,.file-block,.inline-review-toolbar{border:1px solid var(--border);border-radius:3px;margin-bottom:10px;overflow:hidden}.section-card{margin-bottom:14px}.section-bar,.comment-header,.review-header{display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--subtle);border-bottom:1px solid var(--border)}.section-bar{justify-content:space-between;font-weight:600}.section-content,.comment-body,.review-body{padding:10px 12px}.description-editor,.comment-editor,.inline-comment-form{padding:10px 12px;background:var(--subtle)}.description-editor textarea{min-height:140px}.comment-editor textarea{min-height:90px}.editor-actions,.inline-actions,.review-batch-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.inline-review-toolbar{padding:9px 10px;background:var(--subtle);display:flex;align-items:center;gap:8px}.pending-label{color:var(--muted);font-size:.9em}.submit-inline{display:none}.submit-inline.visible{display:inline-flex}
 textarea,input[type="text"],select{background:var(--input-bg);color:var(--input-fg);border:1px solid var(--input-border);border-radius:2px;padding:6px 8px}textarea,input[type="text"]{width:100%;resize:vertical}.markdown-body{line-height:1.5;overflow-wrap:anywhere}.markdown-body h1{font-size:1.28em}.markdown-body h2{font-size:1.16em}.markdown-body h3{font-size:1.06em}.markdown-body code,.sha,.file-path,.diff-table{font-family:var(--mono)}.markdown-body pre{overflow:auto}.avatar{width:20px;height:20px;border-radius:50%}.time{margin-left:auto;color:var(--muted);font-size:.92em}.empty,.muted{color:var(--muted)}
 .submitted-review{border-left-width:3px}.submitted-review-approved{border-left-color:var(--success)}.submitted-review-request_changes{border-left-color:var(--danger)}.submitted-review-comment,.submitted-review-commented{border-left-color:var(--info)}.review-badge{font-size:.78em;border:1px solid currentColor;border-radius:999px;padding:1px 6px}.review-badge-approved{color:var(--success)}.review-badge-request_changes{color:var(--danger)}.review-badge-comment,.review-badge-commented{color:var(--info)}.section-heading{font-size:1em;font-weight:600;margin:14px 0 8px}.review-history-toolbar{display:flex;justify-content:flex-end;align-items:center;gap:8px;margin:0 0 10px}.review-history-toolbar label{color:var(--muted);font-size:.9em}.review-history-toolbar select{width:auto;min-width:130px}.review-inline-summary{border-top:1px solid var(--border);padding:8px 10px}.review-inline-summary>strong{display:block;margin-bottom:6px}.review-inline-message{padding:7px 0;border-top:1px solid var(--border)}.review-inline-message:first-of-type{border-top:0}.review-inline-location{display:flex;align-items:center;gap:8px;color:var(--muted);margin-bottom:4px}.review-inline-location code{color:var(--fg)}
-.commit-entry{display:grid;grid-template-columns:max-content minmax(0,1fr) max-content;gap:10px;padding:7px 4px;border-bottom:1px solid var(--border)}.commit-author{color:var(--muted)}.file-header{width:100%;display:flex;align-items:center;gap:8px;border:0;background:var(--subtle);color:var(--fg);padding:7px 10px;cursor:pointer;text-align:left}.file-status{display:inline-flex;width:17px;height:17px;align-items:center;justify-content:center;border:1px solid currentColor;border-radius:2px;font-size:.72em;font-weight:600}.file-status-added{color:var(--success)}.file-status-deleted{color:var(--danger)}.file-status-modified,.file-status-changed{color:var(--warning)}.file-status-renamed{color:var(--info)}.file-path{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--fg)}.additions{color:var(--success)}.deletions{color:var(--danger)}.chevron{color:var(--muted)}.file-diff{overflow:auto;border-top:1px solid var(--border)}.diff-table{width:100%;border-collapse:collapse;font-size:.9em;table-layout:fixed}.ln{width:44px;text-align:right;padding:0 6px;color:var(--muted);background:var(--subtle);border-right:1px solid var(--border)}.lc{padding:0 8px;white-space:pre}.lc pre{margin:0;font:inherit}.diff-add .lc{background:color-mix(in srgb,var(--success) 12%,transparent)}.diff-del .lc{background:color-mix(in srgb,var(--danger) 12%,transparent)}.diff-hunk td{background:color-mix(in srgb,var(--info) 10%,transparent);color:var(--info)}.clickable-line{cursor:pointer}.review-comment-card,.pending-review-comment{padding:8px 12px;background:var(--subtle)}.review-comment-card{border-left:3px solid var(--info)}.review-comment-card.standalone{margin:8px 0;border:1px solid var(--border);border-left:3px solid var(--info)}.review-comment-header{display:flex;align-items:center;gap:8px}.review-comment-body{margin-top:6px}.pending-review-comment{border-left:3px dashed var(--warning);display:flex;gap:8px}.pending-body{flex:1}.remove-pending{background:none;border:0;color:var(--muted);cursor:pointer}
+.commit-entry{display:grid;grid-template-columns:max-content minmax(0,1fr) max-content;gap:10px;padding:7px 4px;border-bottom:1px solid var(--border)}.commit-author{color:var(--muted)}.file-header{width:100%;display:flex;align-items:center;gap:8px;border:0;background:var(--subtle);color:var(--fg);padding:7px 10px;cursor:pointer;text-align:left}.file-status{display:inline-flex;width:17px;height:17px;align-items:center;justify-content:center;border:1px solid currentColor;border-radius:2px;font-size:.72em;font-weight:600}.file-status-added{color:var(--success)}.file-status-deleted{color:var(--danger)}.file-status-modified,.file-status-changed{color:var(--warning)}.file-status-renamed{color:var(--info)}.file-path{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--fg)}.additions{color:var(--success)}.deletions{color:var(--danger)}.chevron{color:var(--muted)}.file-diff{overflow:auto;border-top:1px solid var(--border)}.diff-table{width:100%;border-collapse:collapse;font-size:.9em;table-layout:fixed}.ln{width:44px;text-align:right;padding:0 6px;color:var(--muted);background:var(--subtle);border-right:1px solid var(--border)}.lc{padding:0 8px;white-space:pre}.lc pre{margin:0;font:inherit}.diff-add .lc{background:color-mix(in srgb,var(--success) 12%,transparent)}.diff-del .lc{background:color-mix(in srgb,var(--danger) 12%,transparent)}.diff-hunk td{background:color-mix(in srgb,var(--info) 10%,transparent);color:var(--info)}.clickable-line{cursor:pointer}.review-comment-card,.pending-review-comment{padding:8px 12px;background:var(--subtle)}.review-comment-card{border-left:3px solid var(--info)}.review-comment-header{display:flex;align-items:center;gap:8px}.review-comment-body{margin-top:6px}.pending-review-comment{border-left:3px dashed var(--warning);display:flex;gap:8px}.pending-body{flex:1}.remove-pending{background:none;border:0;color:var(--muted);cursor:pointer}
+.review-conversation{background:var(--subtle);border-left:3px solid var(--info)}.review-conversation.standalone{margin:8px 0;border:1px solid var(--border);border-left:3px solid var(--info)}.review-conversation.conversation-resolved{border-left-color:var(--success);opacity:.82}.review-reply{padding:8px 12px 8px 28px;border-top:1px solid var(--border)}.conversation-actions{padding:5px 12px 8px 28px}.conversation-state{margin-left:auto;font-size:.82em}.conversation-state.resolved{color:var(--success)}.reply-form{padding:8px 12px 10px 28px;border-top:1px solid var(--border)}.reply-form textarea{min-height:70px}
 </style>
 </head>
 <body>
@@ -587,7 +649,7 @@ textarea,input[type="text"],select{background:var(--input-bg);color:var(--input-
   </div>
   <div class="meta-row"><span class="badge ${stateClass}">${stateLabel}</span><span>by <strong>${escHtml(pr.user.login)}</strong></span><span>${escHtml(new Date(pr.created_at).toLocaleDateString())}</span>${labelsHtml}${assigneesHtml}${milestoneHtml}</div>
 </header>
-<nav class="tabs" role="tablist" aria-label="Pull request detail sections"><button class="tab active" id="inline-reviews-tab" data-tab="inline-reviews" role="tab" aria-selected="true">${inlineIcon}<span>Inline Reviews (${reviewComments.length})</span></button><button class="tab" id="review-history-tab" data-tab="review-history" role="tab" aria-selected="false">${historyIcon}<span>Review History (${activeReviews.length})</span></button><button class="tab" id="discussion-tab" data-tab="discussion" role="tab" aria-selected="false">${discussionIcon}<span>Discussion (${comments.length})</span></button><button class="tab" id="commits-tab" data-tab="commits" role="tab" aria-selected="false">Commits (${commits.length})</button></nav>
+<nav class="tabs" role="tablist" aria-label="Pull request detail sections"><button class="tab active" id="inline-reviews-tab" data-tab="inline-reviews" role="tab" aria-selected="true">${inlineIcon}<span>Inline Reviews (${reviewConversations.length})</span></button><button class="tab" id="review-history-tab" data-tab="review-history" role="tab" aria-selected="false">${historyIcon}<span>Review History (${activeReviews.length})</span></button><button class="tab" id="discussion-tab" data-tab="discussion" role="tab" aria-selected="false">${discussionIcon}<span>Discussion (${comments.length})</span></button><button class="tab" id="commits-tab" data-tab="commits" role="tab" aria-selected="false">Commits (${commits.length})</button></nav>
 <section id="tab-inline-reviews" class="tab-content active" role="tabpanel" aria-labelledby="inline-reviews-tab">
   <div class="inline-review-toolbar"><button id="submit-inline" class="btn submit-inline">Submit inline comments</button><span id="pending-inline-label" class="pending-label">Pending inline comments: 0</span></div>
   ${filesHtml}
@@ -612,6 +674,7 @@ function sortReviewHistory(direction){const list=document.getElementById('review
 document.getElementById('edit-title')?.addEventListener('click',()=>setTitleEditing(true));document.getElementById('title-input')?.addEventListener('blur',saveTitle);document.getElementById('title-input')?.addEventListener('keydown',(event)=>{if(event.key==='Escape'){titleCancelled=true;event.currentTarget.value=originalTitle;setTitleEditing(false);}else if(event.key==='Enter'){event.preventDefault();saveTitle();}});
 document.getElementById('open-browser')?.addEventListener('click',()=>post('openInBrowser'));document.getElementById('refresh')?.addEventListener('click',()=>post('refresh'));document.getElementById('edit-body')?.addEventListener('click',()=>setBodyEditing(true));document.getElementById('cancel-body')?.addEventListener('click',()=>setBodyEditing(false));document.getElementById('save-body')?.addEventListener('click',()=>post('editBody',{body:document.getElementById('body-input').value||''}));
 document.querySelectorAll('.edit-comment').forEach((button)=>button.addEventListener('click',()=>setCommentEditing(button.dataset.commentId,true)));document.querySelectorAll('.cancel-comment').forEach((button)=>button.addEventListener('click',()=>setCommentEditing(button.dataset.commentId,false)));document.querySelectorAll('.save-comment').forEach((button)=>button.addEventListener('click',()=>{const id=button.dataset.commentId;const input=document.getElementById('comment-input-'+id);const body=(input?.value||'').trim();if(!body)return;post('editComment',{commentId:Number(id),body});}));
+document.querySelectorAll('.reply-toggle').forEach((button)=>button.addEventListener('click',()=>{const id=button.dataset.commentId;const form=document.getElementById('reply-form-'+id);if(!form)return;form.hidden=!form.hidden;if(!form.hidden)form.querySelector('textarea')?.focus();}));document.querySelectorAll('.cancel-reply').forEach((button)=>button.addEventListener('click',()=>{const form=document.getElementById('reply-form-'+button.dataset.commentId);if(form)form.hidden=true;}));document.querySelectorAll('.submit-reply').forEach((button)=>button.addEventListener('click',()=>{const id=button.dataset.commentId;const form=document.getElementById('reply-form-'+id);const input=form?.querySelector('textarea');const body=(input?.value||'').trim();if(!body)return;button.disabled=true;post('replyInlineComment',{commentId:Number(id),body});}));
 document.getElementById('post-comment')?.addEventListener('click',()=>{const input=document.getElementById('comment-body');const body=(input.value||'').trim();if(!body)return;post('addComment',{body});input.value='';});document.querySelectorAll('[data-tab]').forEach((button)=>button.addEventListener('click',()=>showTab(button.dataset.tab,button)));document.getElementById('submit-inline')?.addEventListener('click',()=>post('submitInlineReview',{comments:pendingComments.filter(Boolean)}));document.getElementById('review-history-sort')?.addEventListener('change',(event)=>sortReviewHistory(event.currentTarget.value));
 document.querySelectorAll('[data-file-toggle]').forEach((button)=>button.addEventListener('click',()=>{const index=button.dataset.fileToggle;const diff=document.getElementById('file-diff-'+index);const expanded=button.getAttribute('aria-expanded')==='true';button.setAttribute('aria-expanded',String(!expanded));if(diff)diff.hidden=expanded;}));document.querySelectorAll('.clickable-line').forEach((row)=>row.addEventListener('click',()=>{const key=row.dataset.fileIndex+'-'+row.dataset.pos;const form=document.getElementById('comment-form-'+key);if(!form)return;if(openFormKey&&openFormKey!==key){const previous=document.getElementById('comment-form-'+openFormKey);if(previous)previous.hidden=true;}form.hidden=!form.hidden;openFormKey=form.hidden?null:key;if(!form.hidden)form.querySelector('textarea')?.focus();}));document.querySelectorAll('.cancel-inline').forEach((button)=>button.addEventListener('click',(event)=>{event.stopPropagation();button.closest('tr').hidden=true;openFormKey=null;}));document.querySelectorAll('.add-inline').forEach((button)=>button.addEventListener('click',(event)=>{event.stopPropagation();const row=button.closest('tr');const input=row.querySelector('textarea');const body=(input.value||'').trim();if(!body)return;const index=pendingComments.length;pendingComments.push({path:row.dataset.path,new_position:parseInt(row.dataset.newLine||'0',10),old_position:parseInt(row.dataset.oldLine||'0',10),body});const pending=document.createElement('tr');pending.innerHTML='<td colspan="3"><div class="pending-review-comment"><span class="pending-body"></span><button class="remove-pending" title="Remove">×</button></div></td>';pending.querySelector('.pending-body').textContent=body;pending.querySelector('.remove-pending').addEventListener('click',()=>{pendingComments[index]=null;pending.remove();updatePendingCount();});row.after(pending);row.hidden=true;input.value='';openFormKey=null;updatePendingCount();}));document.querySelectorAll('.markdown-body a[href]').forEach((link)=>link.addEventListener('click',(event)=>{event.preventDefault();post('openExternal',{url:link.getAttribute('href')});}));const restoredTab=typeof savedState.activeTab==='string'?savedState.activeTab:'inline-reviews';const restoredButton=document.querySelector('[data-tab="'+restoredTab+'"]');if(restoredButton)showTab(restoredTab,restoredButton,false);updatePendingCount();
 </script>
