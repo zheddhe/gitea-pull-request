@@ -5,6 +5,7 @@ import { debug, warn } from "../../../debug/outputChannel";
 import { PRDiffProvider } from "../../../views/prDiffProvider";
 import { PullRequestWorkspaceState } from "../domain/pullRequestState";
 import { PullRequestSessionService } from "./pullRequestSessionService";
+import { ReviewedFileStateService } from "./reviewedFileStateService";
 
 export class PullRequestSessionCoordinator implements vscode.Disposable {
   private readonly disposables: vscode.Disposable[] = [];
@@ -13,6 +14,7 @@ export class PullRequestSessionCoordinator implements vscode.Disposable {
     private readonly api: GiteaApiClient,
     private readonly repoManager: RepoManager,
     private readonly session: PullRequestSessionService,
+    private readonly reviewedFiles: ReviewedFileStateService,
   ) {
     this.disposables.push(
       this.session.onDidChangeState((state) => {
@@ -62,5 +64,9 @@ export class PullRequestSessionCoordinator implements vscode.Disposable {
     debug(`[pr-coordinator] bind diff repo=${repoInfo.label} pr=#${state.pullRequest.number}`);
     await vscode.commands.executeCommand("setContext", "gitea.prDiffVisible", true);
     await PRDiffProvider.show(this.api, repoInfo, state.pullRequest);
+    const provider = PRDiffProvider.getActive();
+    if (!provider) return;
+    const filenames = await this.reviewedFiles.reconcile(repoInfo, state.pullRequest);
+    for (const filename of filenames) provider.markViewed(filename);
   }
 }
