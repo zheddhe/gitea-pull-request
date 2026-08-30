@@ -24,18 +24,32 @@ export class ReviewedFileStateService {
   ) {}
 
   async reconcile(repoInfo: RepoInfo, pr: GiteaPullRequest): Promise<string[]> {
-    const identities = await this.currentIdentities(repoInfo, pr);
     const allRecords = this.storedRecords();
     const scopedRecords = allRecords.filter((record) =>
       this.isScope(record, repoInfo, pr),
     );
-    const reconciled = reconcileReviewedFiles(
-      scopedRecords,
+    const sameHead = scopedRecords.filter(
+      (record) => record.reviewedAtHead === pr.head.sha,
+    );
+    const previousHeads = scopedRecords.filter(
+      (record) => record.reviewedAtHead !== pr.head.sha,
+    );
+
+    // Same-head state is authoritative local state. No network request should
+    // be required merely to restore a review decision after reload/rebind.
+    if (previousHeads.length === 0) {
+      return sameHead.map((record) => record.filename);
+    }
+
+    const identities = await this.currentIdentities(repoInfo, pr);
+    const reconciledPrevious = reconcileReviewedFiles(
+      previousHeads,
       repoInfo.key,
       pr.number,
       pr.head.sha,
       identities,
     );
+    const reconciled = [...sameHead, ...reconciledPrevious];
     const otherRecords = allRecords.filter(
       (record) => !this.isScope(record, repoInfo, pr),
     );
