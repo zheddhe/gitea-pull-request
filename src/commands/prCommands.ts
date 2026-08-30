@@ -300,7 +300,7 @@ function isReviewedFileScope(
   );
 }
 
-function queueReviewedStateWrite(operation: () => Promise<void>): Promise<void> {
+function queueReviewedStateWrite(operation: () => PromiseLike<void>): Promise<void> {
   reviewedStateWrite = reviewedStateWrite.then(operation, operation);
   return reviewedStateWrite;
 }
