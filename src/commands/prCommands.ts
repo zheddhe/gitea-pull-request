@@ -5,6 +5,7 @@ import * as path from "path";
 import { GiteaApiClient } from "../api/giteaApiClient";
 import { RepoManager, RepoInfo } from "../context/repoManager";
 import { AuthManager } from "../auth/authManager";
+import { debug, info } from "../debug/outputChannel";
 import {
   PullRequestProvider,
   PullRequestItem,
@@ -73,6 +74,9 @@ export function registerPRCommands(
             provider.repoInfo,
             provider.pr,
           );
+          info(
+            `[reviewed-files] open diff restore repo=${provider.repoInfo.key} pr=#${provider.pr.number} head=${provider.pr.head.sha.slice(0, 8)} restored=${filenames.length}`,
+          );
           for (const filename of filenames) provider.markViewed(filename);
         }
       },
@@ -91,11 +95,17 @@ export function registerPRCommands(
         const provider = PRDiffProvider.getActive();
         if (!provider) return;
 
+        debug(
+          `[reviewed-files] file action args=${args.length} firstType=${typeof args[0]} secondType=${typeof args[1]}`,
+        );
         const fileItem = (args.length > 1 ? args[1] : args[0]) as PRDiffFileItem;
 
         if (args.length > 1 && typeof args[0] === "number") {
           const state = args[0] as vscode.TreeItemCheckboxState;
           const viewed = state === vscode.TreeItemCheckboxState.Checked;
+          info(
+            `[reviewed-files] checkbox file=${fileItem.filename} reviewed=${viewed} repo=${provider.repoInfo.key} pr=#${provider.pr.number} head=${provider.pr.head.sha.slice(0, 8)}`,
+          );
           if (viewed) provider.markViewed(fileItem.filename);
           else provider.markUnviewed(fileItem.filename);
           await reviewedFiles.setReviewed(
@@ -121,6 +131,9 @@ export function registerPRCommands(
         const provider = PRDiffProvider.getActive();
         if (!provider) return;
 
+        debug(
+          `[reviewed-files] dir action args=${args.length} firstType=${typeof args[0]} secondType=${typeof args[1]}`,
+        );
         const dirItem = (args.length > 1 ? args[1] : args[0]) as PRDiffDirItem;
 
         if (args.length > 1 && typeof args[0] === "number") {
@@ -131,6 +144,9 @@ export function registerPRCommands(
             provider.repoInfo,
             provider.pr,
             dirItem.dirPath,
+          );
+          info(
+            `[reviewed-files] checkbox dir=${dirItem.dirPath} reviewed=${check} files=${filenames.length} repo=${provider.repoInfo.key} pr=#${provider.pr.number}`,
           );
           await reviewedFiles.setReviewed(
             provider.repoInfo,
@@ -148,6 +164,9 @@ export function registerPRCommands(
         const provider = PRDiffProvider.getActive();
         if (!provider) return;
 
+        debug(
+          `[reviewed-files] section action args=${args.length} firstType=${typeof args[0]} secondType=${typeof args[1]}`,
+        );
         const sectionItem = (args.length > 1 ? args[1] : args[0]) as PRDiffSectionItem;
 
         if (args.length > 1 && typeof args[0] === "number") {
@@ -158,6 +177,9 @@ export function registerPRCommands(
             const filenames = await reviewedFiles.allFilenames(
               provider.repoInfo,
               provider.pr,
+            );
+            info(
+              `[reviewed-files] checkbox section=files reviewed=${check} files=${filenames.length} repo=${provider.repoInfo.key} pr=#${provider.pr.number}`,
             );
             await reviewedFiles.setReviewed(
               provider.repoInfo,
