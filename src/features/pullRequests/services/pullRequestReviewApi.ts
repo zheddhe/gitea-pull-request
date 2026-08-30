@@ -7,6 +7,10 @@ import type {
 } from "../../../api/types";
 import type { RepoInfo } from "../../../context/repoManager";
 import { log } from "../../../debug/outputChannel";
+import {
+  evaluateGiteaServerCapabilities,
+  type GiteaServerCapabilities,
+} from "../domain/giteaServerCapabilities";
 import type {
   BranchMergePolicy,
   RepositoryMergeSettings,
@@ -30,7 +34,25 @@ type RawStatusLike = Record<string, unknown> & {
 };
 
 export class PullRequestReviewApi {
+  private readonly capabilitiesByServer = new Map<string, GiteaServerCapabilities>();
+
   constructor(private readonly auth: AuthManager) {}
+
+  async getServerCapabilities(
+    repoInfo: RepoInfo,
+  ): Promise<GiteaServerCapabilities> {
+    const cached = this.capabilitiesByServer.get(repoInfo.serverUrl);
+    if (cached) return cached;
+
+    const result = await this.request<{ version?: string }>(repoInfo, "/version");
+    const version = typeof result?.version === "string" ? result.version : "";
+    const capabilities = evaluateGiteaServerCapabilities(version);
+    this.capabilitiesByServer.set(repoInfo.serverUrl, capabilities);
+    log(
+      `[review-api] server capabilities version=${version || "unknown"} inlineReviewReplies=${capabilities.inlineReviewReplies}`,
+    );
+    return capabilities;
+  }
 
   async getCombinedStatus(
     repoInfo: RepoInfo,
@@ -162,6 +184,13 @@ export class PullRequestReviewApi {
     commentId: number,
     body: string,
   ): Promise<GiteaReviewComment> {
+    const capabilities = await this.getServerCapabilities(repoInfo);
+    if (!capabilities.inlineReviewReplies) {
+      throw new Error(
+        `Inline review replies require Gitea 1.27.0 or newer (server: ${capabilities.version || "unknown"}).`,
+      );
+    }
+
     return this.request<GiteaReviewComment>(
       repoInfo,
       `/repos/${repoInfo.owner}/${repoInfo.repo}/pulls/${number}/comments/${commentId}/replies`,
