@@ -182,6 +182,26 @@ suite("PR detail presentation", () => {
     assert.match(source, /post\('reopenInlineConversation'/);
   });
 
+  test("collapses resolved conversations by default and preserves explicit expansion", () => {
+    assert.match(source, /conversation-resolved conversation-collapsed/);
+    assert.match(source, /class="conversation-content"/);
+    assert.match(source, /class="icon-btn conversation-collapse-toggle"/);
+    assert.match(source, /\.conversation-resolved\.conversation-collapsed \.conversation-content\{display:none\}/);
+    assert.match(source, /expandedResolvedConversations/);
+    assert.match(source, /function setResolvedConversationExpanded\(conversation,expanded,persist=true\)/);
+    assert.match(source, /expandedResolvedConversations:Array\.from\(expandedResolvedConversations\)/);
+    assert.match(source, /setResolvedConversationExpanded\(conversation,expandedResolvedConversations\.has/);
+  });
+
+  test("keeps reopen available from the compact resolved event", () => {
+    const eventActions = source.indexOf('class="conversation-event-actions"');
+    const reopen = source.indexOf('class="icon-btn reopen-conversation"', eventActions);
+    const content = source.indexOf('class="conversation-content"', reopen);
+    assert.ok(eventActions >= 0 && reopen > eventActions && content > reopen);
+    assert.match(source, /title="Expand conversation"/);
+    assert.match(source, /title="Reopen conversation"/);
+  });
+
   test("visually distinguishes roots replies and compact conversation actions", () => {
     assert.match(source, /class="review-comment-card conversation-root"/);
     assert.match(source, /\.review-conversation\{[^}]*border:1px solid var\(--border\)/);
