@@ -33,6 +33,10 @@ export function registerPRCommands(
   reviewedFiles: ReviewedFileStateService,
 ): void {
   context.subscriptions.push(
+    PRDiffProvider.onDidChangeCheckboxState(({ provider, event }) => {
+      void handlePRDiffCheckboxChange(provider, event, reviewedFiles);
+    }),
+
     vscode.commands.registerCommand("gitea.refreshPRs", () =>
       prProvider.refresh(),
     ),
@@ -91,106 +95,22 @@ export function registerPRCommands(
 
     vscode.commands.registerCommand(
       "gitea.prDiffFileAction",
-      async (...args: unknown[]) => {
+      async (fileItem: PRDiffFileItem) => {
         const provider = PRDiffProvider.getActive();
-        if (!provider) return;
-
-        debug(
-          `[reviewed-files] file action args=${args.length} firstType=${typeof args[0]} secondType=${typeof args[1]}`,
+        if (!provider || !fileItem) return;
+        await openFileDiff(
+          provider.api,
+          fileItem.repoInfo,
+          fileItem.pr,
+          fileItem.filename,
         );
-        const fileItem = (args.length > 1 ? args[1] : args[0]) as PRDiffFileItem;
-
-        if (args.length > 1 && typeof args[0] === "number") {
-          const state = args[0] as vscode.TreeItemCheckboxState;
-          const viewed = state === vscode.TreeItemCheckboxState.Checked;
-          info(
-            `[reviewed-files] checkbox file=${fileItem.filename} reviewed=${viewed} repo=${provider.repoInfo.key} pr=#${provider.pr.number} head=${provider.pr.head.sha.slice(0, 8)}`,
-          );
-          if (viewed) provider.markViewed(fileItem.filename);
-          else provider.markUnviewed(fileItem.filename);
-          await reviewedFiles.setReviewed(
-            provider.repoInfo,
-            provider.pr,
-            [fileItem.filename],
-            viewed,
-          );
-        } else {
-          await openFileDiff(
-            provider.api,
-            fileItem.repoInfo,
-            fileItem.pr,
-            fileItem.filename,
-          );
-        }
       },
     ),
 
-    vscode.commands.registerCommand(
-      "gitea.prDiffDirAction",
-      async (...args: unknown[]) => {
-        const provider = PRDiffProvider.getActive();
-        if (!provider) return;
-
-        debug(
-          `[reviewed-files] dir action args=${args.length} firstType=${typeof args[0]} secondType=${typeof args[1]}`,
-        );
-        const dirItem = (args.length > 1 ? args[1] : args[0]) as PRDiffDirItem;
-
-        if (args.length > 1 && typeof args[0] === "number") {
-          const state = args[0] as vscode.TreeItemCheckboxState;
-          const check = state === vscode.TreeItemCheckboxState.Checked;
-          provider.toggleDirViewed(dirItem.dirPath, check);
-          const filenames = await reviewedFiles.filenamesUnder(
-            provider.repoInfo,
-            provider.pr,
-            dirItem.dirPath,
-          );
-          info(
-            `[reviewed-files] checkbox dir=${dirItem.dirPath} reviewed=${check} files=${filenames.length} repo=${provider.repoInfo.key} pr=#${provider.pr.number}`,
-          );
-          await reviewedFiles.setReviewed(
-            provider.repoInfo,
-            provider.pr,
-            filenames,
-            check,
-          );
-        }
-      },
-    ),
-
-    vscode.commands.registerCommand(
-      "gitea.prDiffSectionAction",
-      async (...args: unknown[]) => {
-        const provider = PRDiffProvider.getActive();
-        if (!provider) return;
-
-        debug(
-          `[reviewed-files] section action args=${args.length} firstType=${typeof args[0]} secondType=${typeof args[1]}`,
-        );
-        const sectionItem = (args.length > 1 ? args[1] : args[0]) as PRDiffSectionItem;
-
-        if (args.length > 1 && typeof args[0] === "number") {
-          const state = args[0] as vscode.TreeItemCheckboxState;
-          if (sectionItem.id === "files") {
-            const check = state === vscode.TreeItemCheckboxState.Checked;
-            provider.toggleAllViewed(check);
-            const filenames = await reviewedFiles.allFilenames(
-              provider.repoInfo,
-              provider.pr,
-            );
-            info(
-              `[reviewed-files] checkbox section=files reviewed=${check} files=${filenames.length} repo=${provider.repoInfo.key} pr=#${provider.pr.number}`,
-            );
-            await reviewedFiles.setReviewed(
-              provider.repoInfo,
-              provider.pr,
-              filenames,
-              check,
-            );
-          }
-        }
-      },
-    ),
+    // Directory and section row selection has no action. Their checkbox
+    // lifecycle is handled by TreeView.onDidChangeCheckboxState above.
+    vscode.commands.registerCommand("gitea.prDiffDirAction", () => undefined),
+    vscode.commands.registerCommand("gitea.prDiffSectionAction", () => undefined),
 
     vscode.commands.registerCommand(
       "gitea.addComment",
@@ -210,6 +130,71 @@ export function registerPRCommands(
       },
     ),
   );
+}
+
+async function handlePRDiffCheckboxChange(
+  provider: PRDiffProvider,
+  event: vscode.TreeCheckboxChangeEvent<vscode.TreeItem>,
+  reviewedFiles: ReviewedFileStateService,
+): Promise<void> {
+  debug(
+    `[reviewed-files] TreeView checkbox event items=${event.items.length} repo=${provider.repoInfo.key} pr=#${provider.pr.number}`,
+  );
+
+  for (const [item, state] of event.items) {
+    const reviewed = state === vscode.TreeItemCheckboxState.Checked;
+
+    if (item instanceof PRDiffFileItem) {
+      info(
+        `[reviewed-files] checkbox file=${item.filename} reviewed=${reviewed} repo=${provider.repoInfo.key} pr=#${provider.pr.number} head=${provider.pr.head.sha.slice(0, 8)}`,
+      );
+      if (reviewed) provider.markViewed(item.filename);
+      else provider.markUnviewed(item.filename);
+      await reviewedFiles.setReviewed(
+        provider.repoInfo,
+        provider.pr,
+        [item.filename],
+        reviewed,
+      );
+      continue;
+    }
+
+    if (item instanceof PRDiffDirItem) {
+      provider.toggleDirViewed(item.dirPath, reviewed);
+      const filenames = await reviewedFiles.filenamesUnder(
+        provider.repoInfo,
+        provider.pr,
+        item.dirPath,
+      );
+      info(
+        `[reviewed-files] checkbox dir=${item.dirPath} reviewed=${reviewed} files=${filenames.length} repo=${provider.repoInfo.key} pr=#${provider.pr.number}`,
+      );
+      await reviewedFiles.setReviewed(
+        provider.repoInfo,
+        provider.pr,
+        filenames,
+        reviewed,
+      );
+      continue;
+    }
+
+    if (item instanceof PRDiffSectionItem && item.id === "files") {
+      provider.toggleAllViewed(reviewed);
+      const filenames = await reviewedFiles.allFilenames(
+        provider.repoInfo,
+        provider.pr,
+      );
+      info(
+        `[reviewed-files] checkbox section=files reviewed=${reviewed} files=${filenames.length} repo=${provider.repoInfo.key} pr=#${provider.pr.number}`,
+      );
+      await reviewedFiles.setReviewed(
+        provider.repoInfo,
+        provider.pr,
+        filenames,
+        reviewed,
+      );
+    }
+  }
 }
 
 async function pickRepo(
