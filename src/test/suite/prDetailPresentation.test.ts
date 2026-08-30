@@ -81,7 +81,7 @@ suite("PR detail presentation", () => {
     assert.doesNotMatch(source, /Files <strong>/);
   });
 
-  test("opens Inline Reviews first and separates Review History", () => {
+  test("opens Inline Reviews first and exposes one pending review transaction", () => {
     const inlineTab = source.indexOf('class="tab active" id="inline-reviews-tab"');
     const historyTab = source.indexOf('id="review-history-tab"', inlineTab);
     const discussionTab = source.indexOf('id="discussion-tab"', historyTab);
@@ -91,9 +91,10 @@ suite("PR detail presentation", () => {
     assert.match(source, /Inline Reviews \(\$\{reviewConversations\.length\}\)/);
     assert.match(source, /Review History \(\$\{activeReviews\.length\}\)/);
     assert.match(source, /const reviewConversations = buildReviewConversations\(reviewComments\)/);
-    assert.match(source, /id="submit-inline"/);
-    assert.match(source, /submitInlineReview/);
-    assert.match(source, /Pending inline comments: 0/);
+    assert.match(source, /id="submit-review"/);
+    assert.match(source, /id="discard-review"/);
+    assert.match(source, /case "submitPendingReview"/);
+    assert.match(source, /Pending review actions: 0/);
     assert.doesNotMatch(source, /data-review-event=/);
     assert.doesNotMatch(source, /id="review-body"/);
   });
@@ -103,6 +104,18 @@ suite("PR detail presentation", () => {
     assert.match(source, /vscode\.setState\(Object\.assign\(\{\},vscode\.getState\(\)\|\|\{\},\{activeTab:name\}\)\)/);
     assert.match(source, /const restoredTab=typeof savedState\.activeTab==='string'\?savedState\.activeTab:'inline-reviews'/);
     assert.match(source, /showTab\(restoredTab,restoredButton,false\)/);
+  });
+
+  test("persists pending review mutations across refresh and reconciles submission results", () => {
+    assert.match(source, /pendingReviewSession/);
+    assert.match(source, /function persistPendingReview\(\)/);
+    assert.match(source, /pendingReviewSession:pendingReviewSession/);
+    assert.match(source, /persistPendingReview\(\);post\('refresh'\)/);
+    assert.match(source, /type: "pendingReviewSubmissionResult"/);
+    assert.match(source, /succeededInlineCommentIds/);
+    assert.match(source, /succeededReplyIds/);
+    assert.match(source, /succeededConversationActionIds/);
+    assert.match(source, /window\.addEventListener\('message'/);
   });
 
   test("enriches review history with inline COMMENT detail and sorting", () => {
@@ -140,15 +153,16 @@ suite("PR detail presentation", () => {
     assert.match(source, /review-comment-body markdown-body/);
   });
 
-  test("renders and submits replies against the conversation root when supported", () => {
+  test("queues replies against the conversation root when supported", () => {
     assert.match(source, /const REPLY_ICON = `<svg/);
     assert.match(source, /capabilities\.inlineReviewReplies/);
     assert.match(source, /class="icon-btn reply-toggle" data-comment-id="\$\{root\.id\}"/);
     assert.match(source, /title="Reply to conversation"/);
     assert.match(source, /id="reply-form-\$\{root\.id\}"/);
-    assert.match(source, /case "replyInlineComment"/);
+    assert.match(source, /makePendingId\('reply'\)/);
+    assert.match(source, /pendingReviewSession\.replies\.push\(item\)/);
     assert.match(source, /"gitea\.replyInlineReviewComment"/);
-    assert.match(source, /post\('replyInlineComment',\{commentId:Number\(id\),body\}\)/);
+    assert.doesNotMatch(source, /post\('replyInlineComment',\{commentId:Number\(id\),body\}\)/);
   });
 
   test("hides unsupported reply actions and explains the server capability once", () => {
@@ -163,23 +177,22 @@ suite("PR detail presentation", () => {
     assert.match(source, /const RESOLVED_EVENT_ICON = `<svg/);
     assert.match(source, /class="conversation-event resolved-event"/);
     assert.match(source, /resolved this conversation/);
-    assert.match(source, /root\.resolver\?\.login/);
+    assert.match(source, /conversation\.resolver \?\? root\.resolver/);
+    assert.match(source, /resolver\?\.login/);
     assert.match(source, /\.conversation-event\{[^}]*display:flex/);
     assert.doesNotMatch(source, /conversation-state resolved/);
   });
 
-  test("exposes resolve and reopen as compact capability-gated actions", () => {
+  test("queues resolve and reopen as compact capability-gated actions", () => {
     assert.match(source, /capabilities\.inlineReviewResolution/);
     assert.match(source, /class="icon-btn resolve-conversation"/);
     assert.match(source, /title="Resolve conversation"/);
     assert.match(source, /class="icon-btn reopen-conversation"/);
     assert.match(source, /title="Reopen conversation"/);
-    assert.match(source, /case "resolveInlineConversation"/);
-    assert.match(source, /case "reopenInlineConversation"/);
+    assert.match(source, /queueConversationAction\(Number\(button\.dataset\.commentId\),'resolve'\)/);
+    assert.match(source, /queueConversationAction\(Number\(button\.dataset\.commentId\),'reopen'\)/);
     assert.match(source, /"gitea\.resolveInlineReviewConversation"/);
     assert.match(source, /"gitea\.reopenInlineReviewConversation"/);
-    assert.match(source, /post\('resolveInlineConversation'/);
-    assert.match(source, /post\('reopenInlineConversation'/);
   });
 
   test("collapses resolved conversations by default and preserves explicit expansion", () => {
@@ -209,6 +222,8 @@ suite("PR detail presentation", () => {
     assert.match(source, /\.review-reply::before/);
     assert.match(source, /\.conversation-actions\{[^}]*gap:2px/);
     assert.match(source, /\.reply-form\{[^}]*margin-left:22px/);
+    assert.match(source, /pending-review-operation/);
+    assert.match(source, /pending-conversation-action/);
   });
 
   test("uses aligned Description and Comments section bars", () => {
