@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import { GiteaApiClient } from "../../../api/giteaApiClient";
 import { RepoInfo, RepoManager } from "../../../context/repoManager";
-import { debug, warn } from "../../../debug/outputChannel";
+import { debug, info, warn } from "../../../debug/outputChannel";
 import { PRDiffProvider } from "../../../views/prDiffProvider";
 import { PullRequestWorkspaceState } from "../domain/pullRequestState";
 import { PullRequestSessionService } from "./pullRequestSessionService";
@@ -67,6 +67,9 @@ export class PullRequestSessionCoordinator implements vscode.Disposable {
     const provider = PRDiffProvider.getActive();
     if (!provider) return;
     const filenames = await this.reviewedFiles.reconcile(repoInfo, state.pullRequest);
+    info(
+      `[reviewed-files] session restore repo=${repoInfo.key} pr=#${state.pullRequest.number} head=${state.pullRequest.head.sha.slice(0, 8)} restored=${filenames.length}`,
+    );
     for (const filename of filenames) provider.markViewed(filename);
   }
 }
