@@ -141,11 +141,22 @@ suite("PR detail presentation", () => {
   });
 
   test("renders and submits replies against the conversation root", () => {
-    assert.match(source, /class="btn sec reply-toggle" data-comment-id="\$\{root\.id\}"/);
+    assert.match(source, /const REPLY_ICON = `<svg/);
+    assert.match(source, /class="icon-btn reply-toggle" data-comment-id="\$\{root\.id\}"/);
+    assert.match(source, /title="Reply to conversation"/);
     assert.match(source, /id="reply-form-\$\{root\.id\}"/);
     assert.match(source, /case "replyInlineComment"/);
     assert.match(source, /"gitea\.replyInlineReviewComment"/);
     assert.match(source, /post\('replyInlineComment',\{commentId:Number\(id\),body\}\)/);
+  });
+
+  test("visually distinguishes roots replies and reply actions", () => {
+    assert.match(source, /class="review-comment-card conversation-root"/);
+    assert.match(source, /\.review-conversation\{[^}]*border:1px solid var\(--border\)/);
+    assert.match(source, /\.review-reply\{[^}]*margin-left:22px/);
+    assert.match(source, /\.review-reply::before/);
+    assert.match(source, /\.conversation-actions\{[^}]*margin-left:22px/);
+    assert.match(source, /\.reply-form\{[^}]*margin-left:22px/);
   });
 
   test("uses aligned Description and Comments section bars", () => {
