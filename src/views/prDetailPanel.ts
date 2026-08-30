@@ -43,6 +43,11 @@ interface DiffRowsResult {
   matchedCommentIds: Set<number>;
 }
 
+interface ReviewCapabilities {
+  version: string;
+  inlineReviewReplies: boolean;
+}
+
 function parsePatch(patch: string): DiffLine[] {
   if (!patch?.trim()) return [];
   const result: DiffLine[] = [];
@@ -204,6 +209,19 @@ export class PRDetailPanel {
     }
   }
 
+  private async loadReviewCapabilities(): Promise<ReviewCapabilities> {
+    try {
+      const capabilities = await vscode.commands.executeCommand<ReviewCapabilities>(
+        "gitea.getReviewCapabilities",
+        this.repoInfo,
+      );
+      if (capabilities) return capabilities;
+    } catch (error) {
+      log(`[review-capabilities] unavailable: ${(error as Error).message}`);
+    }
+    return { version: "", inlineReviewReplies: false };
+  }
+
   private async openExternal(rawUrl: string): Promise<void> {
     try {
       const resolved = new URL(rawUrl, this.pr.html_url);
@@ -305,6 +323,7 @@ export class PRDetailPanel {
             .catch(() => [] as GiteaReviewComment[]),
           this.api.getPRRawDiff(this.repoInfo, pr.number).catch(() => ""),
         ]);
+      const capabilities = await this.loadReviewCapabilities();
 
       const patchMap = parseRawDiff(rawDiff);
       const enrichedFiles = files.map((file) => ({
@@ -339,6 +358,7 @@ export class PRDetailPanel {
         commentBodies,
         reviewBodies,
         reviewCommentBodies,
+        capabilities,
       );
     } catch (error) {
       this.panel.webview.html = `<!DOCTYPE html><html><body style="padding:20px;color:var(--vscode-foreground);background:var(--vscode-editor-background);font-family:var(--vscode-font-family)"><h2>Error loading PR</h2><p>${escHtml((error as Error).message)}</p></body></html>`;
@@ -363,6 +383,7 @@ export class PRDetailPanel {
   private renderReviewConversation(
     conversation: ReviewConversation,
     reviewCommentBodies: Map<number, string>,
+    inlineReviewReplies: boolean,
     standalone = false,
   ): string {
     const root = conversation.root;
@@ -378,7 +399,7 @@ export class PRDetailPanel {
           `<div class="review-reply"><div class="review-comment-header"><strong>${escHtml(reply.user.login)}</strong><span class="muted">${escHtml(new Date(reply.created_at).toLocaleString())}</span></div><div class="review-comment-body markdown-body">${reviewCommentBodies.get(reply.id) ?? escHtml(reply.body)}</div></div>`,
       )
       .join("");
-    const replyControls = conversation.orphaned
+    const replyControls = conversation.orphaned || !inlineReviewReplies
       ? ""
       : `<div class="conversation-actions"><button class="icon-btn reply-toggle" data-comment-id="${root.id}" title="Reply to conversation" aria-label="Reply to review conversation">${REPLY_ICON}</button></div><div class="reply-form" id="reply-form-${root.id}" hidden><textarea aria-label="Reply to inline review comment" placeholder="Reply to this review conversation..."></textarea><div class="inline-actions"><button class="btn submit-reply" data-comment-id="${root.id}">Reply</button><button class="btn sec cancel-reply" data-comment-id="${root.id}">Cancel</button></div></div>`;
     return `<div class="review-conversation${conversation.resolved ? " conversation-resolved" : ""}${standalone ? " standalone" : ""}" data-root-comment-id="${root.id}"><div class="review-comment-card conversation-root"><div class="review-comment-header"><strong>${escHtml(root.user.login)}</strong><span class="muted">${escHtml(new Date(root.created_at).toLocaleString())}</span>${resolvedHtml}${orphanHtml}</div><div class="review-comment-body markdown-body">${reviewCommentBodies.get(root.id) ?? escHtml(root.body)}</div></div>${repliesHtml}${replyControls}</div>`;
@@ -390,6 +411,7 @@ export class PRDetailPanel {
     filename: string,
     reviewConversations: ReviewConversation[],
     reviewCommentBodies: Map<number, string>,
+    inlineReviewReplies: boolean,
   ): DiffRowsResult {
     const lines = parsePatch(patch);
     const matchedCommentIds = new Set<number>();
@@ -461,7 +483,7 @@ export class PRDetailPanel {
         for (const id of conversationCommentIds(conversation)) {
           matchedCommentIds.add(id);
         }
-        rows += `<tr class="existing-review-comment"><td colspan="3">${this.renderReviewConversation(conversation, reviewCommentBodies)}</td></tr>`;
+        rows += `<tr class="existing-review-comment"><td colspan="3">${this.renderReviewConversation(conversation, reviewCommentBodies, inlineReviewReplies)}</td></tr>`;
       }
     }
     return { html: rows, matchedCommentIds };
@@ -478,6 +500,7 @@ export class PRDetailPanel {
     commentBodies: string[],
     reviewBodies: string[],
     reviewCommentBodies: string[],
+    capabilities: ReviewCapabilities,
   ): string {
     const isOpen = pr.state === "open" && !pr.merged;
     const stateLabel = pr.merged ? "Merged" : isOpen ? "Open" : "Closed";
@@ -594,6 +617,7 @@ export class PRDetailPanel {
           file.filename,
           reviewConversations,
           reviewCommentBodyById,
+          capabilities.inlineReviewReplies,
         );
         for (const id of diffRows.matchedCommentIds) matchedReviewCommentIds.add(id);
         const statusClass = `file-status-${file.status}`;
@@ -608,9 +632,12 @@ export class PRDetailPanel {
     );
     const unplacedInlineHtml = unplacedConversations.length
       ? `<section class="unplaced-inline"><h2 class="section-heading">Unplaced inline conversations (${unplacedConversations.length})</h2><p class="muted">These conversations cannot be safely attached to a line in the current diff.</p>${unplacedConversations
-          .map((conversation) => this.renderReviewConversation(conversation, reviewCommentBodyById, true))
+          .map((conversation) => this.renderReviewConversation(conversation, reviewCommentBodyById, capabilities.inlineReviewReplies, true))
           .join("")}</section>`
       : "";
+    const replyCapabilityHtml = capabilities.inlineReviewReplies
+      ? ""
+      : `<span class="capability-note" title="Inline review replies require Gitea 1.27.0 or newer. Server: ${escHtml(capabilities.version || "unknown")}">Replies require Gitea 1.27+</span>`;
 
     const discussionIcon = `<svg class="tab-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M2 2h12v9H7.2L4 13.7V11H2V2zm1 1v7h2v1.55L6.8 10H13V3H3z"/></svg>`;
     const inlineIcon = `<svg class="tab-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M2 2h12v8H8l-3.5 3V10H2V2zm1 1v6h2.5v1.8L7.6 9H13V3H3zM5 5h6v1H5V5zm0 2h4v1H5V7z"/></svg>`;
@@ -630,7 +657,7 @@ export class PRDetailPanel {
 .icon-btn{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;padding:2px;border:0;border-radius:3px;background:transparent;color:var(--muted);cursor:pointer}.icon-btn:hover{background:var(--vscode-toolbar-hoverBackground,var(--subtle));color:var(--fg)}.icon-btn svg{width:14px;height:14px}.meta-row{display:flex;align-items:center;flex-wrap:wrap;gap:6px 9px;color:var(--muted);font-size:.92em;margin-bottom:12px}.meta-row strong{color:var(--fg)}.badge{display:inline-flex;border:1px solid currentColor;border-radius:999px;padding:1px 7px;font-size:.82em;font-weight:600;text-transform:uppercase}.label{border:1px solid var(--label-color);border-radius:999px;padding:1px 7px;font-size:.78em}
 .btn{border:1px solid transparent;border-radius:2px;padding:4px 10px;min-height:26px;cursor:pointer;background:var(--button-bg);color:var(--button-fg)}.btn.sec{background:var(--button-secondary-bg);color:var(--button-secondary-fg)}.btn:focus-visible,.icon-btn:focus-visible,.tab:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,.file-header:focus-visible{outline:1px solid var(--focus);outline-offset:2px}
 .tabs{display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:14px}.tab{display:inline-flex;align-items:center;gap:6px;background:transparent;border:0;border-bottom:2px solid transparent;color:var(--muted);cursor:pointer;padding:6px 10px}.tab.active{color:var(--fg);border-bottom-color:var(--focus);font-weight:600}.tab-icon{width:15px;height:15px}.tab-content{display:none}.tab-content.active{display:block}
-.section-card,.comment,.submitted-review,.file-block,.inline-review-toolbar{border:1px solid var(--border);border-radius:3px;margin-bottom:10px;overflow:hidden}.section-card{margin-bottom:14px}.section-bar,.comment-header,.review-header{display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--subtle);border-bottom:1px solid var(--border)}.section-bar{justify-content:space-between;font-weight:600}.section-content,.comment-body,.review-body{padding:10px 12px}.description-editor,.comment-editor,.inline-comment-form{padding:10px 12px;background:var(--subtle)}.description-editor textarea{min-height:140px}.comment-editor textarea{min-height:90px}.editor-actions,.inline-actions,.review-batch-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.inline-review-toolbar{padding:9px 10px;background:var(--subtle);display:flex;align-items:center;gap:8px}.pending-label{color:var(--muted);font-size:.9em}.submit-inline{display:none}.submit-inline.visible{display:inline-flex}
+.section-card,.comment,.submitted-review,.file-block,.inline-review-toolbar{border:1px solid var(--border);border-radius:3px;margin-bottom:10px;overflow:hidden}.section-card{margin-bottom:14px}.section-bar,.comment-header,.review-header{display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--subtle);border-bottom:1px solid var(--border)}.section-bar{justify-content:space-between;font-weight:600}.section-content,.comment-body,.review-body{padding:10px 12px}.description-editor,.comment-editor,.inline-comment-form{padding:10px 12px;background:var(--subtle)}.description-editor textarea{min-height:140px}.comment-editor textarea{min-height:90px}.editor-actions,.inline-actions,.review-batch-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.inline-review-toolbar{padding:9px 10px;background:var(--subtle);display:flex;align-items:center;gap:8px}.pending-label{color:var(--muted);font-size:.9em}.capability-note{margin-left:auto;color:var(--muted);font-size:.82em}.submit-inline{display:none}.submit-inline.visible{display:inline-flex}
 textarea,input[type="text"],select{background:var(--input-bg);color:var(--input-fg);border:1px solid var(--input-border);border-radius:2px;padding:6px 8px}textarea,input[type="text"]{width:100%;resize:vertical}.markdown-body{line-height:1.5;overflow-wrap:anywhere}.markdown-body h1{font-size:1.28em}.markdown-body h2{font-size:1.16em}.markdown-body h3{font-size:1.06em}.markdown-body code,.sha,.file-path,.diff-table{font-family:var(--mono)}.markdown-body pre{overflow:auto}.avatar{width:20px;height:20px;border-radius:50%}.time{margin-left:auto;color:var(--muted);font-size:.92em}.empty,.muted{color:var(--muted)}
 .submitted-review{border-left-width:3px}.submitted-review-approved{border-left-color:var(--success)}.submitted-review-request_changes{border-left-color:var(--danger)}.submitted-review-comment,.submitted-review-commented{border-left-color:var(--info)}.review-badge{font-size:.78em;border:1px solid currentColor;border-radius:999px;padding:1px 6px}.review-badge-approved{color:var(--success)}.review-badge-request_changes{color:var(--danger)}.review-badge-comment,.submitted-review-commented{color:var(--info)}.section-heading{font-size:1em;font-weight:600;margin:14px 0 8px}.review-history-toolbar{display:flex;justify-content:flex-end;align-items:center;gap:8px;margin:0 0 10px}.review-history-toolbar label{color:var(--muted);font-size:.9em}.review-history-toolbar select{width:auto;min-width:130px}.review-inline-summary{border-top:1px solid var(--border);padding:8px 10px}.review-inline-summary>strong{display:block;margin-bottom:6px}.review-inline-message{padding:7px 0;border-top:1px solid var(--border)}.review-inline-message:first-of-type{border-top:0}.review-inline-location{display:flex;align-items:center;gap:8px;color:var(--muted);margin-bottom:4px}.review-inline-location code{color:var(--fg)}
 .commit-entry{display:grid;grid-template-columns:max-content minmax(0,1fr) max-content;gap:10px;padding:7px 4px;border-bottom:1px solid var(--border)}.commit-author{color:var(--muted)}.file-header{width:100%;display:flex;align-items:center;gap:8px;border:0;background:var(--subtle);color:var(--fg);padding:7px 10px;cursor:pointer;text-align:left}.file-status{display:inline-flex;width:17px;height:17px;align-items:center;justify-content:center;border:1px solid currentColor;border-radius:2px;font-size:.72em;font-weight:600}.file-status-added{color:var(--success)}.file-status-deleted{color:var(--danger)}.file-status-modified,.file-status-changed{color:var(--warning)}.file-status-renamed{color:var(--info)}.file-path{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--fg)}.additions{color:var(--success)}.deletions{color:var(--danger)}.chevron{color:var(--muted)}.file-diff{overflow:auto;border-top:1px solid var(--border)}.diff-table{width:100%;border-collapse:collapse;font-size:.9em;table-layout:fixed}.ln{width:44px;text-align:right;padding:0 6px;color:var(--muted);background:var(--subtle);border-right:1px solid var(--border)}.lc{padding:0 8px;white-space:pre}.lc pre{margin:0;font:inherit}.diff-add .lc{background:color-mix(in srgb,var(--success) 12%,transparent)}.diff-del .lc{background:color-mix(in srgb,var(--danger) 12%,transparent)}.diff-hunk td{background:color-mix(in srgb,var(--info) 10%,transparent);color:var(--info)}.clickable-line{cursor:pointer}.review-comment-card,.pending-review-comment{padding:8px 12px;background:var(--subtle)}.review-comment-card{border-left:3px solid var(--info)}.review-comment-header{display:flex;align-items:center;gap:8px}.review-comment-body{margin-top:6px}.pending-review-comment{border-left:3px dashed var(--warning);display:flex;gap:8px}.pending-body{flex:1}.remove-pending{background:none;border:0;color:var(--muted);cursor:pointer}
@@ -653,7 +680,7 @@ textarea,input[type="text"],select{background:var(--input-bg);color:var(--input-
 </header>
 <nav class="tabs" role="tablist" aria-label="Pull request detail sections"><button class="tab active" id="inline-reviews-tab" data-tab="inline-reviews" role="tab" aria-selected="true">${inlineIcon}<span>Inline Reviews (${reviewConversations.length})</span></button><button class="tab" id="review-history-tab" data-tab="review-history" role="tab" aria-selected="false">${historyIcon}<span>Review History (${activeReviews.length})</span></button><button class="tab" id="discussion-tab" data-tab="discussion" role="tab" aria-selected="false">${discussionIcon}<span>Discussion (${comments.length})</span></button><button class="tab" id="commits-tab" data-tab="commits" role="tab" aria-selected="false">Commits (${commits.length})</button></nav>
 <section id="tab-inline-reviews" class="tab-content active" role="tabpanel" aria-labelledby="inline-reviews-tab">
-  <div class="inline-review-toolbar"><button id="submit-inline" class="btn submit-inline">Submit inline comments</button><span id="pending-inline-label" class="pending-label">Pending inline comments: 0</span></div>
+  <div class="inline-review-toolbar"><button id="submit-inline" class="btn submit-inline">Submit inline comments</button><span id="pending-inline-label" class="pending-label">Pending inline comments: 0</span>${replyCapabilityHtml}</div>
   ${filesHtml}
   ${unplacedInlineHtml}
 </section>
