@@ -115,6 +115,10 @@ export async function activate(
       postMergePullRequestView.refreshBranchState(),
     ),
     vscode.commands.registerCommand(
+      "gitea.getReviewCapabilities",
+      async (repoInfo: RepoInfo) => reviewApi.getServerCapabilities(repoInfo),
+    ),
+    vscode.commands.registerCommand(
       "gitea.replyInlineReviewComment",
       async (
         repoInfo: RepoInfo,
