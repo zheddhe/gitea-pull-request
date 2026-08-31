@@ -40,8 +40,8 @@
         {"id":"gitea.createPullRequest","name":"Create Pull Request","type":"webview","when":"gitea.prSession.creating && !gitea.issueCreation.active","initialSize":8},
         {"id":"gitea.issues","name":"Issues","icon":"resources/gitea-activity.svg","when":"!gitea.prSession.creating && !gitea.issueCreation.active"},
         {"id":"gitea.issuesCreateCompact","name":"Issues","icon":"resources/gitea-activity.svg","when":"gitea.prSession.creating && !gitea.issueCreation.active","visibility":"collapsed"},
-        {"id":"gitea.issuesIssueCreateMode","name":"Issues","icon":"resources/gitea-activity.svg","when":"gitea.issueCreation.active && !gitea.prSession.creating","initialSize":2},
-        {"id":"gitea.createIssue","name":"Create Issue","type":"webview","when":"gitea.issueCreation.active && !gitea.prSession.creating","initialSize":8},
+        {"id":"gitea.issuesIssueCreateMode","name":"Issues","icon":"resources/gitea-activity.svg","when":"gitea.issueCreation.active && !gitea.prSession.creating","initialSize":5},
+        {"id":"gitea.createIssue","name":"Create Issue","type":"webview","when":"gitea.issueCreation.active && !gitea.prSession.creating","initialSize":5},
         {"id":"gitea.ciRuns","name":"CI / Actions","icon":"resources/gitea-activity.svg","when":"!gitea.prSession.creating && !gitea.issueCreation.active"},
         {"id":"gitea.ciRunsCreateCompact","name":"CI / Actions","icon":"resources/gitea-activity.svg","when":"gitea.prSession.creating && !gitea.issueCreation.active","visibility":"collapsed"},
         {"id":"gitea.ciRunsIssueCreateCompact","name":"CI / Actions","icon":"resources/gitea-activity.svg","when":"gitea.issueCreation.active && !gitea.prSession.creating","visibility":"collapsed"}
