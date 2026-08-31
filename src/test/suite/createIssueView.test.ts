@@ -32,18 +32,35 @@ suite("Create Issue sidebar", () => {
     assert.doesNotMatch(refreshSource, /body: ""/);
   });
 
-  test("creates through Gitea then refreshes Issues and leaves create mode", () => {
-    assert.match(source, /this\.api\.createIssue\(repoInfo, \{ title, body \}\)/);
+  test("exposes native repository metadata pickers", () => {
+    assert.match(source, /type: "pickAssignees"/);
+    assert.match(source, /type: "pickLabels"/);
+    assert.match(source, /type: "pickMilestone"/);
+    assert.match(source, /listAssignees\(this\.draft\.repoInfo\)/);
+    assert.match(source, /listLabels\(this\.draft\.repoInfo\)/);
+    assert.match(source, /listMilestones\(this\.draft\.repoInfo\)/);
+    assert.match(source, /canPickMany: true, placeHolder: "Select issue assignees"/);
+    assert.match(source, /canPickMany: true, placeHolder: "Select issue labels"/);
+    assert.match(source, /No milestone/);
+  });
+
+  test("submits selected metadata with the issue", () => {
+    assert.match(source, /assignees: assignees\.map\(\(user\) => user\.login\)/);
+    assert.match(source, /labels: labels\.map\(\(label\) => label\.id\)/);
+    assert.match(source, /milestone: milestone\?\.id/);
     const create = source.indexOf("private async createIssue");
     const refresh = source.indexOf('"gitea.refreshIssues"', create);
     const clear = source.indexOf("this.session.clear()", refresh);
     assert.ok(create >= 0 && refresh > create && clear > refresh);
   });
 
-  test("keeps repository selection explicit and authoring branch-independent", () => {
+  test("keeps repository selection explicit and resets repository-bound metadata", () => {
     assert.match(source, /changeRepository/);
     assert.match(source, /Select the Gitea repository for the new issue/);
     assert.doesNotMatch(source, /currentBranch/);
+    assert.match(source, /this\.draft\.assignees = \[\]/);
+    assert.match(source, /this\.draft\.labels = \[\]/);
+    assert.match(source, /this\.draft\.milestone = undefined/);
   });
 
   test("uses sidebar controls instead of legacy input boxes", () => {
