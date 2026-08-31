@@ -22,7 +22,7 @@ suite("Issue template parsing", () => {
 
     assert.strictEqual(template.name, "Bug report");
     assert.strictEqual(template.about, "Report a reproducible problem");
-    assert.strictEqual(template.title, "[BUG]");
+    assert.strictEqual(template.title, "[BUG] ");
     assert.deepStrictEqual(template.labelNames, ["bug", "triage"]);
     assert.deepStrictEqual(template.assigneeNames, ["alice", "bob"]);
     assert.strictEqual(template.body, "## What happened?\n\nDescribe the problem.");
