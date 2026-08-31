@@ -8,8 +8,8 @@ import {
   type WorkingRepositoryCandidate,
 } from "../domain/workingFileBridge";
 
-export type OpenWorkingFileResult =
-  | { kind: "opened"; uri: vscode.Uri }
+export type ResolveWorkingFileResult =
+  | { kind: "resolved"; uri: vscode.Uri }
   | {
       kind: "unavailable";
       reason:
@@ -21,14 +21,18 @@ export type OpenWorkingFileResult =
       currentBranch?: string;
     };
 
+export type OpenWorkingFileResult =
+  | { kind: "opened"; uri: vscode.Uri }
+  | Exclude<ResolveWorkingFileResult, { kind: "resolved" }>;
+
 export class WorkingFileBridgeService {
   constructor(private readonly repoManager: RepoManager) {}
 
-  async open(
+  async resolve(
     activeRepo: RepoInfo,
     pr: GiteaPullRequest,
     filename: string,
-  ): Promise<OpenWorkingFileResult> {
+  ): Promise<ResolveWorkingFileResult> {
     const decision = evaluateWorkingFileBridge(
       activeRepo.serverUrl,
       pr.head.repo.full_name,
@@ -48,7 +52,25 @@ export class WorkingFileBridgeService {
       };
     }
 
-    return this.openFromVerifiedWorkspace(decision.repository, pr, filename);
+    return this.resolveFromVerifiedWorkspace(decision.repository, pr, filename);
+  }
+
+  async open(
+    activeRepo: RepoInfo,
+    pr: GiteaPullRequest,
+    filename: string,
+  ): Promise<OpenWorkingFileResult> {
+    const result = await this.resolve(activeRepo, pr, filename);
+    if (result.kind === "unavailable") return result;
+
+    await vscode.window.showTextDocument(result.uri, {
+      preview: false,
+      preserveFocus: false,
+    });
+    info(
+      `[working-file] opened repo=${activeRepo.key} pr=#${pr.number} branch=${pr.head.ref} file=${filename}`,
+    );
+    return { kind: "opened", uri: result.uri };
   }
 
   async openPrepared(
@@ -56,14 +78,24 @@ export class WorkingFileBridgeService {
     pr: GiteaPullRequest,
     filename: string,
   ): Promise<OpenWorkingFileResult> {
-    return this.openFromVerifiedWorkspace(preparedRepo, pr, filename);
+    const result = await this.resolveFromVerifiedWorkspace(preparedRepo, pr, filename);
+    if (result.kind === "unavailable") return result;
+
+    await vscode.window.showTextDocument(result.uri, {
+      preview: false,
+      preserveFocus: false,
+    });
+    info(
+      `[working-file] opened repo=${preparedRepo.key} pr=#${pr.number} branch=${pr.head.ref} file=${filename}`,
+    );
+    return { kind: "opened", uri: result.uri };
   }
 
-  private async openFromVerifiedWorkspace(
+  private async resolveFromVerifiedWorkspace(
     repoInfo: WorkingRepositoryCandidate,
     pr: GiteaPullRequest,
     filename: string,
-  ): Promise<OpenWorkingFileResult> {
+  ): Promise<ResolveWorkingFileResult> {
     const root = path.resolve(repoInfo.rootPath);
     const target = path.resolve(root, filename);
     const relative = path.relative(root, target);
@@ -87,13 +119,9 @@ export class WorkingFileBridgeService {
       return { kind: "unavailable", reason: "fileNotFound" };
     }
 
-    await vscode.window.showTextDocument(uri, {
-      preview: false,
-      preserveFocus: false,
-    });
     info(
-      `[working-file] opened repo=${repoInfo.key} pr=#${pr.number} branch=${pr.head.ref} file=${filename}`,
+      `[working-file] resolved repo=${repoInfo.key} pr=#${pr.number} branch=${pr.head.ref} file=${filename}`,
     );
-    return { kind: "opened", uri };
+    return { kind: "resolved", uri };
   }
 }
