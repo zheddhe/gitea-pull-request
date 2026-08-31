@@ -1,5 +1,7 @@
 import * as vscode from "vscode";
 import { GiteaApiClient } from "../../../api/giteaApiClient";
+import { RepositoryMetadataApi } from "../../../api/repositoryMetadataApi";
+import type { GiteaLabel, GiteaMilestone, GiteaUser } from "../../../api/types";
 import { RepoInfo, RepoManager } from "../../../context/repoManager";
 import { IssueCreationSessionService } from "../services/issueCreationSessionService";
 
@@ -7,6 +9,9 @@ interface CreateIssueDraft {
   repoInfo: RepoInfo;
   title: string;
   body: string;
+  assignees: GiteaUser[];
+  labels: GiteaLabel[];
+  milestone?: GiteaMilestone;
 }
 
 interface FormSnapshot {
@@ -17,6 +22,9 @@ interface FormSnapshot {
 type CreateIssueViewMessage =
   | ({ type: "updateForm" } & FormSnapshot)
   | ({ type: "changeRepository" } & FormSnapshot)
+  | ({ type: "pickAssignees" } & FormSnapshot)
+  | ({ type: "pickLabels" } & FormSnapshot)
+  | ({ type: "pickMilestone" } & FormSnapshot)
   | ({ type: "create" } & FormSnapshot);
 
 export class CreateIssueViewProvider
@@ -30,6 +38,7 @@ export class CreateIssueViewProvider
 
   constructor(
     private readonly api: GiteaApiClient,
+    private readonly metadataApi: RepositoryMetadataApi,
     private readonly repoManager: RepoManager,
     private readonly session: IssueCreationSessionService,
   ) {
@@ -65,7 +74,13 @@ export class CreateIssueViewProvider
     const repoInfo = await this.pickRepository();
     if (!repoInfo) return;
 
-    this.draft = { repoInfo, title: "", body: "" };
+    this.draft = {
+      repoInfo,
+      title: "",
+      body: "",
+      assignees: [],
+      labels: [],
+    };
     await this.session.start(this.repositoryRef(repoInfo));
     this.render();
     await vscode.commands.executeCommand(`${CreateIssueViewProvider.viewType}.focus`);
@@ -121,6 +136,15 @@ export class CreateIssueViewProvider
       case "changeRepository":
         await this.changeRepository();
         return;
+      case "pickAssignees":
+        await this.pickAssignees();
+        return;
+      case "pickLabels":
+        await this.pickLabels();
+        return;
+      case "pickMilestone":
+        await this.pickMilestone();
+        return;
       case "create":
         await this.createIssue();
         return;
@@ -130,10 +154,82 @@ export class CreateIssueViewProvider
   private async changeRepository(): Promise<void> {
     if (!this.draft) return;
     const repoInfo = await this.pickRepository();
-    if (!repoInfo) return;
+    if (!repoInfo || repoInfo.key === this.draft.repoInfo.key) return;
+
+    // Title/body are portable author input; repository metadata is not.
     this.draft.repoInfo = repoInfo;
+    this.draft.assignees = [];
+    this.draft.labels = [];
+    this.draft.milestone = undefined;
     await this.session.start(this.repositoryRef(repoInfo));
     this.render();
+  }
+
+  private async pickAssignees(): Promise<void> {
+    if (!this.draft) return;
+    try {
+      const users = await this.metadataApi.listAssignees(this.draft.repoInfo);
+      const selected = await vscode.window.showQuickPick(
+        users.map((user) => ({
+          label: user.login,
+          description: user.full_name || undefined,
+          picked: this.draft?.assignees.some((item) => item.login === user.login),
+          user,
+        })),
+        { canPickMany: true, placeHolder: "Select issue assignees" },
+      );
+      if (selected) {
+        this.draft.assignees = selected.map((item) => item.user);
+        this.render();
+      }
+    } catch (error) {
+      this.showMetadataError("assignees", error);
+    }
+  }
+
+  private async pickLabels(): Promise<void> {
+    if (!this.draft) return;
+    try {
+      const labels = await this.metadataApi.listLabels(this.draft.repoInfo);
+      const selected = await vscode.window.showQuickPick(
+        labels.map((label) => ({
+          label: label.name,
+          description: `#${label.color}`,
+          picked: this.draft?.labels.some((item) => item.id === label.id),
+          giteaLabel: label,
+        })),
+        { canPickMany: true, placeHolder: "Select issue labels" },
+      );
+      if (selected) {
+        this.draft.labels = selected.map((item) => item.giteaLabel);
+        this.render();
+      }
+    } catch (error) {
+      this.showMetadataError("labels", error);
+    }
+  }
+
+  private async pickMilestone(): Promise<void> {
+    if (!this.draft) return;
+    try {
+      const milestones = await this.metadataApi.listMilestones(this.draft.repoInfo);
+      const selected = await vscode.window.showQuickPick(
+        [
+          {
+            label: "$(circle-slash) No milestone",
+            milestone: undefined as GiteaMilestone | undefined,
+          },
+          ...milestones.map((milestone) => ({ label: milestone.title, milestone })),
+        ],
+        { placeHolder: "Select an issue milestone" },
+      );
+      if (selected) {
+        this.draft.milestone = selected.milestone;
+        this.render();
+      }
+    } catch (error) {
+      this.showMetadataError("milestones", error);
+    }
   }
 
   private async createIssue(): Promise<void> {
@@ -144,7 +240,7 @@ export class CreateIssueViewProvider
       return;
     }
 
-    const { repoInfo, body } = this.draft;
+    const { repoInfo, body, assignees, labels, milestone } = this.draft;
     await vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Notification,
@@ -152,7 +248,13 @@ export class CreateIssueViewProvider
       },
       async () => {
         try {
-          const issue = await this.api.createIssue(repoInfo, { title, body });
+          const issue = await this.api.createIssue(repoInfo, {
+            title,
+            body,
+            assignees: assignees.map((user) => user.login),
+            labels: labels.map((label) => label.id),
+            milestone: milestone?.id,
+          });
           await vscode.commands.executeCommand("gitea.refreshIssues");
           await this.session.clear();
           const action = await vscode.window.showInformationMessage(
@@ -168,6 +270,12 @@ export class CreateIssueViewProvider
           );
         }
       },
+    );
+  }
+
+  private showMetadataError(kind: string, error: unknown): void {
+    vscode.window.showErrorMessage(
+      `Unable to load issue ${kind}: ${(error as Error).message}`,
     );
   }
 
@@ -187,7 +295,12 @@ export class CreateIssueViewProvider
       return;
     }
 
-    const { repoInfo, title, body } = this.draft;
+    const { repoInfo, title, body, assignees, labels, milestone } = this.draft;
+    const chips = (values: string[], emptyLabel = "None selected") =>
+      values.length > 0
+        ? values.map((value) => `<span class="chip">${escapeHtml(value)}</span>`).join("")
+        : `<span class="metadata-empty">${escapeHtml(emptyLabel)}</span>`;
+
     this.view.webview.html = `<!doctype html>
 <html lang="en">
 <head>
@@ -198,15 +311,18 @@ export class CreateIssueViewProvider
   body { padding: 12px; color: var(--vscode-foreground); font-family: var(--vscode-font-family); }
   .card { border: 1px solid var(--vscode-panel-border); border-radius: 6px; padding: 12px; background: var(--vscode-sideBar-background); }
   h2 { margin: 0 0 12px; font-size: 13px; font-weight: 600; }
-  label { display: block; margin: 12px 0 5px; font-size: 12px; color: var(--vscode-descriptionForeground); }
+  label, .metadata-label { display: block; margin: 12px 0 5px; font-size: 12px; color: var(--vscode-descriptionForeground); }
   input, textarea { width: 100%; font: inherit; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, transparent); padding: 6px 8px; }
   textarea { min-height: 150px; resize: vertical; }
-  .repo-row { display: flex; align-items: center; gap: 8px; }
-  .repo { flex: 1; color: var(--vscode-descriptionForeground); overflow: hidden; text-overflow: ellipsis; }
+  .repo-row, .metadata-row { display: flex; align-items: center; gap: 8px; }
+  .repo, .metadata-values { flex: 1; color: var(--vscode-descriptionForeground); overflow: hidden; text-overflow: ellipsis; }
+  .metadata-values { display: flex; gap: 4px; flex-wrap: wrap; }
+  .chip { border: 1px solid var(--vscode-panel-border); border-radius: 10px; padding: 2px 7px; color: var(--vscode-foreground); }
+  .metadata-empty { opacity: .75; }
   button { font: inherit; border: 0; padding: 6px 10px; cursor: pointer; color: var(--vscode-button-foreground); background: var(--vscode-button-background); }
   button:hover { background: var(--vscode-button-hoverBackground); }
   button.secondary { color: var(--vscode-button-secondaryForeground); background: var(--vscode-button-secondaryBackground); }
-  .actions { display: flex; justify-content: flex-end; margin-top: 12px; }
+  .actions { display: flex; justify-content: flex-end; margin-top: 14px; }
 </style>
 </head>
 <body>
@@ -220,6 +336,14 @@ export class CreateIssueViewProvider
     <input id="title" aria-label="Issue title" placeholder="Issue title" value="${escapeHtml(title)}" />
     <label for="body">Description</label>
     <textarea id="body" aria-label="Issue description" placeholder="Issue description (Markdown)">${escapeHtml(body)}</textarea>
+
+    <span class="metadata-label">Assignees</span>
+    <div class="metadata-row"><div class="metadata-values">${chips(assignees.map((user) => user.login))}</div><button id="pickAssignees" class="secondary" type="button">Select</button></div>
+    <span class="metadata-label">Labels</span>
+    <div class="metadata-row"><div class="metadata-values">${chips(labels.map((label) => label.name))}</div><button id="pickLabels" class="secondary" type="button">Select</button></div>
+    <span class="metadata-label">Milestone</span>
+    <div class="metadata-row"><div class="metadata-values">${chips(milestone ? [milestone.title] : [], "No milestone")}</div><button id="pickMilestone" class="secondary" type="button">Select</button></div>
+
     <div class="actions"><button id="create" type="button">Create Issue</button></div>
   </section>
 <script>
@@ -227,11 +351,15 @@ export class CreateIssueViewProvider
   const title = document.getElementById('title');
   const body = document.getElementById('body');
   const snapshot = (type) => ({ type, title: title.value, body: body.value });
-  const formChanged = () => vscode.postMessage(snapshot('updateForm'));
+  const post = (type) => vscode.postMessage(snapshot(type));
+  const formChanged = () => post('updateForm');
   title.addEventListener('input', formChanged);
   body.addEventListener('input', formChanged);
-  document.getElementById('changeRepository').addEventListener('click', () => vscode.postMessage(snapshot('changeRepository')));
-  document.getElementById('create').addEventListener('click', () => vscode.postMessage(snapshot('create')));
+  document.getElementById('changeRepository').addEventListener('click', () => post('changeRepository'));
+  document.getElementById('pickAssignees').addEventListener('click', () => post('pickAssignees'));
+  document.getElementById('pickLabels').addEventListener('click', () => post('pickLabels'));
+  document.getElementById('pickMilestone').addEventListener('click', () => post('pickMilestone'));
+  document.getElementById('create').addEventListener('click', () => post('create'));
 </script>
 </body>
 </html>`;
