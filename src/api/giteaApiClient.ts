@@ -228,14 +228,10 @@ export class GiteaApiClient {
 
   async getPRRawDiff(repoInfo: RepoInfo, number: number): Promise<string> {
     const { serverUrl, owner, repo } = repoInfo;
-    const session = await this.auth.getSession(serverUrl);
-    if (!session) {
-      throw new Error(`Not authenticated to ${serverUrl}. Use "Gitea: Sign In" to authenticate.`);
-    }
-    const url = `${serverUrl}/${owner}/${repo}/pulls/${number}.diff`;
-    const resp = await fetch(url, { headers: { Authorization: `token ${session.token}` } });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status} fetching diff`);
-    return resp.text();
+    return this.requestText(
+      serverUrl,
+      `/repos/${owner}/${repo}/pulls/${number}.diff`,
+    );
   }
 
   async listPRCommits(repoInfo: RepoInfo, number: number): Promise<GiteaCommit[]> {

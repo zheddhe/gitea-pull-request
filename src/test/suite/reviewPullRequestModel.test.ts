@@ -170,6 +170,38 @@ suite("reviewPullRequestModel", () => {
     );
   });
 
+  test("does not invent a pending blocker when no checks are reported", () => {
+    const readiness = evaluateMergeReadiness(
+      pullRequest({ mergeable: true }),
+      emptyCombinedStatus(),
+      [],
+      { user_can_merge: true },
+    );
+
+    assert.strictEqual(readiness.canMerge, true);
+    assert.strictEqual(readiness.ciLabel, "Checks: none");
+    assert.ok(
+      !readiness.blockingReasons.some((reason) => reason.includes("pending")),
+    );
+  });
+
+  test("blocks when branch protection requires checks but none have reported", () => {
+    const readiness = evaluateMergeReadiness(
+      pullRequest({ mergeable: true }),
+      emptyCombinedStatus(),
+      [],
+      { user_can_merge: true, enable_status_check: true },
+    );
+
+    assert.strictEqual(readiness.canMerge, false);
+    assert.strictEqual(readiness.ciLabel, "Checks: none");
+    assert.ok(
+      readiness.blockingReasons.some((reason) =>
+        reason.includes("requires status checks"),
+      ),
+    );
+  });
+
   test("keeps warning checks non-blocking", () => {
     const readiness = evaluateMergeReadiness(
       pullRequest({ mergeable: true }),
@@ -328,7 +360,24 @@ function pullRequest(
 function combinedStatus(
   state: GiteaCombinedStatus["state"],
 ): GiteaCombinedStatus {
-  return { state, statuses: [], total_count: 0 };
+  return {
+    state,
+    statuses: [
+      {
+        id: 1,
+        state,
+        context: "ci/test",
+        description: "",
+        target_url: "",
+        created_at: "2026-08-16T00:00:00Z",
+      },
+    ],
+    total_count: 1,
+  };
+}
+
+function emptyCombinedStatus(): GiteaCombinedStatus {
+  return { state: "pending", statuses: [], total_count: 0 };
 }
 
 function review(
