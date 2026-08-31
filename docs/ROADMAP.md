@@ -146,14 +146,14 @@ The user-facing release summary lives in [`CHANGELOG.md`](../CHANGELOG.md). Test
 
 **Release:** `0.9.0`
 
-**Status:** in progress — Phase 8.1 implemented and interactively validated; Phase 8.2 remains.
+**Status:** completed and interactively validated; release candidate pending the final VSIX gate.
 
-Phase 8 is intentionally limited to two P1 stories rather than splitting the release into artificial sub-features:
+Phase 8 was intentionally limited to two P1 stories:
 
 | Order | Story | Priority | Objective | Status |
 |---:|---|:---:|---|---|
-| 1 | [#31 — Phase 8.1: Unified interactive pull request review workspace](https://github.com/zheddhe/gitea-pull-request/issues/31) | P1 | Transform PR review into a persistent interactive workspace | Implemented / validated |
-| 2 | [#32 — Phase 8.2: Sidebar-first issue authoring workflow](https://github.com/zheddhe/gitea-pull-request/issues/32) | P1 | Give Issue creation the same first-class sidebar quality as PR creation | Planned / next |
+| 1 | [#31 — Phase 8.1: Unified interactive pull request review workspace](https://github.com/zheddhe/gitea-pull-request/issues/31) | P1 | Transform PR review into a persistent interactive workspace | Completed / validated |
+| 2 | [#32 — Phase 8.2: Sidebar-first issue authoring workflow](https://github.com/zheddhe/gitea-pull-request/issues/32) | P1 | Give Issue creation the same first-class sidebar quality as PR creation | Completed / validated |
 
 ### 8.1 — Unified interactive pull request review workspace
 
@@ -174,28 +174,34 @@ Core product rule established by 8.1:
 
 > Review and modification are connected but distinct jobs. The PR snapshot is authoritative for review; the local working tree is authoritative for edits.
 
+A Gitea 1.26 regression found during Phase 8 validation was fixed before release: raw PR diff retrieval now uses the authenticated REST endpoint, and repositories reporting zero status checks no longer become artificially pending unless branch protection explicitly requires checks.
+
 ### 8.2 — Sidebar-first issue authoring workflow
 
-Next implementation story:
+Implemented on PR #36:
 
-- dedicated temporary **Create Issue** sidebar workspace aligned with Create Pull Request;
-- repository-aware title/Markdown authoring with draft preservation and normal layout restoration;
-- `.gitea/ISSUE_TEMPLATE/` discovery and conservative front-matter/default handling;
-- native assignee/label/milestone pickers where Gitea read/write support is reliable;
-- project/default integration only when the extension can represent and persist it truthfully;
-- removal/demotion of the current title-only prompt as the primary creation path.
+- dedicated temporary **Create Issue** sidebar workspace aligned with Create Pull Request, keeping Issues visible while PR/CI views are compacted;
+- explicit repository selection with branch-independent authoring;
+- title and Markdown description with draft preservation across Activity Bar switches and safe refreshes;
+- native assignee, label and milestone QuickPick workflows using the same metadata interaction language as Create Pull Request;
+- `.gitea/ISSUE_TEMPLATE/` discovery on the selected repository's default branch;
+- conservative front-matter support for `name`, `about`, `title`, `labels` and `assignees`, plus plain Markdown fallback;
+- explicit Blank issue selection and clean behavior when templates are missing or invalid;
+- deterministic reconciliation rules: refresh preserves user edits, explicit template selection reseeds title/body/metadata, and repository switching retains portable title/body while clearing repository-bound selections;
+- successful creation refreshes the Issues tree and restores normal UI state; cancellation creates nothing server-side;
+- the legacy minimal title-prompt creation path is retired from primary Issue authoring;
+- project metadata and arbitrary branch-derived defaults remain intentionally absent while reliable read/write semantics cannot be guaranteed.
 
 ### `0.9.0` release gate
 
-Do **not** promote package metadata to `0.9.0` until both #31 and #32 are complete. Once Phase 8.2 is implemented and validated:
+Package and lock metadata are promoted to `0.9.0`. The remaining release gate is:
 
 ```bash
-make promote RELEASE_VERSION=0.9.0
 make verify
 make reinstall-vsix
 ```
 
-Then validate the exact `.artifacts/vsix/gitea-pull-request-0.9.0.vsix`, mark the final Phase 8 PR ready, merge, tag the merged `main` commit as `v0.9.0`, publish the GitHub Release, and manually upload the exact release VSIX to the Marketplace.
+Then validate the exact `.artifacts/vsix/gitea-pull-request-0.9.0.vsix`, merge PR #36, tag the merged `main` commit as `v0.9.0`, publish the draft GitHub Release after confirming its VSIX asset, and manually upload that exact verified VSIX to the Marketplace.
 
 ---
 
@@ -205,11 +211,11 @@ Then validate the exact `.artifacts/vsix/gitea-pull-request-0.9.0.vsix`, mark th
 |---|---|
 | `src/api/` | Keep and evolve |
 | `src/auth/` | Keep |
-| `src/context/` | Keep; integrate PR session state |
+| `src/context/` | Keep; integrate workflow session state |
 | `src/views/pullRequestProvider.ts` | Keep and evolve |
 | `src/views/prDiffProvider.ts` | Keep and evolve; authoritative active-PR snapshot plus reviewed-file progress |
 | `src/views/prDetailPanel.ts` | Keep as rich interactive PR review/discussion surface |
-| `src/views/issuesProvider.ts` | Keep and evolve for Phase 8.2 authoring entry |
+| `src/views/issuesProvider.ts` | Keep as Issue browsing/filtering/action surface; Create Issue orchestration lives under `src/features/issues/` |
 | `src/views/issueDetailPanel.ts` | Keep as rich Markdown issue detail/editing WebviewPanel |
 | `src/views/ciRunsProvider.ts` | Keep in general Gitea workspace; PR-centric status remains contextual in Review |
 | `src/commands/prCommands.ts` | Continue splitting by workflow responsibility when useful |
