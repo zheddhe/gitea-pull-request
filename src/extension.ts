@@ -13,6 +13,7 @@ import { registerAuthCommands } from "./commands/authCommands";
 import { registerIssueCommands } from "./commands/issueCommands";
 import { initOutputChannel } from "./debug/outputChannel";
 import { IssueCreationSessionService } from "./features/issues/services/issueCreationSessionService";
+import { IssueTemplateService } from "./features/issues/services/issueTemplateService";
 import { CreateIssueViewProvider } from "./features/issues/views/createIssueView";
 import { registerConflictResolutionCommands } from "./features/pullRequests/commands/conflictResolutionCommands";
 import { registerPullRequestSessionCommands } from "./features/pullRequests/commands/sessionCommands";
@@ -44,6 +45,7 @@ export async function activate(
   const api = new ResilientGiteaApiClient(auth);
   const metadataApi = new PullRequestMetadataApi(auth);
   const issueMetadataApi = new RepositoryMetadataApi(auth);
+  const issueTemplateService = new IssueTemplateService(auth);
   const reviewApi = new PullRequestReviewApi(auth);
   const prSession = new PullRequestSessionService();
   const issueCreationSession = new IssueCreationSessionService();
@@ -75,6 +77,7 @@ export async function activate(
   const createIssueView = new CreateIssueViewProvider(
     api,
     issueMetadataApi,
+    issueTemplateService,
     repoManager,
     issueCreationSession,
   );
