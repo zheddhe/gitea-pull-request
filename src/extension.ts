@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { AuthManager } from "./auth/authManager";
 import { PullRequestMetadataApi } from "./api/pullRequestMetadataApi";
+import { RepositoryMetadataApi } from "./api/repositoryMetadataApi";
 import { RepoManager } from "./context/repoManager";
 import { CIRunsProvider } from "./views/ciRunsProvider";
 import { IssuesProvider } from "./views/issuesProvider";
@@ -42,6 +43,7 @@ export async function activate(
   const repoManager = new RepoManager(() => auth.getServerUrls());
   const api = new ResilientGiteaApiClient(auth);
   const metadataApi = new PullRequestMetadataApi(auth);
+  const issueMetadataApi = new RepositoryMetadataApi(auth);
   const reviewApi = new PullRequestReviewApi(auth);
   const prSession = new PullRequestSessionService();
   const issueCreationSession = new IssueCreationSessionService();
@@ -72,6 +74,7 @@ export async function activate(
   );
   const createIssueView = new CreateIssueViewProvider(
     api,
+    issueMetadataApi,
     repoManager,
     issueCreationSession,
   );
