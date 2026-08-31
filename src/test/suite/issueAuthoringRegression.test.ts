@@ -30,12 +30,20 @@ suite("Issue authoring regression contract", () => {
       "gitea.reopenIssue",
       "gitea.addIssueComment",
     ]) {
-      assert.match(commandSource, new RegExp(`registerCommand\\(\\"${command.replace(/\./g, "\\.")}\\"`));
+      assert.match(
+        commandSource,
+        new RegExp(
+          `registerCommand\\(\\s*\\"${command.replace(/\./g, "\\.")}\\"`,
+        ),
+      );
     }
   });
 
   test("does not reintroduce the legacy issue creation prompt", () => {
-    assert.doesNotMatch(commandSource, /registerCommand\("gitea\.createIssue"/);
+    assert.doesNotMatch(
+      commandSource,
+      /registerCommand\(\s*"gitea\.createIssue"/,
+    );
     assert.doesNotMatch(commandSource, /prompt: "Issue title"/);
     assert.doesNotMatch(commandSource, /async function createIssue\(/);
   });
