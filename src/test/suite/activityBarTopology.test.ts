@@ -120,8 +120,8 @@ suite("Activity Bar topology", () => {
       byId.get("gitea.createIssue")?.when,
       "gitea.issueCreation.active && !gitea.prSession.creating",
     );
-    assert.strictEqual(byId.get("gitea.createIssue")?.initialSize, 8);
-    assert.strictEqual(byId.get("gitea.issuesIssueCreateMode")?.initialSize, 2);
+    assert.strictEqual(byId.get("gitea.createIssue")?.initialSize, 5);
+    assert.strictEqual(byId.get("gitea.issuesIssueCreateMode")?.initialSize, 5);
     assert.strictEqual(
       byId.get("gitea.pullRequestsIssueCreateCompact")?.visibility,
       "collapsed",
