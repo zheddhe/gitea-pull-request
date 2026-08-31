@@ -4,34 +4,28 @@ All notable changes to **Gitea Pull Request** are documented in this file.
 
 ## 0.9.0 - Unreleased
 
-`0.9.0` completes Phase 8 with two first-class workflows: a persistent interactive pull-request review workspace and sidebar-first Issue authoring with repository templates and metadata.
+`0.9.0` strengthens the two most important day-to-day workflows: interactive pull-request review and first-class Issue authoring directly from the sidebar.
 
-### Added — Phase 8.1: interactive pull-request review workspace
-- **Persistent Reviewed/Viewed file progress** in Changes in Pull Request, including directory/section propagation, `n / total reviewed` progress and selective invalidation when a newer PR head changes a previously reviewed file.
-- **Interactive inline review conversations** with root/reply grouping, Gitea same-anchor reconstruction, capability-gated replies, resolve/reopen lifecycle and compact resolved-thread presentation.
-- **Pending review session** covering new inline comments, replies and resolve/reopen operations. Pending work survives refresh, submits as one user-level review transaction and retains failed operations for retry after a partial server failure.
-- Explicit **Open Working File** and **Checkout Source and Open File** paths that connect review context to the real source branch without silently switching branches.
-- Distinct **Open Editable PR Diff** mode comparing `base@PR` to the working-tree file when the local state is proven safe and initially identical to the reviewed head.
-- Server capability detection for inline-review operations so unsupported actions are hidden/blocked rather than sent to incompatible Gitea versions.
-
-### Added — Phase 8.2: sidebar-first Issue authoring
-- Dedicated temporary **Create Issue** WebviewView with the Issues tree kept visible while Pull Requests and CI / Actions are compacted.
-- Repository-aware **title and Markdown description authoring** with draft preservation across normal Activity Bar navigation and safe refreshes.
-- `.gitea/ISSUE_TEMPLATE/` discovery from the selected repository's default branch, including explicit Blank issue fallback.
-- Conservative issue-template front-matter support for `name`, `about`, `title`, `labels` and `assignees`, with template body Markdown preserved.
-- Native VS Code QuickPick selection for **assignees, labels and milestone**, aligned with Create Pull Request interaction conventions.
-- Deterministic draft/template/repository reconciliation so refresh never silently overwrites user edits, explicit template changes intentionally reseed the form, and repository switches retain portable title/body while clearing repository-bound metadata.
-- Successful Issue creation refreshes the Issues tree and exits create mode cleanly; cancellation leaves no partially created server-side Issue.
+### Added
+- **Persistent Reviewed/Viewed file progress** in Changes in Pull Request, including directory/section propagation, aggregate progress and selective invalidation when a newer PR head changes a previously reviewed file.
+- **Interactive inline review conversations** with root/reply grouping, same-anchor reconstruction, capability-gated replies, resolve/reopen lifecycle and compact resolved-thread presentation.
+- A persistent **pending review session** for inline comments, replies and conversation lifecycle operations. Pending work survives refresh, submits as one user-level transaction and retains failed operations for retry after partial server failure.
+- Explicit **Open Working File**, **Checkout Source and Open File** and **Open Editable PR Diff** paths that connect review context to local development without silently changing branches or blurring review/edit authority.
+- A dedicated **Create Issue** sidebar authoring workspace that keeps the Issues tree visible while Pull Requests and CI / Actions are compacted.
+- Repository-aware Issue title and Markdown description authoring with draft preservation across Activity Bar navigation and safe refreshes.
+- `.gitea/ISSUE_TEMPLATE/` discovery from the selected repository's default branch, including conservative front-matter support for `name`, `about`, `title`, `labels` and `assignees`, plus explicit **Blank issue** fallback.
+- Native VS Code QuickPick selection for Issue **assignees, labels and milestone**, aligned with Create Pull Request interaction conventions.
 
 ### Improved
-- **Merge Readiness refresh is neutral** while checks, reviews and mergeability inputs are still consolidating; partial state no longer produces transient optimistic conclusions.
-- PR review and local modification now have an explicit authority boundary: the normal PR snapshot remains authoritative for review/comments, while the working tree remains authoritative for edits/tests.
-- Inline conversations follow Gitea's effective grouping semantics even when reply linkage is absent from returned comments.
-- Resolved conversations collapse as one thread by default, while explicit expansion state survives normal Webview refresh.
-- PR Detail interaction density is more consistent across Inline Reviews, Review History, Discussion and Commits: secondary metadata and icon actions stay close to the objects they describe.
-- The pending review toolbar is hidden when empty and becomes a compact **Submit review changes (N)** / **Discard pending** control only when needed.
-- Create Issue now uses the same metadata-card interaction language as Create Pull Request and no longer relies on the legacy title-only prompt as the primary creation path.
-- Project metadata remains intentionally absent until Gitea read/write behavior can be represented reliably; arbitrary branch names are not converted into opaque Issue defaults.
+- **Merge Readiness refresh stays neutral** while checks, reviews and mergeability inputs are still consolidating, so partial remote state is not presented as a final conclusion.
+- PR review and local modification now have an explicit authority boundary: the PR snapshot remains authoritative for review/comments, while the working tree remains authoritative for edits/tests.
+- Inline conversations follow Gitea's effective grouping semantics even when explicit reply linkage is missing from returned comments.
+- Resolved conversations collapse as one thread by default while explicit expansion state survives normal refresh.
+- PR Detail interaction density is more consistent across Inline Reviews, Review History, Discussion and Commits, with metadata/actions kept close to the objects they affect.
+- The pending review toolbar stays hidden when empty and becomes a compact **Submit review changes (N)** / **Discard pending** control only when needed.
+- Create Issue uses the same metadata-card interaction language as Create Pull Request and replaces the legacy title-only prompt as the primary authoring path.
+- Issue template values act as editable seeds rather than locked defaults. Refresh preserves user edits, explicit template changes intentionally reseed the form, and repository switches retain portable title/body while clearing repository-bound selections.
+- Project metadata and arbitrary branch-derived Issue defaults remain intentionally absent while reliable read/write semantics cannot be represented truthfully.
 
 ### Fixed
 - Gitea 1.26 raw pull-request diff retrieval now uses the authenticated REST endpoint `/api/v1/repos/{owner}/{repo}/pulls/{index}.diff` rather than the web route.
@@ -40,9 +34,8 @@ All notable changes to **Gitea Pull Request** are documented in this file.
 
 ### Compatibility notes
 - The established minimum supported/tested Gitea baseline remains **1.26.4**.
-- Full Reply + Resolve/Reopen interactive validation for Phase 8.1 was performed against **Gitea 1.27.2**.
-- Reply is capability-gated because the corresponding Gitea API arrives in the 1.27 line; older supported servers keep the rest of the review experience without exposing an action that would fail.
-- Resolve/Reopen is capability-gated independently where the server exposes the lifecycle operation.
+- Full Reply + Resolve/Reopen interaction has been validated against **Gitea 1.27.2**.
+- Reply and Resolve/Reopen remain capability-gated so older supported servers keep the rest of the review experience without exposing unsupported actions.
 
 ### Quality and release preparation
 - Creation-state, layout, metadata submission, template parsing/discovery, draft reconciliation and Issue regression contracts are covered by automated tests.
