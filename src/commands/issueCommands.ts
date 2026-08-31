@@ -78,10 +78,6 @@ export function registerIssueCommands(
       },
     ),
 
-    vscode.commands.registerCommand("gitea.createIssue", async () => {
-      await createIssue(api, repoManager, auth, issuesProvider);
-    }),
-
     vscode.commands.registerCommand(
       "gitea.closeIssue",
       async (arg: IssueItem) => {
@@ -139,8 +135,6 @@ export function registerIssueCommands(
   );
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
 async function pickRepo(
   repoManager: RepoManager,
   _auth: AuthManager,
@@ -162,57 +156,6 @@ async function pickRepo(
     { placeHolder: "Select a repository" },
   );
   return choice?.repoInfo;
-}
-
-async function createIssue(
-  api: GiteaApiClient,
-  repoManager: RepoManager,
-  auth: AuthManager,
-  issuesProvider: IssuesProvider,
-): Promise<void> {
-  const repoInfo = await pickRepo(repoManager, auth);
-  if (!repoInfo) {
-    return;
-  }
-
-  const title = await vscode.window.showInputBox({
-    prompt: "Issue title",
-    ignoreFocusOut: true,
-    validateInput: (v) => (v?.trim() ? null : "Title is required"),
-  });
-  if (!title) {
-    return;
-  }
-
-  const body =
-    (await vscode.window.showInputBox({
-      prompt: "Description (optional)",
-      ignoreFocusOut: true,
-    })) ?? "";
-
-  await vscode.window.withProgress(
-    {
-      location: vscode.ProgressLocation.Notification,
-      title: "Creating issue...",
-    },
-    async () => {
-      try {
-        const issue = await api.createIssue(repoInfo, { title, body });
-        const action = await vscode.window.showInformationMessage(
-          `Issue #${issue.number} created.`,
-          "Open in Browser",
-        );
-        if (action === "Open in Browser") {
-          await vscode.env.openExternal(vscode.Uri.parse(issue.html_url));
-        }
-        issuesProvider.refresh();
-      } catch (err) {
-        vscode.window.showErrorMessage(
-          `Failed to create issue: ${(err as Error).message}`,
-        );
-      }
-    },
-  );
 }
 
 async function changeIssueState(
