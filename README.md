@@ -215,8 +215,6 @@ The README is intentionally focused on using the extension. Maintainer and proje
 - [Roadmap](docs/ROADMAP.md) — product evolution and current release phase
 - [Changelog](CHANGELOG.md) — user-facing changes by release
 
-Release `0.9.0` completes Phase 8 through [#31 — interactive PR review workspace](https://github.com/zheddhe/gitea-pull-request/issues/31) and [#32 — sidebar-first Issue authoring](https://github.com/zheddhe/gitea-pull-request/issues/32).
-
 ## Project origin
 
 Gitea Pull Request is an independent product/version line originating from an earlier MIT-licensed Gitea VS Code extension codebase and a short-lived enhanced fork. Inherited attribution remains preserved in the repository license/history and [NOTICE](NOTICE).
