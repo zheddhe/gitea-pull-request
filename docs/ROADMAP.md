@@ -146,51 +146,20 @@ The user-facing release summary lives in [`CHANGELOG.md`](../CHANGELOG.md). Test
 
 **Release:** `0.9.0`
 
-**Status:** completed and interactively validated; release candidate pending the final VSIX gate.
+Completed:
 
-Phase 8 was intentionally limited to two P1 stories:
+- persistent Reviewed/Viewed file progress with aggregate state and selective invalidation when a newer PR head changes previously reviewed files;
+- interactive inline review conversations with reply grouping, resolve/reopen lifecycle, compact resolved threads and server capability gating;
+- one persistent pending-review session for inline comments and conversation mutations, including deterministic retry behavior after partial server failure;
+- explicit bridge between the authoritative PR review snapshot and safe local working-tree editing, without silent checkout or ambiguous diff authority;
+- neutral Merge Readiness while remote checks/reviews/mergeability are still consolidating, plus corrected no-check semantics on Gitea 1.26;
+- first-class **Create Issue** sidebar authoring with repository selection, Markdown title/body workflow and temporary layout that keeps Issues visible;
+- `.gitea/ISSUE_TEMPLATE/` discovery from the repository default branch with conservative front-matter support and explicit Blank issue fallback;
+- native assignee, label and milestone selection aligned with the existing Create Pull Request interaction language;
+- deterministic draft preservation and reconciliation across refresh, template selection, Activity Bar switches and repository changes;
+- authenticated raw PR diff retrieval compatible with the supported Gitea 1.26 baseline.
 
-| Order | Story | Priority | Objective | Status |
-|---:|---|:---:|---|---|
-| 1 | [#31 — Phase 8.1: Unified interactive pull request review workspace](https://github.com/zheddhe/gitea-pull-request/issues/31) | P1 | Transform PR review into a persistent interactive workspace | Completed / validated |
-| 2 | [#32 — Phase 8.2: Sidebar-first issue authoring workflow](https://github.com/zheddhe/gitea-pull-request/issues/32) | P1 | Give Issue creation the same first-class sidebar quality as PR creation | Completed / validated |
-
-### 8.1 — Unified interactive pull request review workspace
-
-Implemented on PR #33:
-
-- neutral Merge Readiness while asynchronous readiness inputs are still consolidating;
-- persistent Reviewed/Viewed file state with directory/section propagation, aggregate progress and selective invalidation when a newer PR head changes a file;
-- Gitea-aligned inline review conversations with root/reply grouping, same-anchor fallback reconstruction, capability-gated Reply, Resolve/Reopen and compact resolved-thread presentation;
-- one persistent **pending review session** for inline comments, replies and lifecycle mutations, preserving review context through refresh and submitting the user-level transaction with one final refresh;
-- deterministic partial-failure handling that retains only operations still requiring retry;
-- explicit bridge from authoritative `base@PR ↔ head@PR` review snapshots to safe local working files;
-- explicit checkout/source guards that reject dirty, divergent or unprovable local mappings rather than silently changing branches;
-- distinct **Open Editable PR Diff** mode (`base@PR ↔ working-tree file`) for the reviewer/developer workflow, while keeping the normal PR diff authoritative for review anchors;
-- compact PR Detail ergonomics across Inline Reviews, Review History, Discussion and Commits, with actions/metadata kept close to the objects they affect;
-- server capability handling: full Reply + Resolve/Reopen interactive validation used Gitea 1.27.2, while unsupported actions remain gated for older servers.
-
-Core product rule established by 8.1:
-
-> Review and modification are connected but distinct jobs. The PR snapshot is authoritative for review; the local working tree is authoritative for edits.
-
-A Gitea 1.26 regression found during Phase 8 validation was fixed before release: raw PR diff retrieval now uses the authenticated REST endpoint, and repositories reporting zero status checks no longer become artificially pending unless branch protection explicitly requires checks.
-
-### 8.2 — Sidebar-first issue authoring workflow
-
-Implemented on PR #36:
-
-- dedicated temporary **Create Issue** sidebar workspace aligned with Create Pull Request, keeping Issues visible while PR/CI views are compacted;
-- explicit repository selection with branch-independent authoring;
-- title and Markdown description with draft preservation across Activity Bar switches and safe refreshes;
-- native assignee, label and milestone QuickPick workflows using the same metadata interaction language as Create Pull Request;
-- `.gitea/ISSUE_TEMPLATE/` discovery on the selected repository's default branch;
-- conservative front-matter support for `name`, `about`, `title`, `labels` and `assignees`, plus plain Markdown fallback;
-- explicit Blank issue selection and clean behavior when templates are missing or invalid;
-- deterministic reconciliation rules: refresh preserves user edits, explicit template selection reseeds title/body/metadata, and repository switching retains portable title/body while clearing repository-bound selections;
-- successful creation refreshes the Issues tree and restores normal UI state; cancellation creates nothing server-side;
-- the legacy minimal title-prompt creation path is retired from primary Issue authoring;
-- project metadata and arbitrary branch-derived defaults remain intentionally absent while reliable read/write semantics cannot be guaranteed.
+Phase 8 keeps the established VS Code 1.133.0+ / Gitea 1.26.4+ compatibility baseline. Inline review operations introduced by newer Gitea versions remain capability-gated; full Reply + Resolve/Reopen interaction has been validated against Gitea 1.27.2.
 
 ### `0.9.0` release gate
 
@@ -201,7 +170,7 @@ make verify
 make reinstall-vsix
 ```
 
-Then validate the exact `.artifacts/vsix/gitea-pull-request-0.9.0.vsix`, merge PR #36, tag the merged `main` commit as `v0.9.0`, publish the draft GitHub Release after confirming its VSIX asset, and manually upload that exact verified VSIX to the Marketplace.
+Then validate the exact `.artifacts/vsix/gitea-pull-request-0.9.0.vsix`, merge the release candidate, tag the merged `main` commit as `v0.9.0`, publish the draft GitHub Release after confirming its VSIX asset, and manually upload that exact verified VSIX to the Marketplace.
 
 ---
 
