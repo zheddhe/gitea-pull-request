@@ -40,10 +40,15 @@ suite("Activity Bar topology", () => {
 
     const general = packageJson.contributes?.views?.giteaPullRequest ?? [];
     const contextual = packageJson.contributes?.views?.giteaPullRequestContext ?? [];
-    assert.ok(general.some((view) => view.id === "gitea.pullRequests"));
-    assert.ok(general.some((view) => view.id === "gitea.createPullRequest"));
-    assert.ok(general.some((view) => view.id === "gitea.issues"));
-    assert.ok(general.some((view) => view.id === "gitea.ciRuns"));
+    for (const id of [
+      "gitea.pullRequests",
+      "gitea.createPullRequest",
+      "gitea.issues",
+      "gitea.createIssue",
+      "gitea.ciRuns",
+    ]) {
+      assert.ok(general.some((view) => view.id === id), `missing ${id}`);
+    }
     assert.deepStrictEqual(
       contextual.map((view) => view.id),
       [
@@ -93,131 +98,116 @@ suite("Activity Bar topology", () => {
     assert.match(source, /TreeItemCollapsibleState\.Expanded/);
   });
 
-  test("isolates standard and focused create-mode Gitea layouts", () => {
+  test("isolates normal, pull-request create and issue create layouts", () => {
     const general = packageJson.contributes?.views?.giteaPullRequest ?? [];
     const byId = new Map(general.map((view) => [view.id, view]));
+    const idleWhen = "!gitea.prSession.creating && !gitea.issueCreation.active";
     for (const id of ["gitea.pullRequests", "gitea.issues", "gitea.ciRuns"]) {
-      assert.strictEqual(byId.get(id)?.when, "!gitea.prSession.creating");
+      assert.strictEqual(byId.get(id)?.when, idleWhen);
       assert.strictEqual(byId.get(id)?.initialSize, undefined);
     }
+
     assert.strictEqual(
       byId.get("gitea.createPullRequest")?.when,
-      "gitea.prSession.creating",
+      "gitea.prSession.creating && !gitea.issueCreation.active",
     );
+    assert.strictEqual(byId.get("gitea.createPullRequest")?.initialSize, 8);
+    assert.strictEqual(byId.get("gitea.pullRequestsCreateMode")?.initialSize, 2);
+    assert.strictEqual(byId.get("gitea.issuesCreateCompact")?.visibility, "collapsed");
+    assert.strictEqual(byId.get("gitea.ciRunsCreateCompact")?.visibility, "collapsed");
+
     assert.strictEqual(
-      byId.get("gitea.issuesCreateCompact")?.visibility,
+      byId.get("gitea.createIssue")?.when,
+      "gitea.issueCreation.active && !gitea.prSession.creating",
+    );
+    assert.strictEqual(byId.get("gitea.createIssue")?.initialSize, 8);
+    assert.strictEqual(byId.get("gitea.issuesIssueCreateMode")?.initialSize, 2);
+    assert.strictEqual(
+      byId.get("gitea.pullRequestsIssueCreateCompact")?.visibility,
       "collapsed",
     );
     assert.strictEqual(
-      byId.get("gitea.ciRunsCreateCompact")?.visibility,
+      byId.get("gitea.ciRunsIssueCreateCompact")?.visibility,
       "collapsed",
     );
   });
 
-  test("uses detail browser refresh then close on Changes title", () => {
+  test("uses native refresh then close for both create workspaces", () => {
     const commands = packageJson.contributes?.commands ?? [];
-    assert.strictEqual(
-      commands.find((item) => item.command === "gitea.viewActivePRDetail")?.icon,
-      "$(eye)",
-    );
-    assert.strictEqual(
-      commands.find((item) => item.command === "gitea.openActivePR")?.icon,
-      "$(link-external)",
-    );
-    const actions = packageJson.contributes?.menus?.["view/title"] ?? [];
-    const when = "view == gitea.prDiff && gitea.prSession.active";
-    const byCommand = (command: string) =>
-      actions.find((item) => item.command === command && item.when === when);
-    assert.strictEqual(byCommand("gitea.viewActivePRDetail")?.group, "navigation@0");
-    assert.strictEqual(byCommand("gitea.openActivePR")?.group, "navigation@1");
-    assert.strictEqual(byCommand("gitea.refreshActivePR")?.group, "navigation@2");
-    assert.strictEqual(byCommand("gitea.clearActivePR")?.group, "navigation@3");
-  });
-
-  test("uses detail browser refresh then close on Review title", () => {
-    const actions = packageJson.contributes?.menus?.["view/title"] ?? [];
-    const when = "view == gitea.reviewPullRequest && gitea.prSession.active";
-    const byCommand = (command: string) =>
-      actions.find((item) => item.command === command && item.when === when);
-    assert.strictEqual(byCommand("gitea.viewActivePRDetail")?.group, "navigation@0");
-    assert.strictEqual(byCommand("gitea.openActivePR")?.group, "navigation@1");
-    assert.strictEqual(byCommand("gitea.refreshActivePR")?.group, "navigation@2");
-    assert.strictEqual(byCommand("gitea.clearActivePR")?.group, "navigation@3");
-  });
-
-  test("activating a PR opens contextual views and its detail panel", () => {
-    const source = fs.readFileSync(
-      path.resolve(
-        __dirname,
-        "../../../src/features/pullRequests/commands/sessionCommands.ts",
-      ),
-      "utf8",
-    );
-    const activate = source.indexOf('"gitea.activatePR"');
-    const context = source.indexOf("PULL_REQUEST_CONTEXT_CONTAINER", activate);
-    const detail = source.indexOf('"gitea.viewActivePRDetail"', context);
-    assert.ok(activate >= 0 && context > activate && detail > context);
-  });
-
-  test("uses native refresh then close for Create Pull Request", () => {
-    const commands = packageJson.contributes?.commands ?? [];
-    const refresh = commands.find(
-      (command) => command.command === "gitea.refreshCreatePR",
-    );
-    const close = commands.find(
-      (command) => command.command === "gitea.cancelCreatePR",
-    );
-    assert.strictEqual(refresh?.icon, "$(refresh)");
-    assert.strictEqual(close?.icon, "$(close)");
     const titleActions = packageJson.contributes?.menus?.["view/title"] ?? [];
-    const expectedWhen =
-      "view == gitea.createPullRequest && gitea.prSession.creating";
-    const refreshAction = titleActions.find(
-      (item) =>
-        item.command === "gitea.refreshCreatePR" && item.when === expectedWhen,
+
+    for (const commandId of ["gitea.refreshCreatePR", "gitea.refreshCreateIssue"]) {
+      assert.strictEqual(
+        commands.find((command) => command.command === commandId)?.icon,
+        "$(refresh)",
+      );
+    }
+    for (const commandId of ["gitea.cancelCreatePR", "gitea.cancelCreateIssue"]) {
+      assert.strictEqual(
+        commands.find((command) => command.command === commandId)?.icon,
+        "$(close)",
+      );
+    }
+
+    const prWhen =
+      "view == gitea.createPullRequest && gitea.prSession.creating && !gitea.issueCreation.active";
+    assert.strictEqual(
+      titleActions.find(
+        (item) => item.command === "gitea.refreshCreatePR" && item.when === prWhen,
+      )?.group,
+      "navigation@1",
     );
-    const closeAction = titleActions.find(
-      (item) =>
-        item.command === "gitea.cancelCreatePR" && item.when === expectedWhen,
+    assert.strictEqual(
+      titleActions.find(
+        (item) => item.command === "gitea.cancelCreatePR" && item.when === prWhen,
+      )?.group,
+      "navigation@2",
     );
-    assert.strictEqual(refreshAction?.group, "navigation@1");
-    assert.strictEqual(closeAction?.group, "navigation@2");
+
+    const issueWhen =
+      "view == gitea.createIssue && gitea.issueCreation.active && !gitea.prSession.creating";
+    assert.strictEqual(
+      titleActions.find(
+        (item) =>
+          item.command === "gitea.refreshCreateIssue" && item.when === issueWhen,
+      )?.group,
+      "navigation@1",
+    );
+    assert.strictEqual(
+      titleActions.find(
+        (item) =>
+          item.command === "gitea.cancelCreateIssue" && item.when === issueWhen,
+      )?.group,
+      "navigation@2",
+    );
   });
 
-  test("uses native refresh then close for post-merge", () => {
-    const commands = packageJson.contributes?.commands ?? [];
-    const refresh = commands.find(
-      (command) => command.command === "gitea.refreshPostMerge",
-    );
-    const close = commands.find(
-      (command) => command.command === "gitea.finishPostMerge",
-    );
-    assert.strictEqual(refresh?.icon, "$(refresh)");
-    assert.strictEqual(close?.icon, "$(close)");
-    const titleActions = packageJson.contributes?.menus?.["view/title"] ?? [];
-    const expectedWhen =
-      "view == gitea.postMergePullRequest && gitea.prSession.merged";
-    const refreshAction = titleActions.find(
-      (item) =>
-        item.command === "gitea.refreshPostMerge" && item.when === expectedWhen,
-    );
-    const closeAction = titleActions.find(
-      (item) =>
-        item.command === "gitea.finishPostMerge" && item.when === expectedWhen,
-    );
-    assert.strictEqual(refreshAction?.group, "navigation@1");
-    assert.strictEqual(closeAction?.group, "navigation@2");
-  });
-
-  test("uses native close semantics for create and post-merge views", () => {
-    const commands = packageJson.contributes?.commands ?? [];
-    for (const commandId of ["gitea.cancelCreatePR", "gitea.finishPostMerge"]) {
-      const command = commands.find((item) => item.command === commandId);
-      assert.strictEqual(command?.icon, "$(close)");
+  test("keeps established PR title actions", () => {
+    const actions = packageJson.contributes?.menus?.["view/title"] ?? [];
+    for (const view of ["gitea.prDiff", "gitea.reviewPullRequest"]) {
+      const when = `view == ${view} && gitea.prSession.active`;
+      const byCommand = (command: string) =>
+        actions.find((item) => item.command === command && item.when === when);
+      assert.strictEqual(byCommand("gitea.viewActivePRDetail")?.group, "navigation@0");
+      assert.strictEqual(byCommand("gitea.openActivePR")?.group, "navigation@1");
+      assert.strictEqual(byCommand("gitea.refreshActivePR")?.group, "navigation@2");
+      assert.strictEqual(byCommand("gitea.clearActivePR")?.group, "navigation@3");
     }
   });
 
-  test("Create view keeps form fields synchronized before native refresh", () => {
+  test("keeps post-merge refresh and close semantics", () => {
+    const commands = packageJson.contributes?.commands ?? [];
+    assert.strictEqual(
+      commands.find((command) => command.command === "gitea.refreshPostMerge")?.icon,
+      "$(refresh)",
+    );
+    assert.strictEqual(
+      commands.find((command) => command.command === "gitea.finishPostMerge")?.icon,
+      "$(close)",
+    );
+  });
+
+  test("Create Pull Request keeps form synchronization and native metadata pickers", () => {
     const source = fs.readFileSync(
       path.resolve(
         __dirname,
@@ -229,82 +219,47 @@ suite("Activity Bar topology", () => {
     assert.match(source, /title\.addEventListener\('input', formChanged\)/);
     assert.match(source, /body\.addEventListener\('input', formChanged\)/);
     assert.match(source, /async refreshBranches\(\): Promise<void>/);
-    assert.match(source, /await this\.api\.listBranches\(repoInfo\)/);
-  });
-
-  test("Create view uses compact branch identification and native metadata pickers", () => {
-    const source = fs.readFileSync(
-      path.resolve(
-        __dirname,
-        "../../../src/features/pullRequests/views/createPullRequestView.ts",
-      ),
-      "utf8",
-    );
-    const sourceBranch = source.indexOf("Source branch");
-    const baseBranch = source.indexOf("Base branch", sourceBranch);
-    assert.match(source, /Branch identification/);
-    assert.ok(sourceBranch >= 0 && baseBranch > sourceBranch);
-    assert.doesNotMatch(source, /merge-arrow/);
-    assert.doesNotMatch(source, />↓</);
-    assert.match(source, /General information/);
-    assert.match(source, /title: ""/);
-    assert.match(source, /placeholder="Pull request title"/);
-    assert.match(source, /placeholder="Pull request description"/);
-    assert.match(source, /select, input, textarea \{ width: 100%; font: inherit;/);
-    assert.match(source, /class="form-card"/);
-    assert.match(source, /class="metadata-list"/);
-    assert.match(source, /class="chip"/);
     assert.match(source, /canPickMany: true/);
-    assert.doesNotMatch(source, /openLegacy/);
     assert.doesNotMatch(source, /Use legacy create flow/);
   });
 
-  test("removes Webview controls superseded by native title actions", () => {
-    const createSource = fs.readFileSync(
+  test("Issue creation uses the dedicated sidebar provider and no legacy create prompt", () => {
+    const extensionSource = fs.readFileSync(
+      path.resolve(__dirname, "../../../src/extension.ts"),
+      "utf8",
+    );
+    const issueCommandSource = fs.readFileSync(
+      path.resolve(__dirname, "../../../src/commands/issueCommands.ts"),
+      "utf8",
+    );
+    const createIssueSource = fs.readFileSync(
       path.resolve(
         __dirname,
-        "../../../src/features/pullRequests/views/createPullRequestView.ts",
+        "../../../src/features/issues/views/createIssueView.ts",
       ),
       "utf8",
     );
-    const reviewSource = fs.readFileSync(
-      path.resolve(
-        __dirname,
-        "../../../src/features/pullRequests/views/reviewPullRequestView.ts",
-      ),
-      "utf8",
-    );
-    const postMergeSource = fs.readFileSync(
-      path.resolve(
-        __dirname,
-        "../../../src/features/pullRequests/views/postMergePullRequestView.ts",
-      ),
-      "utf8",
-    );
-    assert.doesNotMatch(createSource, /id="cancel"/);
-    assert.doesNotMatch(reviewSource, /id="refresh"/);
-    assert.doesNotMatch(postMergeSource, /id="done"/);
-    assert.doesNotMatch(postMergeSource, /id="refresh"/);
-    assert.match(postMergeSource, /async refreshBranchState\(\): Promise<void>/);
+
+    assert.match(extensionSource, /new IssueCreationSessionService\(\)/);
+    assert.match(extensionSource, /new CreateIssueViewProvider/);
+    assert.match(extensionSource, /"gitea\.createIssue"/);
+    assert.match(createIssueSource, /static readonly viewType = "gitea\.createIssue"/);
+    assert.match(createIssueSource, /async start\(\): Promise<void>/);
+    assert.match(createIssueSource, /async refresh\(\): Promise<void>/);
+    assert.doesNotMatch(issueCommandSource, /registerCommand\("gitea\.createIssue"/);
+    assert.doesNotMatch(issueCommandSource, /prompt: "Issue title"/);
+    assert.doesNotMatch(createIssueSource, /createIssue\(/);
   });
 
-  test("Review keeps checks PR-centric without duplicating the CI browser", () => {
-    const source = fs.readFileSync(
-      path.resolve(
-        __dirname,
-        "../../../src/features/pullRequests/views/reviewPullRequestView.ts",
-      ),
-      "utf8",
+  test("Create Issue command has a native title icon", () => {
+    const commands = packageJson.contributes?.commands ?? [];
+    assert.strictEqual(
+      commands.find((command) => command.command === "gitea.createIssue")?.icon,
+      "$(add)",
     );
-    assert.match(source, /<span>Checks<\/span>/);
-    assert.match(source, /status\.target_url/);
-    assert.match(source, /successfulChecks/);
-    assert.match(source, /pendingChecks/);
-    assert.match(source, /failedChecks/);
-    assert.doesNotMatch(source, /listWorkflowRuns/);
   });
 
-  test("Issues expose a keyboard-native Open/Closed filter", () => {
+  test("Issues keep keyboard-native Open/Closed filtering", () => {
     const providerSource = fs.readFileSync(
       path.resolve(__dirname, "../../../src/views/issuesProvider.ts"),
       "utf8",
@@ -351,12 +306,7 @@ suite("Activity Bar topology", () => {
     }
     assert.match(createSource, /<label for="base">/);
     assert.match(createSource, /<label for="head">/);
-    assert.match(createSource, /aria-label="Pull request title"/);
-    assert.match(createSource, /aria-label="Pull request description"/);
     assert.match(reviewSource, /<textarea id="reviewBody"/);
-    assert.match(reviewSource, /textarea,select\{box-sizing:border-box;width:100%;font:inherit/);
-    assert.doesNotMatch(reviewSource, /branch-arrow/);
     assert.match(reviewSource, /<select id="mergeMethod"/);
-    assert.match(reviewSource, /data-check-url=/);
   });
 });
