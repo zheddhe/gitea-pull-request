@@ -137,6 +137,8 @@ Issues stay in the general Gitea workspace and support:
 - inline title, description and comment editing;
 - first-class sidebar Issue authoring.
 
+![Create Issue workspace with repository templates and metadata](resources/screenshots/create_issue.png)
+
 **Create Issue** opens a temporary authoring workspace while keeping the Issues tree visible. Pull Requests and CI / Actions are compacted for the duration of the creation session and the normal workspace returns after creation or cancellation.
 
 The authoring surface provides:
