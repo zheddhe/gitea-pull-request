@@ -12,12 +12,13 @@ This document describes the release path for **Gitea Pull Request** on GitHub an
 
 The repository and Marketplace publication are maintained independently from the maintainer's employer.
 
-## Compatibility baseline for 0.8.0
+## Compatibility baseline for 0.9.0
 
-The `0.8.0` release keeps the validated compatibility baseline established in the previous release:
+The `0.9.0` release keeps the established compatibility baseline while capability-gating newer inline-review operations:
 
 - **Visual Studio Code:** `1.133.0` or newer (`engines.vscode: ^1.133.0`);
-- **Gitea:** `1.26.4` or newer; older Gitea versions are not claimed as supported;
+- **Gitea:** `1.26.4` or newer for the established extension baseline; older Gitea versions are not claimed as supported;
+- **Gitea 1.27+** for inline-review Reply support, with unsupported actions hidden on older compatible servers;
 - **Node.js:** `24.x` for dependency installation, CI, packaging and release tooling.
 
 `@types/vscode` may lag the VS Code product release cadence. Compilation currently uses the published typings declared in `package.json`, while extension-host tests run explicitly against VS Code `1.133.0` by default.
@@ -52,7 +53,7 @@ Promote the package and lock metadata together before merge:
 make promote RELEASE_VERSION=<target-version>
 ```
 
-For `0.8.0`, both `package.json` and `package-lock.json` must contain `0.8.0` on the release PR branch before merge.
+For `0.9.0`, both `package.json` and `package-lock.json` must contain `0.9.0` on the release PR branch before merge.
 
 Run the final local gate under Node.js 24:
 
@@ -66,10 +67,10 @@ make reinstall-vsix
 Confirm the expected local artifact exists:
 
 ```text
-.artifacts/vsix/gitea-pull-request-0.8.0.vsix
+.artifacts/vsix/gitea-pull-request-0.9.0.vsix
 ```
 
-Perform the final smoke pass before merging the release PR.
+Perform the final smoke pass before merging the release PR. For `0.9.0`, that smoke pass should cover the interactive PR review workflow and Issue creation both with and without `.gitea/ISSUE_TEMPLATE/` templates.
 
 ## GitHub release sequence
 
@@ -93,7 +94,7 @@ The workflow must fail rather than prepare a release when the release identity i
 Use this only to rebuild/verify a tag that already exists, for example when recovering an artifact after a failed release workflow:
 
 ```text
-release_tag = v0.8.0
+release_tag = v0.9.0
 ```
 
 Manual rebuild mode:
@@ -112,6 +113,7 @@ The release workflow intentionally uses:
 - Node.js 24;
 - VS Code 1.133.0 for extension-host tests;
 - Gitea 1.26.4 as the minimum documented/tested server baseline;
+- capability gating for newer Gitea inline-review operations;
 - the project `Makefile` as the build/test/package source of truth;
 - pinned `@vscode/vsce` version `3.9.2` for packaging;
 - GitHub `contents: write` permission only;

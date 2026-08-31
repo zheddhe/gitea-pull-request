@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { AuthManager } from "./auth/authManager";
 import { PullRequestMetadataApi } from "./api/pullRequestMetadataApi";
+import { RepositoryMetadataApi } from "./api/repositoryMetadataApi";
 import { RepoManager } from "./context/repoManager";
 import { CIRunsProvider } from "./views/ciRunsProvider";
 import { IssuesProvider } from "./views/issuesProvider";
@@ -11,6 +12,9 @@ import { registerCICommands } from "./commands/ciCommands";
 import { registerAuthCommands } from "./commands/authCommands";
 import { registerIssueCommands } from "./commands/issueCommands";
 import { initOutputChannel } from "./debug/outputChannel";
+import { IssueCreationSessionService } from "./features/issues/services/issueCreationSessionService";
+import { IssueTemplateService } from "./features/issues/services/issueTemplateService";
+import { CreateIssueViewProvider } from "./features/issues/views/createIssueView";
 import { registerConflictResolutionCommands } from "./features/pullRequests/commands/conflictResolutionCommands";
 import { registerPullRequestSessionCommands } from "./features/pullRequests/commands/sessionCommands";
 import { registerRefreshActivePullRequestCommand } from "./features/pullRequests/commands/refreshActivePullRequestCommand";
@@ -40,8 +44,11 @@ export async function activate(
   const repoManager = new RepoManager(() => auth.getServerUrls());
   const api = new ResilientGiteaApiClient(auth);
   const metadataApi = new PullRequestMetadataApi(auth);
+  const issueMetadataApi = new RepositoryMetadataApi(auth);
+  const issueTemplateService = new IssueTemplateService(auth);
   const reviewApi = new PullRequestReviewApi(auth);
   const prSession = new PullRequestSessionService();
+  const issueCreationSession = new IssueCreationSessionService();
   const branchCleanup = new BranchCleanupService();
   const conflictResolution = new ConflictResolutionService();
   const reviewedFiles = new ReviewedFileStateService(context.workspaceState, api);
@@ -67,6 +74,13 @@ export async function activate(
     prSession,
     prProvider,
   );
+  const createIssueView = new CreateIssueViewProvider(
+    api,
+    issueMetadataApi,
+    issueTemplateService,
+    repoManager,
+    issueCreationSession,
+  );
   const reviewPullRequestView = new ReviewPullRequestViewProvider(
     api,
     reviewApi,
@@ -87,9 +101,15 @@ export async function activate(
   context.subscriptions.push(
     vscode.window.registerTreeDataProvider("gitea.pullRequests", prProvider),
     vscode.window.registerTreeDataProvider("gitea.pullRequestsCreateMode", prProvider),
+    vscode.window.registerTreeDataProvider("gitea.pullRequestsIssueCreateCompact", prProvider),
     vscode.window.registerWebviewViewProvider(
       CreatePullRequestViewProvider.viewType,
       createPullRequestView,
+      { webviewOptions: { retainContextWhenHidden: true } },
+    ),
+    vscode.window.registerWebviewViewProvider(
+      CreateIssueViewProvider.viewType,
+      createIssueView,
       { webviewOptions: { retainContextWhenHidden: true } },
     ),
     vscode.window.registerWebviewViewProvider(
@@ -103,11 +123,36 @@ export async function activate(
     ),
     vscode.window.registerTreeDataProvider("gitea.ciRuns", ciProvider),
     vscode.window.registerTreeDataProvider("gitea.ciRunsCreateCompact", ciProvider),
+    vscode.window.registerTreeDataProvider("gitea.ciRunsIssueCreateCompact", ciProvider),
     vscode.window.registerTreeDataProvider("gitea.issues", issuesProvider),
     vscode.window.registerTreeDataProvider("gitea.issuesCreateCompact", issuesProvider),
-    vscode.commands.registerCommand("gitea.createPRSidebar", () =>
-      createPullRequestView.start(),
+    vscode.window.registerTreeDataProvider("gitea.issuesIssueCreateMode", issuesProvider),
+    vscode.commands.registerCommand("gitea.createPRSidebar", async () => {
+      if (issueCreationSession.current.kind === "creating") {
+        vscode.window.showWarningMessage(
+          "Close Issue creation before starting a Pull Request.",
+        );
+        return;
+      }
+      await createPullRequestView.start();
+    }),
+    vscode.commands.registerCommand("gitea.createIssue", async () => {
+      if (prSession.current.kind === "creating") {
+        vscode.window.showWarningMessage(
+          "Close Pull Request creation before starting an Issue.",
+        );
+        return;
+      }
+      await createIssueView.start();
+    }),
+    vscode.commands.registerCommand("gitea.refreshCreateIssue", () =>
+      createIssueView.refresh(),
     ),
+    vscode.commands.registerCommand("gitea.cancelCreateIssue", async () => {
+      if (issueCreationSession.current.kind === "creating") {
+        await issueCreationSession.clear();
+      }
+    }),
     vscode.commands.registerCommand("gitea.refreshCreatePR", () =>
       createPullRequestView.refreshBranches(),
     ),
@@ -176,11 +221,13 @@ export async function activate(
       void repoManager.detect();
     }),
     createPullRequestView,
+    createIssueView,
     reviewPullRequestView,
     postMergePullRequestView,
     prSessionCoordinator,
     conflictResolutionCoordinator,
     prSession,
+    issueCreationSession,
     ciProvider,
     statusBar,
   );
@@ -229,6 +276,7 @@ export async function activate(
   await auth.initialize();
   await repoManager.initialize();
   await prSession.initialize();
+  await issueCreationSession.initialize();
   await prSessionCoordinator.initialize();
   await conflictResolutionCoordinator.initialize();
   statusBar.refresh();

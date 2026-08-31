@@ -9,6 +9,7 @@ Gitea Pull Request provides a sidebar-first workflow for day-to-day Gitea work w
 ## Why Gitea Pull Request?
 
 - **Stay in VS Code** for the common pull-request lifecycle: discover, inspect, review, check readiness, merge and clean up branches.
+- **Create Issues as a first-class sidebar workflow** with repository templates, Markdown authoring and native metadata selection.
 - **Keep workflow state visible** through native TreeViews, status signals, inline row actions and focused detail panels.
 - **Review interactively without losing context**: track reviewed files, keep inline conversations actionable, buffer review mutations and submit them together.
 - **Move explicitly from review to local development** when needed, while keeping the PR snapshot authoritative for review and the working tree authoritative for edits.
@@ -127,16 +128,32 @@ Titles, descriptions and discussion comments can be edited inline. The sidebar r
 
 ## Issues
 
-Issues stay in the general Gitea workspace and currently support:
+Issues stay in the general Gitea workspace and support:
 
 - Open / Closed filtering;
 - **Assigned to Me** aggregation;
 - inline **View Details**, **Open in Browser**, **Add Comment** and contextual **Close / Re-open** actions;
 - Markdown detail rendering;
 - inline title, description and comment editing;
-- issue creation and comment creation.
+- first-class sidebar Issue authoring.
 
-For the upcoming `0.9.0` release, Phase 8.2 will replace the minimal primary Issue-creation path with a first-class sidebar authoring workspace, including `.gitea/ISSUE_TEMPLATE/` support and repository-aware metadata where Gitea can represent it reliably.
+![Create Issue workspace with repository templates and metadata](resources/screenshots/create-issue.png)
+
+**Create Issue** opens a temporary authoring workspace while keeping the Issues tree visible. Pull Requests and CI / Actions are compacted for the duration of the creation session and the normal workspace returns after creation or cancellation.
+
+The authoring surface provides:
+
+- explicit target-repository selection in multi-repository workspaces;
+- editable Issue title and Markdown description;
+- repository templates discovered from `.gitea/ISSUE_TEMPLATE/` on the repository default branch;
+- conservative front-matter support for template name/about, title, labels and assignees;
+- an explicit **Blank issue** fallback when no template is wanted or available;
+- native QuickPick selection for assignees, labels and milestone;
+- draft preservation across normal Activity Bar switches and safe Refresh operations.
+
+Template values are seeds, never locked fields. Selecting another template explicitly replaces its seeded title/body and repository metadata; normal refresh does not overwrite user edits. Switching repository keeps portable title/body text while clearing repository-bound template, assignee, label and milestone selections.
+
+Project metadata and arbitrary branch-derived Issue defaults are deliberately not exposed while the extension cannot represent those mappings reliably through supported Gitea APIs.
 
 ## CI / Actions
 
@@ -197,8 +214,6 @@ The README is intentionally focused on using the extension. Maintainer and proje
 - [Releasing](docs/RELEASING.md) — packaging and release workflow
 - [Roadmap](docs/ROADMAP.md) — product evolution and current release phase
 - [Changelog](CHANGELOG.md) — user-facing changes by release
-
-The `0.9.0` roadmap is intentionally limited to two stories: [#31 — interactive PR review workspace](https://github.com/zheddhe/gitea-pull-request/issues/31) and [#32 — sidebar-first Issue authoring](https://github.com/zheddhe/gitea-pull-request/issues/32).
 
 ## Project origin
 
