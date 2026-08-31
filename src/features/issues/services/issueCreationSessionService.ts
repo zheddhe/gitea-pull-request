@@ -81,12 +81,13 @@ export class IssueCreationSessionService implements vscode.Disposable {
   }
 
   private async syncContextKeys(): Promise<void> {
-    const creating = this.state.kind === "creating";
+    const state = this.state;
+    const creating = state.kind === "creating";
     await Promise.all([
       this.setContextKey("gitea.issueCreation.active", creating),
       this.setContextKey(
         "gitea.issueCreation.repositoryKey",
-        creating ? this.state.repository.key : undefined,
+        state.kind === "creating" ? state.repository.key : undefined,
       ),
     ]);
   }
