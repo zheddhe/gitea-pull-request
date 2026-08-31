@@ -241,36 +241,37 @@ export class CreateIssueViewProvider
     }
 
     const { repoInfo, body, assignees, labels, milestone } = this.draft;
-    await vscode.window.withProgress(
-      {
-        location: vscode.ProgressLocation.Notification,
-        title: `Creating issue in ${repoInfo.label}...`,
-      },
-      async () => {
-        try {
-          const issue = await this.api.createIssue(repoInfo, {
+    try {
+      const issue = await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: `Creating issue in ${repoInfo.label}...`,
+        },
+        () =>
+          this.api.createIssue(repoInfo, {
             title,
             body,
             assignees: assignees.map((user) => user.login),
             labels: labels.map((label) => label.id),
             milestone: milestone?.id,
-          });
-          await vscode.commands.executeCommand("gitea.refreshIssues");
-          await this.session.clear();
-          const action = await vscode.window.showInformationMessage(
-            `Issue #${issue.number} created.`,
-            "Open in Browser",
-          );
-          if (action === "Open in Browser") {
-            await vscode.env.openExternal(vscode.Uri.parse(issue.html_url));
-          }
-        } catch (error) {
-          vscode.window.showErrorMessage(
-            `Failed to create issue: ${(error as Error).message}`,
-          );
-        }
-      },
-    );
+          }),
+      );
+
+      await vscode.commands.executeCommand("gitea.refreshIssues");
+      await this.session.clear();
+
+      const action = await vscode.window.showInformationMessage(
+        `Issue #${issue.number} created.`,
+        "Open in Browser",
+      );
+      if (action === "Open in Browser") {
+        await vscode.env.openExternal(vscode.Uri.parse(issue.html_url));
+      }
+    } catch (error) {
+      vscode.window.showErrorMessage(
+        `Failed to create issue: ${(error as Error).message}`,
+      );
+    }
   }
 
   private showMetadataError(kind: string, error: unknown): void {
