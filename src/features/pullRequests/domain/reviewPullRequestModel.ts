@@ -153,14 +153,28 @@ export function evaluateMergeReadiness(
 
   let ciLabel = "Checks unavailable";
   if (status) {
-    const state = typeof status.state === "string" ? status.state : "unknown";
-    ciLabel = `Checks: ${state}`;
-    if (state === "failure" || state === "error") {
-      blockingReasons.push(`Checks are ${state}`);
-    } else if (state === "pending") {
-      blockingReasons.push("Checks are still pending");
-    } else if (state === "warning") {
-      warnings.push("Checks completed with warnings");
+    const statusCount = Array.isArray(status.statuses)
+      ? status.statuses.length
+      : typeof status.total_count === "number"
+        ? status.total_count
+        : 0;
+    if (statusCount === 0) {
+      ciLabel = "Checks: none";
+      if (policy?.enable_status_check) {
+        blockingReasons.push(
+          "Target branch requires status checks, but no checks have reported for this commit",
+        );
+      }
+    } else {
+      const state = typeof status.state === "string" ? status.state : "unknown";
+      ciLabel = `Checks: ${state}`;
+      if (state === "failure" || state === "error") {
+        blockingReasons.push(`Checks are ${state}`);
+      } else if (state === "pending") {
+        blockingReasons.push("Checks are still pending");
+      } else if (state === "warning") {
+        warnings.push("Checks completed with warnings");
+      }
     }
   } else if (policy?.enable_status_check) {
     warnings.push("Target branch requires status checks, but combined status could not be read");
