@@ -248,7 +248,8 @@ suite("Activity Bar topology", () => {
     assert.match(createIssueSource, /async refresh\(\): Promise<void>/);
     assert.doesNotMatch(issueCommandSource, /registerCommand\("gitea\.createIssue"/);
     assert.doesNotMatch(issueCommandSource, /prompt: "Issue title"/);
-    assert.doesNotMatch(createIssueSource, /createIssue\(/);
+    assert.doesNotMatch(issueCommandSource, /async function createIssue\(/);
+    assert.match(createIssueSource, /this\.api\.createIssue\(repoInfo, \{ title, body \}\)/);
   });
 
   test("Create Issue command has a native title icon", () => {
