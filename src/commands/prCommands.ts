@@ -5,6 +5,7 @@ import * as path from "path";
 import { GiteaApiClient } from "../api/giteaApiClient";
 import { RepoManager, RepoInfo } from "../context/repoManager";
 import { AuthManager } from "../auth/authManager";
+import { debug, info } from "../debug/outputChannel";
 import {
   PullRequestProvider,
   PullRequestItem,
@@ -17,6 +18,8 @@ import {
   PRDiffSectionItem,
 } from "../views/prDiffProvider";
 import type { GiteaPullRequest } from "../api/types";
+import type { ReviewedFileStateService } from "../features/pullRequests/services/reviewedFileStateService";
+import type { WorkingFileBridgeService } from "../features/pullRequests/services/workingFileBridgeService";
 
 type PRDetailTarget =
   | PullRequestItem
@@ -28,8 +31,14 @@ export function registerPRCommands(
   repoManager: RepoManager,
   auth: AuthManager,
   prProvider: PullRequestProvider,
+  reviewedFiles: ReviewedFileStateService,
+  workingFileBridge: WorkingFileBridgeService,
 ): void {
   context.subscriptions.push(
+    PRDiffProvider.onDidChangeCheckboxState(({ provider, event }) => {
+      void handlePRDiffCheckboxChange(provider, event, reviewedFiles);
+    }),
+
     vscode.commands.registerCommand("gitea.refreshPRs", () =>
       prProvider.refresh(),
     ),
@@ -65,6 +74,17 @@ export function registerPRCommands(
       "gitea.openPRDiff",
       async (item: PullRequestItem) => {
         await PRDiffProvider.show(api, item.repoInfo, item.pr);
+        const provider = PRDiffProvider.getActive();
+        if (provider) {
+          const filenames = await reviewedFiles.reconcile(
+            provider.repoInfo,
+            provider.pr,
+          );
+          info(
+            `[reviewed-files] open diff restore repo=${provider.repoInfo.key} pr=#${provider.pr.number} head=${provider.pr.head.sha.slice(0, 8)} restored=${filenames.length}`,
+          );
+          for (const filename of filenames) provider.markViewed(filename);
+        }
       },
     ),
 
@@ -77,57 +97,59 @@ export function registerPRCommands(
 
     vscode.commands.registerCommand(
       "gitea.prDiffFileAction",
-      async (...args: unknown[]) => {
+      async (fileItem: PRDiffFileItem) => {
         const provider = PRDiffProvider.getActive();
-        if (!provider) return;
-
-        const fileItem = (args.length > 1 ? args[1] : args[0]) as PRDiffFileItem;
-
-        if (args.length > 1 && typeof args[0] === "number") {
-          const state = args[0] as vscode.TreeItemCheckboxState;
-          if (state === vscode.TreeItemCheckboxState.Checked) {
-            provider.markViewed(fileItem.filename);
-          } else {
-            provider.markUnviewed(fileItem.filename);
-          }
-        } else {
-          await openFileDiff(provider.api, fileItem.repoInfo, fileItem.pr, fileItem.filename);
-        }
+        if (!provider || !fileItem) return;
+        await openFileDiff(
+          provider.api,
+          fileItem.repoInfo,
+          fileItem.pr,
+          fileItem.filename,
+        );
       },
     ),
 
     vscode.commands.registerCommand(
-      "gitea.prDiffDirAction",
-      async (...args: unknown[]) => {
+      "gitea.openWorkingFile",
+      async (fileItem: PRDiffFileItem) => {
         const provider = PRDiffProvider.getActive();
-        if (!provider) return;
+        if (!provider || !fileItem) return;
 
-        const dirItem = (args.length > 1 ? args[1] : args[0]) as PRDiffDirItem;
+        const result = await workingFileBridge.open(
+          provider.repoInfo,
+          provider.pr,
+          fileItem.filename,
+        );
+        if (result.kind === "opened") return;
 
-        if (args.length > 1 && typeof args[0] === "number") {
-          const state = args[0] as vscode.TreeItemCheckboxState;
-          const check = state === vscode.TreeItemCheckboxState.Checked;
-          provider.toggleDirViewed(dirItem.dirPath, check);
+        switch (result.reason) {
+          case "sourceRepositoryNotInWorkspace":
+            vscode.window.showInformationMessage(
+              `Working file unavailable: PR source repository '${provider.pr.head.repo.full_name}' is not open in this workspace. The PR diff remains available.`,
+            );
+            return;
+          case "sourceBranchNotCheckedOut":
+            vscode.window.showInformationMessage(
+              `Working file unavailable: source branch '${result.expectedBranch}' is not checked out${result.currentBranch ? ` (current: '${result.currentBranch}')` : ""}. This action does not switch branches automatically.`,
+            );
+            return;
+          case "fileNotFound":
+            vscode.window.showInformationMessage(
+              `Working file unavailable: '${fileItem.filename}' does not exist in the checked-out source workspace.`,
+            );
+            return;
+          case "pathOutsideWorkspace":
+            vscode.window.showWarningMessage(
+              `Refusing to open '${fileItem.filename}' because it resolves outside the source workspace.`,
+            );
         }
       },
     ),
 
-    vscode.commands.registerCommand(
-      "gitea.prDiffSectionAction",
-      async (...args: unknown[]) => {
-        const provider = PRDiffProvider.getActive();
-        if (!provider) return;
-
-        const sectionItem = (args.length > 1 ? args[1] : args[0]) as PRDiffSectionItem;
-
-        if (args.length > 1 && typeof args[0] === "number") {
-          const state = args[0] as vscode.TreeItemCheckboxState;
-          if (sectionItem.id === "files") {
-            provider.toggleAllViewed(state === vscode.TreeItemCheckboxState.Checked);
-          }
-        }
-      },
-    ),
+    // Directory and section row selection has no action. Their checkbox
+    // lifecycle is handled by TreeView.onDidChangeCheckboxState above.
+    vscode.commands.registerCommand("gitea.prDiffDirAction", () => undefined),
+    vscode.commands.registerCommand("gitea.prDiffSectionAction", () => undefined),
 
     vscode.commands.registerCommand(
       "gitea.addComment",
@@ -147,6 +169,71 @@ export function registerPRCommands(
       },
     ),
   );
+}
+
+async function handlePRDiffCheckboxChange(
+  provider: PRDiffProvider,
+  event: vscode.TreeCheckboxChangeEvent<vscode.TreeItem>,
+  reviewedFiles: ReviewedFileStateService,
+): Promise<void> {
+  debug(
+    `[reviewed-files] TreeView checkbox event items=${event.items.length} repo=${provider.repoInfo.key} pr=#${provider.pr.number}`,
+  );
+
+  for (const [item, state] of event.items) {
+    const reviewed = state === vscode.TreeItemCheckboxState.Checked;
+
+    if (item instanceof PRDiffFileItem) {
+      info(
+        `[reviewed-files] checkbox file=${item.filename} reviewed=${reviewed} repo=${provider.repoInfo.key} pr=#${provider.pr.number} head=${provider.pr.head.sha.slice(0, 8)}`,
+      );
+      if (reviewed) provider.markViewed(item.filename);
+      else provider.markUnviewed(item.filename);
+      await reviewedFiles.setReviewed(
+        provider.repoInfo,
+        provider.pr,
+        [item.filename],
+        reviewed,
+      );
+      continue;
+    }
+
+    if (item instanceof PRDiffDirItem) {
+      provider.toggleDirViewed(item.dirPath, reviewed);
+      const filenames = await reviewedFiles.filenamesUnder(
+        provider.repoInfo,
+        provider.pr,
+        item.dirPath,
+      );
+      info(
+        `[reviewed-files] checkbox dir=${item.dirPath} reviewed=${reviewed} files=${filenames.length} repo=${provider.repoInfo.key} pr=#${provider.pr.number}`,
+      );
+      await reviewedFiles.setReviewed(
+        provider.repoInfo,
+        provider.pr,
+        filenames,
+        reviewed,
+      );
+      continue;
+    }
+
+    if (item instanceof PRDiffSectionItem && item.id === "files") {
+      provider.toggleAllViewed(reviewed);
+      const filenames = await reviewedFiles.allFilenames(
+        provider.repoInfo,
+        provider.pr,
+      );
+      info(
+        `[reviewed-files] checkbox section=files reviewed=${reviewed} files=${filenames.length} repo=${provider.repoInfo.key} pr=#${provider.pr.number}`,
+      );
+      await reviewedFiles.setReviewed(
+        provider.repoInfo,
+        provider.pr,
+        filenames,
+        reviewed,
+      );
+    }
+  }
 }
 
 async function pickRepo(

@@ -3,9 +3,14 @@ import type {
   GiteaCombinedStatus,
   GiteaComment,
   GiteaReview,
+  GiteaReviewComment,
 } from "../../../api/types";
 import type { RepoInfo } from "../../../context/repoManager";
 import { log } from "../../../debug/outputChannel";
+import {
+  evaluateGiteaServerCapabilities,
+  type GiteaServerCapabilities,
+} from "../domain/giteaServerCapabilities";
 import type {
   BranchMergePolicy,
   RepositoryMergeSettings,
@@ -29,7 +34,25 @@ type RawStatusLike = Record<string, unknown> & {
 };
 
 export class PullRequestReviewApi {
+  private readonly capabilitiesByServer = new Map<string, GiteaServerCapabilities>();
+
   constructor(private readonly auth: AuthManager) {}
+
+  async getServerCapabilities(
+    repoInfo: RepoInfo,
+  ): Promise<GiteaServerCapabilities> {
+    const cached = this.capabilitiesByServer.get(repoInfo.serverUrl);
+    if (cached) return cached;
+
+    const result = await this.request<{ version?: string }>(repoInfo, "/version");
+    const version = typeof result?.version === "string" ? result.version : "";
+    const capabilities = evaluateGiteaServerCapabilities(version);
+    this.capabilitiesByServer.set(repoInfo.serverUrl, capabilities);
+    log(
+      `[review-api] server capabilities version=${version || "unknown"} inlineReviewResolution=${capabilities.inlineReviewResolution} inlineReviewReplies=${capabilities.inlineReviewReplies}`,
+    );
+    return capabilities;
+  }
 
   async getCombinedStatus(
     repoInfo: RepoInfo,
@@ -152,6 +175,62 @@ export class PullRequestReviewApi {
         method: "POST",
         body: JSON.stringify({ event, body, comments: [] }),
       },
+    );
+  }
+
+  async replyToReviewComment(
+    repoInfo: RepoInfo,
+    number: number,
+    commentId: number,
+    body: string,
+  ): Promise<GiteaReviewComment> {
+    const capabilities = await this.getServerCapabilities(repoInfo);
+    if (!capabilities.inlineReviewReplies) {
+      throw new Error(
+        `Inline review replies require Gitea 1.27.0 or newer (server: ${capabilities.version || "unknown"}).`,
+      );
+    }
+
+    return this.request<GiteaReviewComment>(
+      repoInfo,
+      `/repos/${repoInfo.owner}/${repoInfo.repo}/pulls/${number}/comments/${commentId}/replies`,
+      {
+        method: "POST",
+        body: JSON.stringify({ body }),
+      },
+    );
+  }
+
+  async resolveReviewComment(
+    repoInfo: RepoInfo,
+    commentId: number,
+  ): Promise<void> {
+    await this.updateReviewCommentResolution(repoInfo, commentId, true);
+  }
+
+  async reopenReviewComment(
+    repoInfo: RepoInfo,
+    commentId: number,
+  ): Promise<void> {
+    await this.updateReviewCommentResolution(repoInfo, commentId, false);
+  }
+
+  private async updateReviewCommentResolution(
+    repoInfo: RepoInfo,
+    commentId: number,
+    resolved: boolean,
+  ): Promise<void> {
+    const capabilities = await this.getServerCapabilities(repoInfo);
+    if (!capabilities.inlineReviewResolution) {
+      throw new Error(
+        `Inline review resolve/reopen requires Gitea 1.26.0 or newer (server: ${capabilities.version || "unknown"}).`,
+      );
+    }
+
+    await this.request<void>(
+      repoInfo,
+      `/repos/${repoInfo.owner}/${repoInfo.repo}/pulls/comments/${commentId}/${resolved ? "resolve" : "unresolve"}`,
+      { method: "POST" },
     );
   }
 

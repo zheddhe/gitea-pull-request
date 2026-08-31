@@ -20,6 +20,11 @@ interface DirNode {
   files: GiteaFileDiff[];
 }
 
+export interface PRDiffCheckboxChange {
+  provider: PRDiffProvider;
+  event: vscode.TreeCheckboxChangeEvent<vscode.TreeItem>;
+}
+
 function buildDirTree(files: GiteaFileDiff[]): DirNode {
   const root: DirNode = { name: "", path: "", children: new Map(), files: [] };
   for (const file of files) {
@@ -149,7 +154,7 @@ export class PRDiffFileItem extends vscode.TreeItem {
     this.description = `+${additions} / -${deletions}`;
     this.resourceUri = vscode.Uri.file(filename);
     this.tooltip = new vscode.MarkdownString(
-      `**${filename}**\nStatus: ${fileStatus}\n+${additions} / -${deletions}`,
+      `**${filename}**\nStatus: ${fileStatus}\n+${additions} / -${deletions}\n\n${viewed ? "Uncheck to mark as not reviewed" : "Check to mark as reviewed"}`,
     );
     this.checkboxState = viewed
       ? vscode.TreeItemCheckboxState.Checked
@@ -200,6 +205,10 @@ class PRDiffReviewItem extends vscode.TreeItem {
 
 export class PRDiffProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
   private static instances = new Map<string, PRDiffProvider>();
+  private static readonly checkboxEmitter =
+    new vscode.EventEmitter<PRDiffCheckboxChange>();
+  static readonly onDidChangeCheckboxState = PRDiffProvider.checkboxEmitter.event;
+
   private _onDidChangeTreeData =
     new vscode.EventEmitter<vscode.TreeItem | null | void>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
@@ -247,12 +256,22 @@ export class PRDiffProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
     }
 
     await vscode.commands.executeCommand("setContext", "gitea.prDiffVisible", true);
-    provider = new PRDiffProvider(api, repoInfo, pr);
-    provider.disposable = vscode.window.registerTreeDataProvider(
-      "gitea.prDiff",
-      provider,
+    const createdProvider = new PRDiffProvider(api, repoInfo, pr);
+    const treeView = vscode.window.createTreeView("gitea.prDiff", {
+      treeDataProvider: createdProvider,
+      manageCheckboxStateManually: true,
+    });
+    const checkboxSubscription = treeView.onDidChangeCheckboxState((event) => {
+      PRDiffProvider.checkboxEmitter.fire({
+        provider: createdProvider,
+        event,
+      });
+    });
+    createdProvider.disposable = vscode.Disposable.from(
+      checkboxSubscription,
+      treeView,
     );
-    PRDiffProvider.instances.set(key, provider);
+    PRDiffProvider.instances.set(key, createdProvider);
     await vscode.commands.executeCommand("gitea.prDiff.focus");
   }
 
@@ -372,24 +391,20 @@ export class PRDiffProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
     if (!node) return vscode.TreeItemCheckboxState.Unchecked;
     const filenames = this.collectFilenames(node);
     if (filenames.length === 0) return vscode.TreeItemCheckboxState.Unchecked;
-    const viewedCount = filenames.filter((file) =>
-      this.viewedFiles.has(file),
-    ).length;
-    if (viewedCount === 0) return vscode.TreeItemCheckboxState.Unchecked;
-    if (viewedCount === filenames.length)
-      return vscode.TreeItemCheckboxState.Checked;
-    return 2 as unknown as vscode.TreeItemCheckboxState;
+    const allViewed = filenames.every((file) => this.viewedFiles.has(file));
+    return allViewed
+      ? vscode.TreeItemCheckboxState.Checked
+      : vscode.TreeItemCheckboxState.Unchecked;
   }
 
   getSectionCheckboxState(): vscode.TreeItemCheckboxState {
     if (this.files.length === 0) return vscode.TreeItemCheckboxState.Unchecked;
-    const viewedCount = this.files.filter((file) =>
+    const allViewed = this.files.every((file) =>
       this.viewedFiles.has(file.filename),
-    ).length;
-    if (viewedCount === 0) return vscode.TreeItemCheckboxState.Unchecked;
-    if (viewedCount === this.files.length)
-      return vscode.TreeItemCheckboxState.Checked;
-    return 2 as unknown as vscode.TreeItemCheckboxState;
+    );
+    return allViewed
+      ? vscode.TreeItemCheckboxState.Checked
+      : vscode.TreeItemCheckboxState.Unchecked;
   }
 
   getTreeItem(element: vscode.TreeItem): vscode.TreeItem {
@@ -495,7 +510,11 @@ export class PRDiffProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
         new vscode.ThemeIcon("file-directory"),
         false,
       );
+      const reviewedCount = this.files.filter((file) =>
+        this.viewedFiles.has(file.filename),
+      ).length;
       filesSection.checkboxState = this.getSectionCheckboxState();
+      filesSection.description = `${reviewedCount}/${this.files.length} reviewed`;
       filesSection.command = {
         command: "gitea.prDiffSectionAction",
         title: "PR Diff Section Action",

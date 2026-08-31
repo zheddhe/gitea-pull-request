@@ -10,6 +10,8 @@ Gitea Pull Request provides a sidebar-first workflow for day-to-day Gitea work w
 
 - **Stay in VS Code** for the common pull-request lifecycle: discover, inspect, review, check readiness, merge and clean up branches.
 - **Keep workflow state visible** through native TreeViews, status signals, inline row actions and focused detail panels.
+- **Review interactively without losing context**: track reviewed files, keep inline conversations actionable, buffer review mutations and submit them together.
+- **Move explicitly from review to local development** when needed, while keeping the PR snapshot authoritative for review and the working tree authoritative for edits.
 - **Use Gitea CI context where it matters**: browse workflow runs/jobs globally and see PR checks directly in the review workflow.
 - **Handle real merge conflicts safely** by preparing the correct local Git state and handing conflicts to native VS Code Source Control / Merge Editor.
 - **Work across multiple repositories and forges** without taking ownership of GitHub, GitLab, Bitbucket or Azure DevOps repositories.
@@ -40,16 +42,55 @@ Activating a pull request opens the contextual **Gitea Pull Request** workspace.
 The review workspace brings the relevant decision points together:
 
 - source and base branch identification;
-- native changed-file navigation and VS Code diff integration;
+- changed-file navigation with persistent Reviewed/Viewed checkboxes and aggregate progress;
+- exact PR/base↔head review snapshots through native VS Code diff integration;
 - Approve / Request Changes review actions;
 - PR checks and their current result;
 - effective review state and merge readiness;
 - repository-supported merge method selection;
 - Merge / Close actions when appropriate.
 
+Merge readiness stays neutral while checks, reviews and mergeability signals are still being consolidated, so incomplete refresh state is not presented as a final positive or negative conclusion.
+
 Review state is based on each reviewer's latest effective decision. A newer **Request Changes** therefore supersedes an older approval from the same reviewer, and the Changes tree uses the same effective state as Merge Readiness.
 
-The Create and Review views preserve unsent form text and selections when switching Activity Bar context. Remote PR/CI state can still refresh without turning Refresh into an accidental save button.
+Reviewed-file state is kept locally per PR/file and survives normal refresh/reload. When a newer PR head changes a reviewed file, that file is returned to unreviewed while unchanged reviewed files can remain checked.
+
+## Interactive inline review conversations
+
+PR Detail turns persisted inline review comments into living conversations rather than one-shot annotations.
+
+- replies are grouped under one conversation root;
+- Gitea same-line/same-anchor comments are reconstructed as one thread even when explicit reply linkage is absent;
+- Reply, Resolve and Reopen are exposed only when the connected Gitea server supports the corresponding operation;
+- resolved conversations collapse into one compact row by default and can be expanded without changing server state;
+- conversations that can no longer be safely anchored to the current diff remain visible as unplaced rather than being attached to the wrong line.
+
+New inline comments, replies and resolve/reopen operations share a **pending review session**. Pending work survives normal refresh and is submitted together through a compact **Submit review changes (N)** action. The extension performs one final refresh after submission and retains failed operations for retry if a partial server error occurs.
+
+Full Reply + Resolve/Reopen interaction has been validated against Gitea 1.27.2. Capability checks keep unsupported actions out of the UI on older compatible servers.
+
+## Review snapshot vs local editing
+
+Review and modification are deliberately treated as two connected but distinct jobs:
+
+```text
+Review
+base@PR  <->  head@PR
+read-only snapshot, authoritative for review/comments
+
+Local development
+base@PR  <->  working-tree file
+editable, authoritative for modifications/tests
+```
+
+The normal file action always opens the exact PR review snapshot. When the source repository and branch can be mapped safely to the workspace, additional explicit actions are available:
+
+- **Open Working File** — open the real local file without switching branches;
+- **Checkout Source and Open File** — prepare the exact source branch only after dirty/divergent/head-SHA safety checks;
+- **Open Editable PR Diff** — compare the PR base snapshot to the working-tree file when the local file initially matches the reviewed PR head.
+
+The editable diff is clearly labelled as local. Once the working file is modified, it is no longer treated as the authoritative PR head for review anchoring. Commit/push normally, then Refresh the PR to rebind the authoritative review snapshot to the new head.
 
 ## Guided conflict resolution
 
@@ -75,16 +116,18 @@ Cleanup resolves local and remote branch identity independently, checks out the 
 
 For inspection that needs more room than the sidebar, PR Detail provides:
 
-- **Inline Reviews** — changed files, inline diff and submitted/pending inline comments;
-- **Review History** — chronological approval/request-changes/comment events;
+- **Inline Reviews** — changed files, inline diff, review conversations and pending review operations;
+- **Review History** — approval/request-changes/comment events with inline-review detail;
 - **Discussion** — Markdown PR description and top-level comments;
 - **Commits** — PR commit history.
 
-Titles, descriptions and discussion comments can be edited inline. The sidebar remains the action-oriented workflow surface; PR Detail focuses on inspection and discussion.
+The detail view uses the same compact interaction language throughout: metadata and icon actions stay close to the content they affect rather than being pushed to the far edge of a wide editor panel.
+
+Titles, descriptions and discussion comments can be edited inline. The sidebar remains the action-oriented workflow surface; PR Detail focuses on inspection, discussion and inline review.
 
 ## Issues
 
-Issues stay in the general Gitea workspace and support:
+Issues stay in the general Gitea workspace and currently support:
 
 - Open / Closed filtering;
 - **Assigned to Me** aggregation;
@@ -92,6 +135,8 @@ Issues stay in the general Gitea workspace and support:
 - Markdown detail rendering;
 - inline title, description and comment editing;
 - issue creation and comment creation.
+
+For the upcoming `0.9.0` release, Phase 8.2 will replace the minimal primary Issue-creation path with a first-class sidebar authoring workspace, including `.gitea/ISSUE_TEMPLATE/` support and repository-aware metadata where Gitea can represent it reliably.
 
 ## CI / Actions
 
@@ -114,7 +159,8 @@ The extension uses two Gitea-specific Activity Bar identities so the general for
 ### Requirements
 
 - VS Code **1.133.0** or later
-- Gitea **1.26.4** or later
+- Gitea **1.26.4** or later for the established extension baseline
+- Gitea **1.27+** for inline review Reply support
 - a Gitea API token with the permissions required for the operations you intend to use
 
 ### Sign in
@@ -149,8 +195,10 @@ The README is intentionally focused on using the extension. Maintainer and proje
 - [Contributing](CONTRIBUTING.md) — development setup, validation, logging and contribution conventions
 - [Testing](docs/TESTING.md) — test layers and informational coverage baseline
 - [Releasing](docs/RELEASING.md) — packaging and release workflow
-- [Roadmap](docs/ROADMAP.md) — product evolution and completed phases
+- [Roadmap](docs/ROADMAP.md) — product evolution and current release phase
 - [Changelog](CHANGELOG.md) — user-facing changes by release
+
+The `0.9.0` roadmap is intentionally limited to two stories: [#31 — interactive PR review workspace](https://github.com/zheddhe/gitea-pull-request/issues/31) and [#32 — sidebar-first Issue authoring](https://github.com/zheddhe/gitea-pull-request/issues/32).
 
 ## Project origin
 

@@ -14,6 +14,7 @@ import { initOutputChannel } from "./debug/outputChannel";
 import { registerConflictResolutionCommands } from "./features/pullRequests/commands/conflictResolutionCommands";
 import { registerPullRequestSessionCommands } from "./features/pullRequests/commands/sessionCommands";
 import { registerRefreshActivePullRequestCommand } from "./features/pullRequests/commands/refreshActivePullRequestCommand";
+import { registerWorkingFileCommands } from "./features/pullRequests/commands/workingFileCommands";
 import { BranchCleanupService } from "./features/pullRequests/services/branchCleanupService";
 import { ConflictResolutionCoordinator } from "./features/pullRequests/services/conflictResolutionCoordinator";
 import { ConflictResolutionService } from "./features/pullRequests/services/conflictResolutionService";
@@ -21,10 +22,13 @@ import { PullRequestSessionCoordinator } from "./features/pullRequests/services/
 import { PullRequestSessionService } from "./features/pullRequests/services/pullRequestSessionService";
 import { PullRequestReviewApi } from "./features/pullRequests/services/pullRequestReviewApi";
 import { ResilientGiteaApiClient } from "./features/pullRequests/services/resilientGiteaApiClient";
+import { ReviewedFileStateService } from "./features/pullRequests/services/reviewedFileStateService";
+import { WorkingFileBridgeService } from "./features/pullRequests/services/workingFileBridgeService";
 import { CreatePullRequestViewProvider } from "./features/pullRequests/views/createPullRequestView";
 import { PostMergePullRequestViewProvider } from "./features/pullRequests/views/postMergePullRequestView";
 import { ReviewPullRequestViewProvider } from "./features/pullRequests/views/reviewPullRequestView";
 import { SidebarPullRequestProvider } from "./features/pullRequests/views/sidebarPullRequestProvider";
+import type { RepoInfo } from "./context/repoManager";
 
 export async function activate(
   context: vscode.ExtensionContext,
@@ -40,10 +44,13 @@ export async function activate(
   const prSession = new PullRequestSessionService();
   const branchCleanup = new BranchCleanupService();
   const conflictResolution = new ConflictResolutionService();
+  const reviewedFiles = new ReviewedFileStateService(context.workspaceState, api);
+  const workingFileBridge = new WorkingFileBridgeService(repoManager);
   const prSessionCoordinator = new PullRequestSessionCoordinator(
     api,
     repoManager,
     prSession,
+    reviewedFiles,
   );
   const conflictResolutionCoordinator = new ConflictResolutionCoordinator(
     repoManager,
@@ -107,6 +114,39 @@ export async function activate(
     vscode.commands.registerCommand("gitea.refreshPostMerge", () =>
       postMergePullRequestView.refreshBranchState(),
     ),
+    vscode.commands.registerCommand(
+      "gitea.getReviewCapabilities",
+      async (repoInfo: RepoInfo) => reviewApi.getServerCapabilities(repoInfo),
+    ),
+    vscode.commands.registerCommand(
+      "gitea.replyInlineReviewComment",
+      async (
+        repoInfo: RepoInfo,
+        pullRequestNumber: number,
+        commentId: number,
+        body: string,
+      ) => {
+        if (!body?.trim()) return;
+        await reviewApi.replyToReviewComment(
+          repoInfo,
+          pullRequestNumber,
+          commentId,
+          body.trim(),
+        );
+      },
+    ),
+    vscode.commands.registerCommand(
+      "gitea.resolveInlineReviewConversation",
+      async (repoInfo: RepoInfo, commentId: number) => {
+        await reviewApi.resolveReviewComment(repoInfo, commentId);
+      },
+    ),
+    vscode.commands.registerCommand(
+      "gitea.reopenInlineReviewConversation",
+      async (repoInfo: RepoInfo, commentId: number) => {
+        await reviewApi.reopenReviewComment(repoInfo, commentId);
+      },
+    ),
     vscode.commands.registerCommand("gitea.openActivePR", async () => {
       const state = prSession.current;
       if (state.kind !== "active") {
@@ -161,6 +201,12 @@ export async function activate(
     prSession,
     conflictResolution,
   );
+  registerWorkingFileCommands(
+    context,
+    api,
+    conflictResolution,
+    workingFileBridge,
+  );
   registerRefreshActivePullRequestCommand(
     context,
     api,
@@ -168,7 +214,15 @@ export async function activate(
     prSession,
     prProvider,
   );
-  registerPRCommands(context, api, repoManager, auth, prProvider);
+  registerPRCommands(
+    context,
+    api,
+    repoManager,
+    auth,
+    prProvider,
+    reviewedFiles,
+    workingFileBridge,
+  );
   registerCICommands(context, api, ciProvider);
   registerIssueCommands(context, api, repoManager, auth, issuesProvider);
 

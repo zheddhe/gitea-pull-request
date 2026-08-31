@@ -2,7 +2,43 @@
 
 All notable changes to **Gitea Pull Request** are documented in this file.
 
-## 0.8.0 - Unreleased
+## 0.9.0 - Unreleased
+
+`0.9.0` focuses on making the two most important authoring/review workflows feel like persistent first-class workspaces rather than disconnected commands. The release is intentionally scoped to two P1 stories: interactive pull-request review (#31) and sidebar-first issue authoring (#32).
+
+### Added — Phase 8.1: interactive pull-request review workspace
+- **Persistent Reviewed/Viewed file progress** in Changes in Pull Request, including directory/section propagation, `n / total reviewed` progress and selective invalidation when a newer PR head changes a previously reviewed file.
+- **Interactive inline review conversations** with root/reply grouping, Gitea same-anchor reconstruction, capability-gated replies, resolve/reopen lifecycle and compact resolved-thread presentation.
+- **Pending review session** covering new inline comments, replies and resolve/reopen operations. Pending work survives refresh, submits as one user-level review transaction and retains failed operations for retry after a partial server failure.
+- Explicit **Open Working File** and **Checkout Source and Open File** paths that connect review context to the real source branch without silently switching branches.
+- Distinct **Open Editable PR Diff** mode comparing `base@PR` to the working-tree file when the local state is proven safe and initially identical to the reviewed head.
+- Server capability detection for inline-review operations so unsupported actions are hidden/blocked rather than sent to incompatible Gitea versions.
+
+### Improved — Phase 8.1
+- **Merge Readiness refresh is neutral** while checks, reviews and mergeability inputs are still consolidating; partial state no longer produces transient optimistic conclusions.
+- PR review and local modification now have an explicit authority boundary: the normal PR snapshot remains authoritative for review/comments, while the working tree remains authoritative for edits/tests.
+- Inline conversations follow Gitea's effective grouping semantics even when reply linkage is absent from returned comments.
+- Resolved conversations collapse as one thread by default, while explicit expansion state survives normal Webview refresh.
+- PR Detail interaction density is more consistent across Inline Reviews, Review History, Discussion and Commits: secondary metadata and icon actions stay close to the objects they describe.
+- The pending review toolbar is hidden when empty and becomes a compact **Submit review changes (N)** / **Discard pending** control only when needed.
+
+### Compatibility notes
+- Full Reply + Resolve/Reopen interactive validation for Phase 8.1 was performed against **Gitea 1.27.2**.
+- Reply is capability-gated because the corresponding Gitea API arrives in the 1.27 line; older supported servers keep the rest of the review experience without exposing an action that would fail.
+- Resolve/Reopen is capability-gated independently where the server exposes the lifecycle operation.
+
+### Remaining for 0.9.0 — Phase 8.2
+- Dedicated temporary **Create Issue** sidebar workspace aligned with Create Pull Request.
+- `.gitea/ISSUE_TEMPLATE/` discovery and conservative template/front-matter defaults.
+- Repository-aware title/Markdown authoring with draft preservation and layout restoration.
+- Native assignee, label and milestone selection where Gitea read/write support is reliable.
+- Project/context defaults only where the extension can represent and persist them truthfully.
+
+### Release preparation
+- Do not promote package metadata to `0.9.0` until both #31 and #32 are complete.
+- After Phase 8.2: run `make promote RELEASE_VERSION=0.9.0`, `make verify` and `make reinstall-vsix`, then validate the exact `gitea-pull-request-0.9.0.vsix` before merge/tag/release publication.
+
+## 0.8.0 - 2026-08-24
 
 `0.8.0` completes the core pull-request workflow introduced in the previous releases and focuses on making day-to-day use safer, clearer and more natural inside VS Code.
 
@@ -37,13 +73,7 @@ All notable changes to **Gitea Pull Request** are documented in this file.
 ### Quality and maintainability
 - Test coverage now has a reproducible function/branch baseline for directly testable domain logic. It is intentionally informational rather than a percentage release gate, so it can highlight regressions and uncovered decision paths without driving artificial tests.
 - Logging semantics are documented and normalized across components, with stable prefixes and native VS Code log-level filtering.
-- Contribution and presentation tests now protect effective review-state semantics, inline-only action ownership, state-aware CI actions and the Job Logs detail contract.
-
-### Release preparation
-- Package and lock metadata are already promoted together to `0.8.0`; keep that identity unchanged through the final ergonomic hardening pass.
-- Run `make verify` and `make reinstall-vsix`, then validate `.artifacts/vsix/gitea-pull-request-0.8.0.vsix` before marking the final release PR ready.
-- After merge, tag `v0.8.0` and publish the GitHub Release. Release CI rebuilds and attaches the verified VSIX.
-- Publish to the Visual Studio Marketplace manually by uploading that exact GitHub Release VSIX from the publisher management page.
+- Contribution and presentation tests protect effective review-state semantics, inline-only action ownership, state-aware CI actions and the Job Logs detail contract.
 
 ## 0.7.0 - 2026-08-17
 
