@@ -91,10 +91,13 @@ suite("PR detail presentation", () => {
     assert.match(source, /Inline Reviews \(\$\{reviewConversations\.length\}\)/);
     assert.match(source, /Review History \(\$\{activeReviews\.length\}\)/);
     assert.match(source, /const reviewConversations = buildReviewConversations\(reviewComments\)/);
+    assert.match(source, /id="inline-review-toolbar" class="inline-review-toolbar" hidden/);
     assert.match(source, /id="submit-review"/);
     assert.match(source, /id="discard-review"/);
     assert.match(source, /case "submitPendingReview"/);
-    assert.match(source, /Pending review actions: 0/);
+    assert.match(source, /submit\.textContent='Submit review changes \('\+count\+'\)'/);
+    assert.match(source, /toolbar\.hidden=count===0/);
+    assert.doesNotMatch(source, /Pending review actions:/);
     assert.doesNotMatch(source, /data-review-event=/);
     assert.doesNotMatch(source, /id="review-body"/);
   });
@@ -170,7 +173,8 @@ suite("PR detail presentation", () => {
     assert.match(source, /capabilities\.inlineReviewReplies/);
     assert.match(source, /Replies require Gitea 1\.27\+/);
     assert.match(source, /class="capability-note"/);
-    assert.match(source, /\.capability-note\{[^}]*margin-left:auto/);
+    assert.match(source, /\.capability-note\{[^}]*color:var\(--muted\)/);
+    assert.doesNotMatch(source, /\.capability-note\{[^}]*margin-left:auto/);
   });
 
   test("renders compact resolved state separately from review comment authorship", () => {
