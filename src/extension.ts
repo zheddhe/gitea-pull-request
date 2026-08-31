@@ -203,6 +203,7 @@ export async function activate(
   );
   registerWorkingFileCommands(
     context,
+    api,
     conflictResolution,
     workingFileBridge,
   );
