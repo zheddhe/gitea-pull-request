@@ -71,6 +71,7 @@ export async function activate(
     prProvider,
   );
   const createIssueView = new CreateIssueViewProvider(
+    api,
     repoManager,
     issueCreationSession,
   );
