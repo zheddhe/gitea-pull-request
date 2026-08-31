@@ -249,7 +249,10 @@ suite("Activity Bar topology", () => {
     assert.doesNotMatch(issueCommandSource, /registerCommand\("gitea\.createIssue"/);
     assert.doesNotMatch(issueCommandSource, /prompt: "Issue title"/);
     assert.doesNotMatch(issueCommandSource, /async function createIssue\(/);
-    assert.match(createIssueSource, /this\.api\.createIssue\(repoInfo, \{ title, body \}\)/);
+    assert.match(createIssueSource, /this\.api\.createIssue\(repoInfo, \{/);
+    assert.match(createIssueSource, /assignees: assignees\.map/);
+    assert.match(createIssueSource, /labels: labels\.map/);
+    assert.match(createIssueSource, /milestone: milestone\?\.id/);
   });
 
   test("Create Issue command has a native title icon", () => {
