@@ -1,6 +1,4 @@
 import * as vscode from "vscode";
-import * as fs from "fs";
-import * as os from "os";
 import * as path from "path";
 import { GiteaApiClient } from "../api/giteaApiClient";
 import { RepoManager, RepoInfo } from "../context/repoManager";
@@ -20,6 +18,10 @@ import {
 import type { GiteaPullRequest } from "../api/types";
 import type { ReviewedFileStateService } from "../features/pullRequests/services/reviewedFileStateService";
 import type { WorkingFileBridgeService } from "../features/pullRequests/services/workingFileBridgeService";
+import {
+  createPullRequestSnapshotDocumentIdentity,
+  createPullRequestSnapshotUri,
+} from "../features/pullRequests/services/pullRequestSnapshotDocumentProvider";
 
 type PRDetailTarget =
   | PullRequestItem
@@ -91,7 +93,7 @@ export function registerPRCommands(
     vscode.commands.registerCommand(
       "gitea.openFileDiff",
       async (repoInfo: RepoInfo, pr: GiteaPullRequest, filename: string) => {
-        await openFileDiff(api, repoInfo, pr, filename);
+        await openFileDiff(repoInfo, pr, filename);
       },
     ),
 
@@ -101,7 +103,6 @@ export function registerPRCommands(
         const provider = PRDiffProvider.getActive();
         if (!provider || !fileItem) return;
         await openFileDiff(
-          provider.api,
           fileItem.repoInfo,
           fileItem.pr,
           fileItem.filename,
@@ -288,43 +289,33 @@ async function addComment(
 }
 
 async function openFileDiff(
-  api: GiteaApiClient,
   repoInfo: RepoInfo,
   pr: GiteaPullRequest,
   filename: string,
 ): Promise<void> {
-  const tmpDir = path.join(
-    os.tmpdir(),
-    `gitea-diff-${repoInfo.key.replace(/[^a-zA-Z0-9]/g, "_")}-${pr.number}-${Date.now()}`,
-  );
-
   try {
-    const [baseContent, headContent] = await Promise.allSettled([
-      api.getFileContents(repoInfo, pr.base.ref, filename),
-      api.getFileContents(repoInfo, pr.head.ref, filename),
+    const baseUri = createPullRequestSnapshotUri(
+      createPullRequestSnapshotDocumentIdentity(repoInfo, pr, "base", filename),
+    );
+    const headUri = createPullRequestSnapshotUri(
+      createPullRequestSnapshotDocumentIdentity(repoInfo, pr, "head", filename),
+    );
+
+    const [baseDocument, headDocument] = await Promise.all([
+      vscode.workspace.openTextDocument(baseUri),
+      vscode.workspace.openTextDocument(headUri),
     ]);
 
-    const baseText = baseContent.status === "fulfilled" ? baseContent.value : "";
-    const headText = headContent.status === "fulfilled" ? headContent.value : "";
-
-    const hasNullByte = (s: string) => s.includes("\0");
-    if (hasNullByte(baseText) || hasNullByte(headText)) {
+    const hasNullByte = (text: string) => text.includes("\0");
+    if (
+      hasNullByte(baseDocument.getText()) ||
+      hasNullByte(headDocument.getText())
+    ) {
       vscode.window.showInformationMessage(
         `File '${filename}' appears to be binary — skipping diff.`,
       );
       return;
     }
-
-    const baseFile = path.join(tmpDir, ".base", filename);
-    const headFile = path.join(tmpDir, ".head", filename);
-
-    fs.mkdirSync(path.dirname(baseFile), { recursive: true });
-    fs.mkdirSync(path.dirname(headFile), { recursive: true });
-    fs.writeFileSync(baseFile, baseText);
-    fs.writeFileSync(headFile, headText);
-
-    const baseUri = vscode.Uri.file(baseFile);
-    const headUri = vscode.Uri.file(headFile);
 
     const title =
       filename === path.basename(filename)

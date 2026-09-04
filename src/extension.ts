@@ -27,6 +27,10 @@ import { PullRequestSessionService } from "./features/pullRequests/services/pull
 import { PullRequestReviewApi } from "./features/pullRequests/services/pullRequestReviewApi";
 import { ResilientGiteaApiClient } from "./features/pullRequests/services/resilientGiteaApiClient";
 import { ReviewedFileStateService } from "./features/pullRequests/services/reviewedFileStateService";
+import {
+  PULL_REQUEST_SNAPSHOT_SCHEME,
+  PullRequestSnapshotDocumentProvider,
+} from "./features/pullRequests/services/pullRequestSnapshotDocumentProvider";
 import { WorkingFileBridgeService } from "./features/pullRequests/services/workingFileBridgeService";
 import { CreatePullRequestViewProvider } from "./features/pullRequests/views/createPullRequestView";
 import { PostMergePullRequestViewProvider } from "./features/pullRequests/views/postMergePullRequestView";
@@ -53,6 +57,10 @@ export async function activate(
   const conflictResolution = new ConflictResolutionService();
   const reviewedFiles = new ReviewedFileStateService(context.workspaceState, api);
   const workingFileBridge = new WorkingFileBridgeService(repoManager);
+  const snapshotDocuments = new PullRequestSnapshotDocumentProvider(
+    api,
+    repoManager,
+  );
   const prSessionCoordinator = new PullRequestSessionCoordinator(
     api,
     repoManager,
@@ -99,6 +107,10 @@ export async function activate(
   const statusBar = new StatusBarManager(repoManager, auth);
 
   context.subscriptions.push(
+    vscode.workspace.registerTextDocumentContentProvider(
+      PULL_REQUEST_SNAPSHOT_SCHEME,
+      snapshotDocuments,
+    ),
     vscode.window.registerTreeDataProvider("gitea.pullRequests", prProvider),
     vscode.window.registerTreeDataProvider("gitea.pullRequestsCreateMode", prProvider),
     vscode.window.registerTreeDataProvider("gitea.pullRequestsIssueCreateCompact", prProvider),
