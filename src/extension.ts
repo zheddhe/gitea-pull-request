@@ -28,6 +28,11 @@ import type {
 import { BranchCleanupService } from "./features/pullRequests/services/branchCleanupService";
 import { ConflictResolutionCoordinator } from "./features/pullRequests/services/conflictResolutionCoordinator";
 import { ConflictResolutionService } from "./features/pullRequests/services/conflictResolutionService";
+import { NativeReviewProjectionService } from "./features/pullRequests/services/nativeReviewProjectionService";
+import {
+  createPullRequestConversationApiView,
+  PullRequestConversationService,
+} from "./features/pullRequests/services/pullRequestConversationService";
 import { PullRequestSessionCoordinator } from "./features/pullRequests/services/pullRequestSessionCoordinator";
 import { PullRequestSessionService } from "./features/pullRequests/services/pullRequestSessionService";
 import { PullRequestReviewApi } from "./features/pullRequests/services/pullRequestReviewApi";
@@ -44,6 +49,7 @@ import { PostMergePullRequestViewProvider } from "./features/pullRequests/views/
 import { ReviewPullRequestViewProvider } from "./features/pullRequests/views/reviewPullRequestView";
 import { SidebarPullRequestProvider } from "./features/pullRequests/views/sidebarPullRequestProvider";
 import type { RepoInfo } from "./context/repoManager";
+import type { GiteaPullRequest } from "./api/types";
 
 export async function activate(
   context: vscode.ExtensionContext,
@@ -60,6 +66,7 @@ export async function activate(
   const reviewApi = new PullRequestReviewApi(auth);
   const prSession = new PullRequestSessionService();
   const reviewSessions = new PullRequestReviewSessionService();
+  const reviewConversations = new PullRequestConversationService(api);
   const issueCreationSession = new IssueCreationSessionService();
   const branchCleanup = new BranchCleanupService();
   const conflictResolution = new ConflictResolutionService();
@@ -68,6 +75,11 @@ export async function activate(
   const snapshotDocuments = new PullRequestSnapshotDocumentProvider(
     api,
     repoManager,
+  );
+  const nativeReviewProjection = new NativeReviewProjectionService(
+    reviewConversations,
+    repoManager,
+    prSession,
   );
   const prSessionCoordinator = new PullRequestSessionCoordinator(
     api,
@@ -184,6 +196,11 @@ export async function activate(
       async (repoInfo: RepoInfo) => reviewApi.getServerCapabilities(repoInfo),
     ),
     vscode.commands.registerCommand(
+      "gitea.getReviewConversationSnapshot",
+      (repoInfo: RepoInfo, pullRequest: GiteaPullRequest, force = false) =>
+        reviewConversations.load(repoInfo, pullRequest, force),
+    ),
+    vscode.commands.registerCommand(
       "gitea.getPendingReviewSession",
       (repoInfo: RepoInfo, pullRequestNumber: number) =>
         reviewSessions.get(repoInfo, pullRequestNumber),
@@ -292,7 +309,12 @@ export async function activate(
       }
       await PRDetailPanel.show(
         context.extensionUri,
-        api,
+        createPullRequestConversationApiView(
+          api,
+          reviewConversations,
+          repoInfo,
+          state.pullRequest,
+        ),
         repoInfo,
         state.pullRequest,
       );
@@ -306,8 +328,10 @@ export async function activate(
     postMergePullRequestView,
     prSessionCoordinator,
     conflictResolutionCoordinator,
+    nativeReviewProjection,
     prSession,
     reviewSessions,
+    reviewConversations,
     issueCreationSession,
     ciProvider,
     statusBar,
@@ -350,6 +374,7 @@ export async function activate(
     prProvider,
     reviewedFiles,
     workingFileBridge,
+    reviewConversations,
   );
   registerCICommands(context, api, ciProvider);
   registerIssueCommands(context, api, repoManager, auth, issuesProvider);
@@ -360,6 +385,7 @@ export async function activate(
   await issueCreationSession.initialize();
   await prSessionCoordinator.initialize();
   await conflictResolutionCoordinator.initialize();
+  await nativeReviewProjection.initialize();
   statusBar.refresh();
 
   const session = await auth.getSession();

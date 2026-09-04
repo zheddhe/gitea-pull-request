@@ -19,6 +19,10 @@ import type { GiteaPullRequest } from "../api/types";
 import type { ReviewedFileStateService } from "../features/pullRequests/services/reviewedFileStateService";
 import type { WorkingFileBridgeService } from "../features/pullRequests/services/workingFileBridgeService";
 import {
+  createPullRequestConversationApiView,
+  type PullRequestConversationService,
+} from "../features/pullRequests/services/pullRequestConversationService";
+import {
   createPullRequestSnapshotDocumentIdentity,
   createPullRequestSnapshotUri,
 } from "../features/pullRequests/services/pullRequestSnapshotDocumentProvider";
@@ -35,6 +39,7 @@ export function registerPRCommands(
   prProvider: PullRequestProvider,
   reviewedFiles: ReviewedFileStateService,
   workingFileBridge: WorkingFileBridgeService,
+  reviewConversations: PullRequestConversationService,
 ): void {
   context.subscriptions.push(
     PRDiffProvider.onDidChangeCheckboxState(({ provider, event }) => {
@@ -65,7 +70,12 @@ export function registerPRCommands(
           target instanceof PullRequestItem ? target.repoInfo : target.repoInfo;
         await PRDetailPanel.show(
           context.extensionUri,
-          api,
+          createPullRequestConversationApiView(
+            api,
+            reviewConversations,
+            repoInfo,
+            pr,
+          ),
           repoInfo,
           pr,
         );
@@ -147,8 +157,6 @@ export function registerPRCommands(
       },
     ),
 
-    // Directory and section row selection has no action. Their checkbox
-    // lifecycle is handled by TreeView.onDidChangeCheckboxState above.
     vscode.commands.registerCommand("gitea.prDiffDirAction", () => undefined),
     vscode.commands.registerCommand("gitea.prDiffSectionAction", () => undefined),
 
