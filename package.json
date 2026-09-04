@@ -396,6 +396,21 @@
         "command": "gitea.addIssueComment",
         "title": "Gitea: Add Issue Comment",
         "icon": "$(comment-add)"
+      },
+      {
+        "command": "gitea.nativeReviewReply",
+        "title": "Add Pending Reply",
+        "icon": "$(reply)"
+      },
+      {
+        "command": "gitea.nativeReviewResolve",
+        "title": "Resolve Conversation",
+        "icon": "$(check)"
+      },
+      {
+        "command": "gitea.nativeReviewReopen",
+        "title": "Reopen Conversation",
+        "icon": "$(history)"
       }
     ],
     "menus": {
@@ -581,6 +596,25 @@
           "command": "gitea.reopenIssue",
           "when": "viewItem == issue_closed",
           "group": "inline@4"
+        }
+      ],
+      "comments/commentThread/context": [
+        {
+          "command": "gitea.nativeReviewReply",
+          "when": "commentThread == giteaReviewConversationUnresolvedActionable || commentThread == giteaReviewConversationResolvedActionable",
+          "group": "inline@1"
+        }
+      ],
+      "comments/commentThread/title": [
+        {
+          "command": "gitea.nativeReviewResolve",
+          "when": "commentThread == giteaReviewConversationUnresolvedActionable",
+          "group": "inline@1"
+        },
+        {
+          "command": "gitea.nativeReviewReopen",
+          "when": "commentThread == giteaReviewConversationResolvedActionable",
+          "group": "inline@1"
         }
       ]
     }
