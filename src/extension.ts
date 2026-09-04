@@ -19,12 +19,19 @@ import { registerConflictResolutionCommands } from "./features/pullRequests/comm
 import { registerPullRequestSessionCommands } from "./features/pullRequests/commands/sessionCommands";
 import { registerRefreshActivePullRequestCommand } from "./features/pullRequests/commands/refreshActivePullRequestCommand";
 import { registerWorkingFileCommands } from "./features/pullRequests/commands/workingFileCommands";
+import type {
+  PendingConversationAction,
+  PendingInlineComment,
+  PendingReviewReply,
+  PendingReviewSession,
+} from "./features/pullRequests/domain/pendingReviewSession";
 import { BranchCleanupService } from "./features/pullRequests/services/branchCleanupService";
 import { ConflictResolutionCoordinator } from "./features/pullRequests/services/conflictResolutionCoordinator";
 import { ConflictResolutionService } from "./features/pullRequests/services/conflictResolutionService";
 import { PullRequestSessionCoordinator } from "./features/pullRequests/services/pullRequestSessionCoordinator";
 import { PullRequestSessionService } from "./features/pullRequests/services/pullRequestSessionService";
 import { PullRequestReviewApi } from "./features/pullRequests/services/pullRequestReviewApi";
+import { PullRequestReviewSessionService } from "./features/pullRequests/services/pullRequestReviewSessionService";
 import { ResilientGiteaApiClient } from "./features/pullRequests/services/resilientGiteaApiClient";
 import { ReviewedFileStateService } from "./features/pullRequests/services/reviewedFileStateService";
 import {
@@ -52,6 +59,7 @@ export async function activate(
   const issueTemplateService = new IssueTemplateService(auth);
   const reviewApi = new PullRequestReviewApi(auth);
   const prSession = new PullRequestSessionService();
+  const reviewSessions = new PullRequestReviewSessionService();
   const issueCreationSession = new IssueCreationSessionService();
   const branchCleanup = new BranchCleanupService();
   const conflictResolution = new ConflictResolutionService();
@@ -176,6 +184,66 @@ export async function activate(
       async (repoInfo: RepoInfo) => reviewApi.getServerCapabilities(repoInfo),
     ),
     vscode.commands.registerCommand(
+      "gitea.getPendingReviewSession",
+      (repoInfo: RepoInfo, pullRequestNumber: number) =>
+        reviewSessions.get(repoInfo, pullRequestNumber),
+    ),
+    vscode.commands.registerCommand(
+      "gitea.replacePendingReviewSession",
+      (
+        repoInfo: RepoInfo,
+        pullRequestNumber: number,
+        session: PendingReviewSession,
+      ) => reviewSessions.replace(repoInfo, pullRequestNumber, session),
+    ),
+    vscode.commands.registerCommand(
+      "gitea.queuePendingInlineReviewComment",
+      (
+        repoInfo: RepoInfo,
+        pullRequestNumber: number,
+        comment: PendingInlineComment,
+      ) => reviewSessions.queueInlineComment(repoInfo, pullRequestNumber, comment),
+    ),
+    vscode.commands.registerCommand(
+      "gitea.queuePendingReviewReply",
+      (
+        repoInfo: RepoInfo,
+        pullRequestNumber: number,
+        reply: PendingReviewReply,
+      ) => reviewSessions.queueReply(repoInfo, pullRequestNumber, reply),
+    ),
+    vscode.commands.registerCommand(
+      "gitea.queuePendingConversationAction",
+      (
+        repoInfo: RepoInfo,
+        pullRequestNumber: number,
+        action: PendingConversationAction,
+      ) =>
+        reviewSessions.queueConversationAction(
+          repoInfo,
+          pullRequestNumber,
+          action,
+        ),
+    ),
+    vscode.commands.registerCommand(
+      "gitea.removePendingReviewOperation",
+      (repoInfo: RepoInfo, pullRequestNumber: number, pendingId: string) =>
+        reviewSessions.remove(repoInfo, pullRequestNumber, pendingId),
+    ),
+    vscode.commands.registerCommand(
+      "gitea.clearPendingReviewSession",
+      (repoInfo: RepoInfo, pullRequestNumber: number) =>
+        reviewSessions.clear(repoInfo, pullRequestNumber),
+    ),
+    vscode.commands.registerCommand(
+      "gitea.reconcilePendingReviewSession",
+      (
+        repoInfo: RepoInfo,
+        pullRequestNumber: number,
+        result: Parameters<PullRequestReviewSessionService["reconcile"]>[2],
+      ) => reviewSessions.reconcile(repoInfo, pullRequestNumber, result),
+    ),
+    vscode.commands.registerCommand(
       "gitea.replyInlineReviewComment",
       async (
         repoInfo: RepoInfo,
@@ -239,6 +307,7 @@ export async function activate(
     prSessionCoordinator,
     conflictResolutionCoordinator,
     prSession,
+    reviewSessions,
     issueCreationSession,
     ciProvider,
     statusBar,
