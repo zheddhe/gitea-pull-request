@@ -5,6 +5,12 @@ import type {
 } from "../../../api/types";
 import type { RepoInfo, RepoManager } from "../../../context/repoManager";
 import { debug, warn } from "../../../debug/outputChannel";
+import type { GiteaServerCapabilities } from "../domain/giteaServerCapabilities";
+import type {
+  PendingConversationAction,
+  PendingReviewReply,
+  PendingReviewSession,
+} from "../domain/pendingReviewSession";
 import {
   resolveReviewConversationPlacement,
   type ReviewConversationPlacement,
@@ -23,12 +29,29 @@ type ReviewProjectionSession = Pick<
   "current" | "onDidChangeState"
 >;
 type OpenTextDocument = (uri: vscode.Uri) => Thenable<vscode.TextDocument>;
+type CommandExecutor = <T>(command: string, ...args: unknown[]) => Thenable<T | undefined>;
+
+interface NativeThreadBinding {
+  repoInfo: RepoInfo;
+  pullRequestNumber: number;
+  rootCommentId: number;
+  persistedResolved: boolean;
+  capabilities: GiteaServerCapabilities;
+}
+
+const NO_CAPABILITIES: GiteaServerCapabilities = {
+  version: "",
+  inlineReviewResolution: false,
+  inlineReviewReplies: false,
+};
 
 export class NativeReviewProjectionService implements vscode.Disposable {
   private readonly controller: vscode.CommentController;
   private readonly disposables: vscode.Disposable[] = [];
   private readonly threads = new Map<number, vscode.CommentThread>();
+  private readonly threadBindings = new WeakMap<vscode.CommentThread, NativeThreadBinding>();
   private projectionEpoch = 0;
+  private nextPendingId = 1;
 
   constructor(
     private readonly conversations: PullRequestConversationService,
@@ -37,7 +60,10 @@ export class NativeReviewProjectionService implements vscode.Disposable {
     controller?: vscode.CommentController,
     private readonly openTextDocument: OpenTextDocument = (uri) =>
       vscode.workspace.openTextDocument(uri),
+    private readonly executeCommand: CommandExecutor = (command, ...args) =>
+      vscode.commands.executeCommand(command, ...args),
   ) {
+    const ownsController = !controller;
     this.controller =
       controller ??
       vscode.comments.createCommentController(
@@ -49,10 +75,65 @@ export class NativeReviewProjectionService implements vscode.Disposable {
         void this.applySessionState(state);
       }),
     );
+    if (ownsController) {
+      this.disposables.push(
+        vscode.commands.registerCommand(
+          "gitea.nativeReviewReply",
+          (reply: vscode.CommentReply) => this.queueReply(reply),
+        ),
+        vscode.commands.registerCommand(
+          "gitea.nativeReviewResolve",
+          (thread: vscode.CommentThread) => this.queueConversationState(thread, "resolve"),
+        ),
+        vscode.commands.registerCommand(
+          "gitea.nativeReviewReopen",
+          (thread: vscode.CommentThread) => this.queueConversationState(thread, "reopen"),
+        ),
+      );
+    }
   }
 
   async initialize(): Promise<void> {
     await this.applySessionState(this.session.current);
+  }
+
+  async queueReply(reply: vscode.CommentReply): Promise<void> {
+    const binding = this.threadBindings.get(reply.thread);
+    const body = reply.text.trim();
+    if (!binding || !binding.capabilities.inlineReviewReplies || !body) return;
+
+    const operation: PendingReviewReply = {
+      id: this.pendingId("reply", binding.rootCommentId),
+      rootCommentId: binding.rootCommentId,
+      body,
+    };
+    await this.executeCommand<PendingReviewSession>(
+      "gitea.queuePendingReviewReply",
+      binding.repoInfo,
+      binding.pullRequestNumber,
+      operation,
+    );
+  }
+
+  async queueConversationState(
+    thread: vscode.CommentThread,
+    action: "resolve" | "reopen",
+  ): Promise<void> {
+    const binding = this.threadBindings.get(thread);
+    if (!binding || !binding.capabilities.inlineReviewResolution) return;
+
+    const operation: PendingConversationAction = {
+      id: `native-conversation-${binding.rootCommentId}`,
+      rootCommentId: binding.rootCommentId,
+      action,
+    };
+    const pending = await this.executeCommand<PendingReviewSession>(
+      "gitea.queuePendingConversationAction",
+      binding.repoInfo,
+      binding.pullRequestNumber,
+      operation,
+    );
+    this.applyPendingState(thread, binding, pending);
   }
 
   dispose(): void {
@@ -79,11 +160,24 @@ export class NativeReviewProjectionService implements vscode.Disposable {
     }
 
     try {
-      const snapshot = await this.conversations.load(
-        repoInfo,
-        state.pullRequest,
-        true,
-      );
+      const [snapshot, capabilities, pending] = await Promise.all([
+        this.conversations.load(repoInfo, state.pullRequest, true),
+        Promise.resolve(
+          this.executeCommand<GiteaServerCapabilities>(
+            "gitea.getReviewCapabilities",
+            repoInfo,
+          ),
+        )
+          .then((value) => value ?? NO_CAPABILITIES)
+          .catch(() => NO_CAPABILITIES),
+        Promise.resolve(
+          this.executeCommand<PendingReviewSession>(
+            "gitea.getPendingReviewSession",
+            repoInfo,
+            state.pullRequest.number,
+          ),
+        ).catch(() => undefined),
+      ]);
       if (epoch !== this.projectionEpoch) return;
 
       for (const conversation of snapshot.conversations) {
@@ -92,6 +186,8 @@ export class NativeReviewProjectionService implements vscode.Disposable {
           repoInfo,
           state.pullRequest,
           conversation,
+          capabilities,
+          pending,
           epoch,
         );
       }
@@ -111,6 +207,8 @@ export class NativeReviewProjectionService implements vscode.Disposable {
     repoInfo: RepoInfo,
     pullRequest: GiteaPullRequest,
     conversation: ReviewConversation,
+    capabilities: GiteaServerCapabilities,
+    pending: PendingReviewSession | undefined,
     epoch: number,
   ): Promise<void> {
     const placement = resolveReviewConversationPlacement(conversation);
@@ -140,15 +238,56 @@ export class NativeReviewProjectionService implements vscode.Disposable {
       range,
       [conversation.root, ...conversation.replies].map(toNativeComment),
     );
-    thread.contextValue = "giteaReviewConversation";
-    thread.label = conversation.resolved ? "Resolved conversation" : "Review conversation";
-    thread.state = conversation.resolved
+    const binding: NativeThreadBinding = {
+      repoInfo,
+      pullRequestNumber: pullRequest.number,
+      rootCommentId: conversation.root.id,
+      persistedResolved: conversation.resolved,
+      capabilities,
+    };
+    this.threadBindings.set(thread, binding);
+    thread.canReply = capabilities.inlineReviewReplies;
+    this.applyPendingState(thread, binding, pending);
+    this.threads.set(conversation.root.id, thread);
+  }
+
+  private applyPendingState(
+    thread: vscode.CommentThread,
+    binding: NativeThreadBinding,
+    pending: PendingReviewSession | undefined,
+  ): void {
+    const pendingAction = pending?.conversationActions.find(
+      (item) => item.rootCommentId === binding.rootCommentId,
+    );
+    const effectiveResolved = pendingAction
+      ? pendingAction.action === "resolve"
+      : binding.persistedResolved;
+    this.applyThreadState(thread, effectiveResolved, binding.capabilities);
+  }
+
+  private applyThreadState(
+    thread: vscode.CommentThread,
+    resolved: boolean,
+    capabilities: GiteaServerCapabilities,
+  ): void {
+    thread.contextValue = resolved
+      ? capabilities.inlineReviewResolution
+        ? "giteaReviewConversationResolvedActionable"
+        : "giteaReviewConversationResolved"
+      : capabilities.inlineReviewResolution
+        ? "giteaReviewConversationUnresolvedActionable"
+        : "giteaReviewConversationUnresolved";
+    thread.label = resolved ? "Resolved conversation" : "Review conversation";
+    thread.state = resolved
       ? vscode.CommentThreadState.Resolved
       : vscode.CommentThreadState.Unresolved;
-    thread.collapsibleState = conversation.resolved
+    thread.collapsibleState = resolved
       ? vscode.CommentThreadCollapsibleState.Collapsed
       : vscode.CommentThreadCollapsibleState.Expanded;
-    this.threads.set(conversation.root.id, thread);
+  }
+
+  private pendingId(kind: string, rootCommentId: number): string {
+    return `native-${kind}-${rootCommentId}-${this.nextPendingId++}`;
   }
 
   private clearThreads(): void {
