@@ -109,15 +109,20 @@ suite("PR detail presentation", () => {
     assert.match(source, /showTab\(restoredTab,restoredButton,false\)/);
   });
 
-  test("persists pending review mutations across refresh and reconciles submission results", () => {
-    assert.match(source, /pendingReviewSession/);
-    assert.match(source, /function persistPendingReview\(\)/);
-    assert.match(source, /pendingReviewSession:pendingReviewSession/);
-    assert.match(source, /persistPendingReview\(\);post\('refresh'\)/);
+  test("projects pending review state from the extension-owned shared session", () => {
+    assert.match(source, /"gitea\.getPendingReviewSession"/);
+    assert.match(source, /"gitea\.queuePendingInlineReviewComment"/);
+    assert.match(source, /"gitea\.queuePendingReviewReply"/);
+    assert.match(source, /"gitea\.queuePendingConversationAction"/);
+    assert.match(source, /"gitea\.removePendingReviewOperation"/);
+    assert.match(source, /"gitea\.clearPendingReviewSession"/);
+    assert.match(source, /"gitea\.reconcilePendingReviewSession"/);
+    assert.match(source, /type: "pendingReviewSessionChanged"/);
     assert.match(source, /type: "pendingReviewSubmissionResult"/);
-    assert.match(source, /succeededInlineCommentIds/);
-    assert.match(source, /succeededReplyIds/);
-    assert.match(source, /succeededConversationActionIds/);
+    assert.match(source, /let pendingReviewSession=\$\{JSON\.stringify\(pendingReviewSession\)\}/);
+    assert.doesNotMatch(source, /savedState\.pendingReviewSession/);
+    assert.doesNotMatch(source, /pendingReviewSession:pendingReviewSession/);
+    assert.doesNotMatch(source, /function persistPendingReview\(\)/);
     assert.match(source, /window\.addEventListener\('message'/);
   });
 
@@ -163,9 +168,9 @@ suite("PR detail presentation", () => {
     assert.match(source, /title="Reply to conversation"/);
     assert.match(source, /id="reply-form-\$\{root\.id\}"/);
     assert.match(source, /makePendingId\('reply'\)/);
-    assert.match(source, /pendingReviewSession\.replies\.push\(item\)/);
+    assert.match(source, /post\('queuePendingReviewReply',\{reply:item\}\)/);
     assert.match(source, /"gitea\.replyInlineReviewComment"/);
-    assert.doesNotMatch(source, /post\('replyInlineComment',\{commentId:Number\(id\),body\}\)/);
+    assert.doesNotMatch(source, /pendingReviewSession\.replies\.push\(item\)/);
   });
 
   test("hides unsupported reply actions and explains the server capability once", () => {
