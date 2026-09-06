@@ -7,7 +7,12 @@ export type PollingResourceKind =
   | "issues";
 
 export type PollingActivity = "idle" | "recent-action" | "editing";
-export type PollingLifecycle = "active" | "terminal" | "creation" | "post-merge";
+export type PollingLifecycle =
+  | "active"
+  | "pending"
+  | "terminal"
+  | "creation"
+  | "post-merge";
 
 export interface PollingContext {
   resourceKind: PollingResourceKind;
@@ -32,6 +37,13 @@ const ACTIVE_DELAYS_MS: Record<PollingResourceKind, number> = {
   issues: 60_000,
 };
 
+const PENDING_LIVE_DELAYS_MS: Partial<Record<PollingResourceKind, number>> = {
+  "pull-request-readiness": 5_000,
+  "ci-runs": 5_000,
+  "ci-job": 5_000,
+  "ci-logs": 2_000,
+};
+
 const TERMINAL_DELAY_MS = 5 * 60_000;
 const INACTIVE_WINDOW_MIN_DELAY_MS = 2 * 60_000;
 const RECENT_ACTION_DELAY_MS = 2_000;
@@ -50,12 +62,34 @@ export function adaptivePollingDecision(context: PollingContext): PollingDecisio
   if (
     context.windowActive &&
     context.activity === "recent-action" &&
-    context.lifecycle === "active"
+    (context.lifecycle === "active" || context.lifecycle === "pending")
   ) {
     return {
       kind: "poll",
       delayMs: context.visible ? RECENT_ACTION_DELAY_MS : RECENT_ACTION_DELAY_MS * 2,
       reason: "recent-action",
+    };
+  }
+
+  const pendingLiveDelay =
+    context.lifecycle === "pending"
+      ? PENDING_LIVE_DELAYS_MS[context.resourceKind]
+      : undefined;
+  if (pendingLiveDelay !== undefined) {
+    const visibilityDelay = context.visible
+      ? pendingLiveDelay
+      : pendingLiveDelay * HIDDEN_MULTIPLIER;
+    const delayMs = context.windowActive
+      ? visibilityDelay
+      : Math.max(visibilityDelay, INACTIVE_WINDOW_MIN_DELAY_MS);
+    return {
+      kind: "poll",
+      delayMs,
+      reason: context.windowActive
+        ? context.visible
+          ? "pending-live"
+          : "hidden"
+        : "window-inactive",
     };
   }
 
