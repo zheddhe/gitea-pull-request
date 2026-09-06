@@ -15,7 +15,7 @@ VSIX_DIR ?= $(ARTIFACT_ROOT)/vsix
 VSIX_FILE := $(VSIX_DIR)/$(PROJECT_NAME)-$(VERSION).vsix
 COVERAGE_DIR ?= $(ARTIFACT_ROOT)/coverage
 
-.PHONY: help doctor lock bootstrap deps promote clean compile lint test coverage test-latest verify vsix rebuild-vsix install-vsix reinstall-vsix ci show-vsix
+.PHONY: help doctor lock bootstrap deps promote clean compile bundle lint test coverage test-latest verify vsix rebuild-vsix install-vsix reinstall-vsix ci show-vsix
 
 help: ## Show the available development targets
 	@printf '%s\n' 'Gitea Pull Request development workflow'
@@ -61,11 +61,14 @@ promote: ## Promote package.json + package-lock.json to RELEASE_VERSION without 
 	@echo "Promoted $(PROJECT_NAME) to $(RELEASE_VERSION)."
 	@echo "Review package.json and package-lock.json, then run 'make verify' and 'make reinstall-vsix' before committing the release promotion."
 
-clean: ## Remove generated TypeScript output and local build artifacts (keeps cached VS Code test runtimes)
-	rm -rf out "$(ARTIFACT_ROOT)"
+clean: ## Remove generated TypeScript/bundle output and local build artifacts (keeps cached VS Code test runtimes)
+	rm -rf out dist "$(ARTIFACT_ROOT)"
 
 compile: ## Compile the TypeScript extension
 	$(NPM) run compile
+
+bundle: ## Bundle the production extension entrypoint
+	$(NPM) run bundle
 
 lint: ## Run ESLint
 	$(NPM) run lint
