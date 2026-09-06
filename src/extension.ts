@@ -80,6 +80,7 @@ export async function activate(
     reviewConversations,
     repoManager,
     prSession,
+    reviewSessions,
   );
   const prSessionCoordinator = new PullRequestSessionCoordinator(
     api,
