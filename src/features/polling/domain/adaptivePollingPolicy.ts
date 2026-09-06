@@ -55,7 +55,7 @@ export function adaptivePollingDecision(context: PollingContext): PollingDecisio
     return { kind: "pause", reason: "in-flight" };
   }
 
-  if (context.activity === "editing" && isReviewSensitive(context.resourceKind)) {
+  if (context.activity === "editing" && isEditSensitive(context.resourceKind)) {
     return { kind: "pause", reason: "editing" };
   }
 
@@ -124,9 +124,9 @@ export function adaptivePollingDecision(context: PollingContext): PollingDecisio
   };
 }
 
-function isReviewSensitive(resourceKind: PollingResourceKind): boolean {
-  return (
-    resourceKind === "pull-request" ||
-    resourceKind === "pull-request-readiness"
-  );
+function isEditSensitive(resourceKind: PollingResourceKind): boolean {
+  // The active PR snapshot can cause broad view/session re-rendering, so it is
+  // paused while a pending review is being edited. Readiness polling is safe:
+  // the Review view retains its draft body while checks/reviews are updated.
+  return resourceKind === "pull-request";
 }
