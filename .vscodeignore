@@ -10,6 +10,7 @@ Makefile
 tsconfig.json
 **/*.map
 **/*.ts
-!out/**
+out/**
+dist/**
+!dist/**
 node_modules/**
-!node_modules/marked/**
