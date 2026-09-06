@@ -20,6 +20,11 @@ export interface PollingLifecycleSnapshot {
   visibleSurfaces: ReadonlySet<PollingSurface>;
 }
 
+/**
+ * Pure state model for lifecycle signals shared by polling registrations.
+ * It contains no VS Code listeners, timers or API calls; adapters feed it
+ * window, session, review-editing and surface-visibility changes.
+ */
 export class PollingLifecycleState {
   private windowActive = true;
   private lifecycle: PollingLifecycle = "terminal";
