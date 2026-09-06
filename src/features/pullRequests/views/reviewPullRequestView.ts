@@ -8,6 +8,10 @@ import type { RepoInfo } from "../../../context/repoManager";
 import { RepoManager } from "../../../context/repoManager";
 import { log } from "../../../debug/outputChannel";
 import { PullRequestProvider } from "../../../views/pullRequestProvider";
+import {
+  externalCheckPresentation,
+  extractGiteaRunId,
+} from "../../ci/domain/ciPresentation";
 import type { PullRequestWorkspaceState } from "../domain/pullRequestState";
 import {
   evaluateMergeReadiness,
@@ -71,9 +75,13 @@ type ReviewViewMessage =
   | { type: "checkoutSource" }
   | { type: "checkoutBase" }
   | { type: "updateBase"; base: string }
-  | { type: "openCheck"; url: string };
+  | { type: "openCheck"; url: string }
+  | { type: "rerunCheck"; runId: number }
+  | { type: "cancelCheck"; runId: number };
 
 const MERGE_METHOD_STATE_KEY = "gitea.prReview.mergeMethod";
+const ACCELERATE_READINESS_POLLING_COMMAND =
+  "gitea.internal.accelerateReadinessPolling";
 
 export class ReviewPullRequestViewProvider
   implements vscode.WebviewViewProvider, vscode.Disposable
@@ -260,6 +268,34 @@ export class ReviewPullRequestViewProvider
       vscode.window.showWarningMessage(
         "No active Gitea pull request is available for review.",
       );
+      return;
+    }
+
+    if (message.type === "rerunCheck" || message.type === "cancelCheck") {
+      const runId = Number(message.runId);
+      if (!Number.isSafeInteger(runId) || runId <= 0) {
+        vscode.window.showWarningMessage("Invalid Gitea Actions run identifier.");
+        return;
+      }
+      this.busy = true;
+      this.render();
+      try {
+        if (message.type === "rerunCheck") {
+          await this.api.rerunWorkflow(active.repoInfo, runId);
+          vscode.window.showInformationMessage(`Re-run triggered for Actions run #${runId}.`);
+        } else {
+          await this.api.cancelWorkflowRun(active.repoInfo, runId);
+          vscode.window.showInformationMessage(`Cancellation requested for Actions run #${runId}.`);
+        }
+        await vscode.commands.executeCommand(ACCELERATE_READINESS_POLLING_COMMAND);
+      } catch (error) {
+        vscode.window.showErrorMessage(
+          `${message.type === "rerunCheck" ? "Re-run" : "Cancel"} failed: ${(error as Error).message}`,
+        );
+      } finally {
+        this.busy = false;
+        this.render();
+      }
       return;
     }
 
@@ -717,32 +753,59 @@ export class ReviewPullRequestViewProvider
           .join("")
       : "";
     const statuses = this.readiness.status?.statuses ?? [];
-    const successfulChecks = statuses.filter(
-      (status) => status.state === "success",
+    const presentations = statuses.map((status) => ({
+      status,
+      presentation: externalCheckPresentation(status.state, status.target_url),
+      runId: extractGiteaRunId(status.target_url),
+    }));
+    const successfulChecks = presentations.filter(
+      (item) => item.presentation.state === "success",
     ).length;
-    const pendingChecks = statuses.filter(
-      (status) => status.state === "pending",
+    const pendingChecks = presentations.filter(
+      (item) =>
+        item.presentation.state === "running" ||
+        item.presentation.state === "queued",
     ).length;
-    const failedChecks = statuses.filter(
-      (status) => status.state === "failure" || status.state === "error",
+    const failedChecks = presentations.filter(
+      (item) => item.presentation.state === "failure",
     ).length;
-    const warningChecks = statuses.filter(
-      (status) => status.state === "warning",
+    const warningChecks = presentations.filter(
+      (item) => item.presentation.state === "warning",
     ).length;
     const checkSummary =
       statuses.length > 0
         ? `${successfulChecks} successful · ${pendingChecks} pending · ${failedChecks} failed${warningChecks ? ` · ${warningChecks} warning` : ""}`
         : "No commit status checks reported";
-    const checks = statuses
-      .map((status) => {
+
+    const actionIcon = (path: string) =>
+      `<svg class="ci-action-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="${path}"/></svg>`;
+    const openIcon = actionIcon(
+      "M9 2h5v5h-1V3.7L7.35 9.35l-.7-.7L12.3 3H9V2zM3 4h4v1H4v7h7V8h1v5H3V4z",
+    );
+    const rerunIcon = actionIcon(
+      "M13.2 3.8A6 6 0 1 0 14 9h-1.2a4.8 4.8 0 1 1-.7-4.3L10 6h5V1l-1.8 2.8z",
+    );
+    const cancelIcon = actionIcon(
+      "M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm0 1a6 6 0 1 1 0 12A6 6 0 0 1 8 2zM5 5h6v6H5V5z",
+    );
+    const checks = presentations
+      .map(({ status, presentation, runId }) => {
         const label = escapeHtml(status.context || "check");
         const description = status.description
           ? `<div class="check-description">${escapeHtml(status.description)}</div>`
           : "";
-        const name = status.target_url
-          ? `<a href="#" data-check-url="${escapeHtml(status.target_url)}">${label}</a>`
-          : label;
-        return `<li class="check check-${status.state}"><span class="check-state">${escapeHtml(checkStateLabel(status.state))}</span><span>${name}${description}</span></li>`;
+        const actions = [
+          presentation.actions.openInBrowser && status.target_url
+            ? `<button class="ci-check-action" data-check-open="${escapeHtml(status.target_url)}" title="Open in browser" aria-label="Open ${label} in browser">${openIcon}</button>`
+            : "",
+          presentation.actions.rerun && runId
+            ? `<button class="ci-check-action" data-check-rerun="${runId}" title="Re-run workflow" aria-label="Re-run ${label}">${rerunIcon}</button>`
+            : "",
+          presentation.actions.cancel && runId
+            ? `<button class="ci-check-action" data-check-cancel="${runId}" title="Cancel workflow" aria-label="Cancel ${label}">${cancelIcon}</button>`
+            : "",
+        ].join("");
+        return `<li class="check"><span class="ci-status-dot ci-state-${presentation.state}" title="${escapeHtml(presentation.statusLabel)}" aria-label="${escapeHtml(presentation.statusLabel)}"></span><div class="check-main"><div class="check-line"><span class="check-name">${label}</span><span class="check-status muted">${escapeHtml(presentation.statusLabel)}</span></div>${description}</div><div class="check-actions">${actions}</div></li>`;
       })
       .join("");
     const readinessHtml = this.readiness.loading
@@ -787,7 +850,7 @@ export class ReviewPullRequestViewProvider
   .branch-grid{display:grid;grid-template-columns:max-content minmax(0,1fr) max-content;gap:7px 8px;align-items:center}
   .branch-grid strong{white-space:nowrap}
   ul{margin:6px 0;padding-left:20px}.blocked{color:var(--vscode-errorForeground)}.ready{color:var(--vscode-testing-iconPassed)}
-  .checks{list-style:none;padding:0;margin-top:8px}.check{display:grid;grid-template-columns:max-content 1fr;gap:8px;padding:6px 0;border-top:1px solid var(--vscode-panel-border)}.check:first-child{border-top:0}.check-state{min-width:62px;font-size:.9em;font-weight:600}.check-success .check-state{color:var(--vscode-testing-iconPassed)}.check-pending .check-state,.check-warning .check-state{color:var(--vscode-editorWarning-foreground)}.check-failure .check-state,.check-error .check-state{color:var(--vscode-errorForeground)}.check-description{color:var(--vscode-descriptionForeground);margin-top:2px;overflow-wrap:anywhere}a{color:var(--vscode-textLink-foreground);text-decoration:none}
+  .checks{list-style:none;padding:0;margin-top:8px}.check{display:grid;grid-template-columns:12px minmax(0,1fr) max-content;gap:8px;align-items:start;padding:7px 0;border-top:1px solid var(--vscode-panel-border)}.check:first-child{border-top:0}.ci-status-dot{width:9px;height:9px;border-radius:50%;margin-top:5px;background:var(--vscode-descriptionForeground)}.ci-state-success{background:var(--vscode-testing-iconPassed,var(--vscode-charts-green))}.ci-state-running{background:var(--vscode-charts-orange,var(--vscode-editorWarning-foreground))}.ci-state-queued{background:var(--vscode-testing-iconQueued,var(--vscode-charts-yellow))}.ci-state-warning{background:var(--vscode-editorWarning-foreground,var(--vscode-charts-yellow))}.ci-state-failure{background:var(--vscode-testing-iconFailed,var(--vscode-errorForeground))}.ci-state-cancelled{background:var(--vscode-disabledForeground,var(--vscode-descriptionForeground))}.ci-state-skipped{background:var(--vscode-testing-iconSkipped,var(--vscode-descriptionForeground))}.ci-state-unknown{background:var(--vscode-descriptionForeground)}.check-main{min-width:0}.check-line{display:flex;align-items:baseline;gap:7px;min-width:0}.check-name{font-weight:500;overflow-wrap:anywhere}.check-status{font-size:.9em;white-space:nowrap}.check-description{color:var(--vscode-descriptionForeground);margin-top:2px;overflow-wrap:anywhere}.check-actions{display:flex;gap:2px;align-items:center}.ci-check-action{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;padding:2px;border:0;border-radius:3px;background:transparent;color:var(--vscode-descriptionForeground)}.ci-check-action:hover{color:var(--vscode-foreground);background:var(--vscode-toolbar-hoverBackground)}.ci-action-icon{width:14px;height:14px}a{color:var(--vscode-textLink-foreground);text-decoration:none}
 </style>
 </head>
 <body>
@@ -850,7 +913,9 @@ export class ReviewPullRequestViewProvider
   document.getElementById('approve')?.addEventListener('click',()=>vscode.postMessage({type:'approve',body:body.value}));
   document.getElementById('requestChanges')?.addEventListener('click',()=>vscode.postMessage({type:'requestChanges',body:body.value}));
   document.getElementById('readyForReview')?.addEventListener('click',()=>vscode.postMessage({type:'readyForReview'}));
-  document.querySelectorAll('[data-check-url]').forEach((link)=>link.addEventListener('click',(event)=>{event.preventDefault();vscode.postMessage({type:'openCheck',url:link.dataset.checkUrl});}));
+  document.querySelectorAll('[data-check-open]').forEach((button)=>button.addEventListener('click',()=>vscode.postMessage({type:'openCheck',url:button.dataset.checkOpen})));
+  document.querySelectorAll('[data-check-rerun]').forEach((button)=>button.addEventListener('click',()=>vscode.postMessage({type:'rerunCheck',runId:Number(button.dataset.checkRerun)})));
+  document.querySelectorAll('[data-check-cancel]').forEach((button)=>button.addEventListener('click',()=>vscode.postMessage({type:'cancelCheck',runId:Number(button.dataset.checkCancel)})));
   mergeMethod?.addEventListener('change',()=>vscode.postMessage({type:'selectMergeMethod',method:mergeMethod.value}));
   baseBranch?.addEventListener('change',()=>vscode.postMessage({type:'updateBase',base:baseBranch.value}));
   document.getElementById('merge')?.addEventListener('click',()=>vscode.postMessage({type:'merge'}));
@@ -875,23 +940,6 @@ function mergeMethodLabel(method: MergeMethod): string {
       return "Rebase and Merge";
     default:
       return "Create Merge Commit";
-  }
-}
-
-function checkStateLabel(state: string): string {
-  switch (state) {
-    case "success":
-      return "Success";
-    case "pending":
-      return "Pending";
-    case "warning":
-      return "Warning";
-    case "failure":
-      return "Failed";
-    case "error":
-      return "Error";
-    default:
-      return state;
   }
 }
 
