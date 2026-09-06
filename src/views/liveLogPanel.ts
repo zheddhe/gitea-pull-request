@@ -104,6 +104,7 @@ export class LiveLogPanel {
       }),
       run: async () => this.fetchLogs(),
     });
+    this.registration.reconsider();
   }
 
   private async fetchLogs(): Promise<{ changed: boolean }> {
