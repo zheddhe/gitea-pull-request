@@ -3,12 +3,18 @@ import { GiteaApiClient } from "../api/giteaApiClient";
 import { AuthManager } from "../auth/authManager";
 import { RepoManager, RepoInfo } from "../context/repoManager";
 import type { GiteaWorkflowRun, GiteaWorkflowJob } from "../api/types";
+import { warn } from "../debug/outputChannel";
 
 interface RepoCIState {
   runs: GiteaWorkflowRun[];
   page: number;
   hasMore: boolean;
   loading: boolean;
+}
+
+export interface CIPollResult {
+  changed: boolean;
+  hasActiveRuns: boolean;
 }
 
 export function iconForStatus(status: string): vscode.ThemeIcon {
@@ -80,6 +86,20 @@ export function runSecondaryMetadata(run: GiteaWorkflowRun): string[] {
   return [cleanMetadata(run.event), formatRunDateTime(run)].filter(
     (value): value is string => !!value,
   );
+}
+
+export function ciRunsFingerprint(runs: readonly GiteaWorkflowRun[]): string {
+  return runs
+    .map((run) =>
+      [
+        run.id,
+        run.status,
+        run.conclusion,
+        run.updated_at,
+        run.head_sha,
+      ].join(":"),
+    )
+    .join("|");
 }
 
 export class RepoGroupItem extends vscode.TreeItem {
@@ -178,6 +198,8 @@ export class CIRunsProvider
     vscode.TreeItem | undefined | null | void
   >();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
+  private readonly pollingStateEmitter = new vscode.EventEmitter<void>();
+  readonly onDidChangePollingState = this.pollingStateEmitter.event;
 
   private stateMap = new Map<string, RepoCIState>();
   private jobCache = new Map<number, GiteaWorkflowJob[]>();
@@ -195,6 +217,33 @@ export class CIRunsProvider
     this.stateMap.clear();
     this.jobCache.clear();
     this._onDidChangeTreeData.fire();
+    this.pollingStateEmitter.fire();
+  }
+
+  hasLoadedRepos(): boolean {
+    return this.stateMap.size > 0;
+  }
+
+  hasActiveRuns(): boolean {
+    for (const state of this.stateMap.values()) {
+      if (state.runs.some((run) => isActiveRunStatus(run.status))) return true;
+    }
+    return false;
+  }
+
+  async pollLoadedRuns(): Promise<CIPollResult> {
+    let changed = false;
+    for (const [repoKey, state] of this.stateMap) {
+      const repoInfo = this.repoManager.getRepos().find((repo) => repo.key === repoKey);
+      if (!repoInfo || state.loading) continue;
+      changed = (await this.pollRepoFirstPage(repoInfo, state)) || changed;
+    }
+    if (changed) {
+      this.jobCache.clear();
+      this._onDidChangeTreeData.fire();
+      this.pollingStateEmitter.fire();
+    }
+    return { changed, hasActiveRuns: this.hasActiveRuns() };
   }
 
   async refreshRepo(repoKey: string): Promise<void> {
@@ -272,6 +321,7 @@ export class CIRunsProvider
     if (!state) {
       state = { runs: [], page: 1, hasMore: false, loading: false };
       this.stateMap.set(repoInfo.key, state);
+      this.pollingStateEmitter.fire();
       await this.fetchForRepo(repoInfo, state);
       return [];
     }
@@ -330,6 +380,41 @@ export class CIRunsProvider
     } finally {
       if (shouldShowLoading) state.loading = false;
       this._onDidChangeTreeData.fire();
+      this.pollingStateEmitter.fire();
+    }
+  }
+
+  private async pollRepoFirstPage(
+    repoInfo: RepoInfo,
+    state: RepoCIState,
+  ): Promise<boolean> {
+    try {
+      const config = vscode.workspace.getConfiguration("gitea");
+      const limit: number = config.get<number>("itemsPerPage") ?? 20;
+      const result = await this.api.listWorkflowRuns(
+        repoInfo,
+        undefined,
+        1,
+        limit,
+      );
+      const previousFirstPage = state.runs.slice(0, limit);
+      const changed =
+        ciRunsFingerprint(previousFirstPage) !== ciRunsFingerprint(result.items);
+      if (!changed) return false;
+
+      const firstPageIds = new Set(result.items.map((run) => run.id));
+      const tail =
+        state.page > 1
+          ? state.runs.slice(limit).filter((run) => !firstPageIds.has(run.id))
+          : [];
+      state.runs = [...result.items, ...tail];
+      if (state.page === 1) state.hasMore = result.hasMore;
+      return true;
+    } catch (error) {
+      warn(
+        `[polling] ci-runs failed repo=${repoInfo.label}: ${(error as Error).message}`,
+      );
+      return false;
     }
   }
 
@@ -355,6 +440,7 @@ export class CIRunsProvider
   }
 
   dispose(): void {
-    // Cleanup if needed
+    this.pollingStateEmitter.dispose();
+    this._onDidChangeTreeData.dispose();
   }
 }
