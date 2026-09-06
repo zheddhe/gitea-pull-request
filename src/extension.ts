@@ -15,6 +15,8 @@ import { initOutputChannel } from "./debug/outputChannel";
 import { IssueCreationSessionService } from "./features/issues/services/issueCreationSessionService";
 import { IssueTemplateService } from "./features/issues/services/issueTemplateService";
 import { CreateIssueViewProvider } from "./features/issues/views/createIssueView";
+import { PollingLifecycleSignalService } from "./features/polling/services/pollingLifecycleSignalService";
+import { PollingVisibilityWebviewProvider } from "./features/polling/services/pollingVisibilityWebviewProvider";
 import { registerConflictResolutionCommands } from "./features/pullRequests/commands/conflictResolutionCommands";
 import { registerPullRequestSessionCommands } from "./features/pullRequests/commands/sessionCommands";
 import { registerRefreshActivePullRequestCommand } from "./features/pullRequests/commands/refreshActivePullRequestCommand";
@@ -67,6 +69,7 @@ export async function activate(
   const reviewApi = new PullRequestReviewApi(auth);
   const prSession = new PullRequestSessionService();
   const reviewSessions = new PullRequestReviewSessionService();
+  const pollingSignals = new PollingLifecycleSignalService(prSession, reviewSessions);
   const reviewConversations = new PullRequestConversationService(api);
   const issueCreationSession = new IssueCreationSessionService();
   const branchCleanup = new BranchCleanupService();
@@ -130,6 +133,21 @@ export async function activate(
     prSession,
     branchCleanup,
   );
+  const trackedCreatePullRequestView = new PollingVisibilityWebviewProvider(
+    createPullRequestView,
+    "pull-request-create",
+    pollingSignals,
+  );
+  const trackedReviewPullRequestView = new PollingVisibilityWebviewProvider(
+    reviewPullRequestView,
+    "pull-request-review",
+    pollingSignals,
+  );
+  const trackedPostMergePullRequestView = new PollingVisibilityWebviewProvider(
+    postMergePullRequestView,
+    "pull-request-post-merge",
+    pollingSignals,
+  );
   const ciProvider = new CIRunsProvider(api, repoManager, auth);
   const issuesProvider = new IssuesProvider(api, repoManager, auth);
   const statusBar = new StatusBarManager(repoManager, auth);
@@ -144,7 +162,7 @@ export async function activate(
     vscode.window.registerTreeDataProvider("gitea.pullRequestsIssueCreateCompact", prProvider),
     vscode.window.registerWebviewViewProvider(
       CreatePullRequestViewProvider.viewType,
-      createPullRequestView,
+      trackedCreatePullRequestView,
       { webviewOptions: { retainContextWhenHidden: true } },
     ),
     vscode.window.registerWebviewViewProvider(
@@ -154,12 +172,12 @@ export async function activate(
     ),
     vscode.window.registerWebviewViewProvider(
       ReviewPullRequestViewProvider.viewType,
-      reviewPullRequestView,
+      trackedReviewPullRequestView,
       { webviewOptions: { retainContextWhenHidden: true } },
     ),
     vscode.window.registerWebviewViewProvider(
       PostMergePullRequestViewProvider.viewType,
-      postMergePullRequestView,
+      trackedPostMergePullRequestView,
     ),
     vscode.window.registerTreeDataProvider("gitea.ciRuns", ciProvider),
     vscode.window.registerTreeDataProvider("gitea.ciRunsCreateCompact", ciProvider),
@@ -330,10 +348,14 @@ export async function activate(
     auth.onDidChangeSession(() => {
       void repoManager.detect();
     }),
+    trackedCreatePullRequestView,
+    trackedReviewPullRequestView,
+    trackedPostMergePullRequestView,
     createPullRequestView,
     createIssueView,
     reviewPullRequestView,
     postMergePullRequestView,
+    pollingSignals,
     prSessionCoordinator,
     conflictResolutionCoordinator,
     nativeReviewProjection,
@@ -392,6 +414,7 @@ export async function activate(
   await repoManager.initialize();
   await prSession.initialize();
   await issueCreationSession.initialize();
+  pollingSignals.initialize();
   await prSessionCoordinator.initialize();
   await conflictResolutionCoordinator.initialize();
   await nativeReviewProjection.initialize();
