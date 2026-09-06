@@ -29,13 +29,16 @@ interface ScheduledResource {
   registration: PollingRegistration;
   unchangedCount: number;
   inFlight: boolean;
-  nextRunAt: number;
+  nextRunAt: number | undefined;
   disposed: boolean;
+  accelerateAfterFlight: boolean;
+  reconsiderAfterFlight: boolean;
 }
 
 export interface PollingRegistrationHandle {
   dispose(): void;
   accelerate(): void;
+  reconsider(): void;
 }
 
 const defaultLogger: PollingLogger = { debug };
@@ -64,6 +67,8 @@ export class PollingScheduler {
       inFlight: false,
       nextRunAt: this.clock.now(),
       disposed: false,
+      accelerateAfterFlight: false,
+      reconsiderAfterFlight: false,
     };
     this.resources.set(registration.key, resource);
     this.rescheduleTimer();
@@ -71,6 +76,7 @@ export class PollingScheduler {
     return {
       dispose: () => this.unregister(registration.key),
       accelerate: () => this.accelerate(registration.key),
+      reconsider: () => this.reconsider(registration.key),
     };
   }
 
@@ -94,9 +100,24 @@ export class PollingScheduler {
 
   private accelerate(key: string): void {
     const resource = this.resources.get(key);
-    if (!resource || resource.inFlight) return;
+    if (!resource) return;
     resource.unchangedCount = 0;
+    if (resource.inFlight) {
+      resource.accelerateAfterFlight = true;
+      return;
+    }
     resource.nextRunAt = this.clock.now();
+    this.rescheduleTimer();
+  }
+
+  private reconsider(key: string): void {
+    const resource = this.resources.get(key);
+    if (!resource) return;
+    if (resource.inFlight) {
+      resource.reconsiderAfterFlight = true;
+      return;
+    }
+    this.scheduleFromCurrentDecision(resource);
     this.rescheduleTimer();
   }
 
@@ -109,7 +130,9 @@ export class PollingScheduler {
 
     let earliest: number | undefined;
     for (const resource of this.resources.values()) {
-      if (resource.disposed || resource.inFlight) continue;
+      if (resource.disposed || resource.inFlight || resource.nextRunAt === undefined) {
+        continue;
+      }
       earliest =
         earliest === undefined
           ? resource.nextRunAt
@@ -128,7 +151,11 @@ export class PollingScheduler {
     if (this.disposed) return;
     const now = this.clock.now();
     const due = [...this.resources.values()].filter(
-      (resource) => !resource.disposed && !resource.inFlight && resource.nextRunAt <= now,
+      (resource) =>
+        !resource.disposed &&
+        !resource.inFlight &&
+        resource.nextRunAt !== undefined &&
+        resource.nextRunAt <= now,
     );
 
     try {
@@ -145,11 +172,14 @@ export class PollingScheduler {
     const decision = this.decide({
       ...context,
       unchangedCount: resource.unchangedCount,
-      inFlight: resource.inFlight,
+      inFlight: false,
     });
 
     if (decision.kind === "pause") {
-      resource.nextRunAt = this.clock.now() + 1_000;
+      resource.nextRunAt = undefined;
+      this.logger.debug(
+        `[polling] paused key=${resource.registration.key} resource=${context.resourceKind} reason=${decision.reason}`,
+      );
       return;
     }
 
@@ -158,6 +188,7 @@ export class PollingScheduler {
     );
 
     resource.inFlight = true;
+    resource.nextRunAt = undefined;
     try {
       const result = await resource.registration.run();
       if (resource.disposed) return;
@@ -165,15 +196,27 @@ export class PollingScheduler {
     } finally {
       resource.inFlight = false;
       if (!resource.disposed) {
-        const nextDecision = this.decide({
-          ...resource.registration.context(),
-          unchangedCount: resource.unchangedCount,
-          inFlight: false,
-        });
-        resource.nextRunAt =
-          this.clock.now() +
-          (nextDecision.kind === "poll" ? nextDecision.delayMs : 1_000);
+        if (resource.accelerateAfterFlight) {
+          resource.accelerateAfterFlight = false;
+          resource.reconsiderAfterFlight = false;
+          resource.unchangedCount = 0;
+          resource.nextRunAt = this.clock.now();
+        } else {
+          resource.reconsiderAfterFlight = false;
+          this.scheduleFromCurrentDecision(resource);
+        }
       }
     }
+  }
+
+  private scheduleFromCurrentDecision(resource: ScheduledResource): void {
+    const context = resource.registration.context();
+    const decision = this.decide({
+      ...context,
+      unchangedCount: resource.unchangedCount,
+      inFlight: false,
+    });
+    resource.nextRunAt =
+      decision.kind === "poll" ? this.clock.now() + decision.delayMs : undefined;
   }
 }
