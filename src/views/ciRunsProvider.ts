@@ -89,6 +89,10 @@ export function displayStatusForRun(run: GiteaWorkflowRun): string {
   return ciStatusLabel(run.status, run.conclusion);
 }
 
+export function displayNameForRun(run: GiteaWorkflowRun): string {
+  return cleanMetadata(run.name) ?? `Run #${run.run_number}`;
+}
+
 export function formatRunDateTime(run: GiteaWorkflowRun): string | undefined {
   const raw = cleanMetadata(run.run_started_at) ?? cleanMetadata(run.created_at);
   if (!raw) return undefined;
@@ -144,10 +148,8 @@ export class CIRunItem extends vscode.TreeItem {
     public readonly run: GiteaWorkflowRun,
     public readonly repoInfo: RepoInfo,
   ) {
-    super(
-      run.display_title || run.name || `Run #${run.run_number}`,
-      vscode.TreeItemCollapsibleState.Collapsed,
-    );
+    const displayName = displayNameForRun(run);
+    super(displayName, vscode.TreeItemCollapsibleState.Collapsed);
     this.id = `run:${repoInfo.key}:${run.id}`;
 
     const presentation = runPresentation(run.status, run.conclusion, run.html_url);
@@ -157,10 +159,14 @@ export class CIRunItem extends vscode.TreeItem {
     this.description = [presentation.statusLabel, ...secondaryMetadata].join(" · ");
 
     const tooltipLines = [
-      `**${run.display_title || run.name || `Run #${run.run_number}`}**`,
+      `**${displayName}**`,
       "",
       `Status: \`${presentation.statusLabel}\``,
     ];
+    const commitTitle = cleanMetadata(run.display_title);
+    if (commitTitle && commitTitle !== displayName) {
+      tooltipLines.push(`Commit title: ${commitTitle}`);
+    }
     const event = cleanMetadata(run.event);
     if (event) tooltipLines.push(`Event: \`${event}\``);
     const dateTime = formatRunDateTime(run);
@@ -168,7 +174,9 @@ export class CIRunItem extends vscode.TreeItem {
     const branch = cleanMetadata(run.head_branch);
     const commitMessage = cleanMetadata(run.head_commit?.message);
     if (branch) tooltipLines.push("", `Branch: \`${branch}\``);
-    if (commitMessage) tooltipLines.push(`Commit: ${commitMessage}`);
+    if (commitMessage && commitMessage !== commitTitle) {
+      tooltipLines.push(`Commit: ${commitMessage}`);
+    }
     this.tooltip = new vscode.MarkdownString(tooltipLines.join("\n\n"));
     this.iconPath = iconForSemanticState(presentation.state);
   }
