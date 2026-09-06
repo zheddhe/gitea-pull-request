@@ -35,17 +35,35 @@ suite("PR detail presentation", () => {
     assert.doesNotMatch(source, /postMessage\(\{ command: "loading" \}\)/);
   });
 
-  test("places review status in the PR title and keeps branches out of detail", () => {
-    const dot = source.indexOf('class="state-dot');
-    const review = source.indexOf('class="review-state', dot);
+  test("keeps review title lifecycle and last activity on one persistent line", () => {
+    const review = source.indexOf('class="review-state');
     const title = source.indexOf('class="title-prefix"', review);
-    assert.ok(dot >= 0 && review > dot && title > review);
+    const titleText = source.indexOf('id="title-text"', title);
+    const state = source.indexOf('class="badge ${stateClass}"', titleText);
+    const activity = source.indexOf('class="activity-meta"', state);
+    assert.ok(review >= 0 && title > review && titleText > title);
+    assert.ok(state > titleText && activity > state);
+    assert.doesNotMatch(source, /class="state-dot/);
     assert.match(source, /review-approved/);
     assert.match(source, /review-changes-requested/);
     assert.match(source, /review-pending/);
+    assert.match(source, /\$\{stateLabel\}<\/span>/);
+    assert.match(source, /by <strong>\$\{escHtml\(lastActivity\.actor\)\}<\/strong>/);
+    assert.match(source, /\$\{escHtml\(lastActivityDate\)\}/);
     assert.doesNotMatch(source, /class="branch-row"/);
     assert.doesNotMatch(source, /id="base-select"/);
     assert.doesNotMatch(source, /post\('updateBase'/);
+  });
+
+  test("derives last visible PR activity from discussion review inline and commits", () => {
+    assert.match(source, /const activityCandidates: Array<\{ actor: string; at: string \}>/);
+    assert.match(source, /\.\.\.comments\.map\(\(comment\) => \(\{/);
+    assert.match(source, /\.\.\.reviews\.map\(\(review\) => \(\{/);
+    assert.match(source, /\.\.\.reviewComments\.map\(\(comment\) => \(\{/);
+    assert.match(source, /comment\.resolver && comment\.updated_at !== comment\.created_at/);
+    assert.match(source, /\.\.\.commits\.map\(\(commit\) => \(\{/);
+    assert.match(source, /commit\.author\?\.login \|\| commit\.commit\.author\.name/);
+    assert.match(source, /const lastActivity = activityCandidates\.reduce/);
   });
 
   test("keeps the title prefix fixed while editing only the title value", () => {
@@ -59,16 +77,19 @@ suite("PR detail presentation", () => {
     assert.match(source, /event\.key==='Escape'/);
   });
 
-  test("keeps edit beside the title and browser refresh in sticky tab chrome", () => {
-    const title = source.indexOf('class="title-prefix"');
-    const edit = source.indexOf('id="edit-title"', title);
-    const tabs = source.indexOf('<nav class="tabs"', edit);
-    const browser = source.indexOf('id="open-browser"', tabs);
+  test("keeps PR identity and tabs sticky with browser refresh directly after tabs", () => {
+    const chrome = source.indexOf('class="detail-chrome"');
+    const title = source.indexOf('class="title-prefix"', chrome);
+    const tabs = source.indexOf('<nav class="tabs"', title);
+    const commits = source.indexOf('id="commits-tab"', tabs);
+    const actions = source.indexOf('class="tab-actions"', commits);
+    const browser = source.indexOf('id="open-browser"', actions);
     const refresh = source.indexOf('id="refresh"', browser);
-    assert.ok(title >= 0 && edit > title && tabs > edit);
-    assert.ok(browser > tabs && refresh > browser);
-    assert.match(source, /\.tabs\{position:sticky;top:0/);
-    assert.match(source, /class="tab-actions"/);
+    assert.ok(chrome >= 0 && title > chrome && tabs > title);
+    assert.ok(commits > tabs && actions > commits && browser > actions && refresh > browser);
+    assert.match(source, /\.detail-chrome\{position:sticky;top:0/);
+    assert.match(source, /\.tab-actions\{[^}]*margin-left:2px/);
+    assert.doesNotMatch(source, /\.tab-actions\{[^}]*margin-left:auto/);
     assert.doesNotMatch(source, /id="checkout"/);
     assert.doesNotMatch(source, /id="merge-method"/);
     assert.doesNotMatch(source, /id="merge"/);
