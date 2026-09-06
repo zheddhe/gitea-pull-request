@@ -44,12 +44,17 @@ class FakeClock implements PollingClock {
       this.current = next.at;
       this.timers.delete(next.id);
       next.callback();
-      await Promise.resolve();
-      await Promise.resolve();
+      await flushAsyncWork();
     }
     this.current = target;
-    await Promise.resolve();
+    await flushAsyncWork();
   }
+}
+
+async function flushAsyncWork(): Promise<void> {
+  await Promise.resolve();
+  await Promise.resolve();
+  await new Promise<void>((resolve) => setImmediate(resolve));
 }
 
 function baseContext(): Omit<PollingContext, "unchangedCount" | "inFlight"> {
@@ -113,8 +118,29 @@ suite("PollingScheduler", () => {
     assert.strictEqual(calls, 1);
 
     resolveRun?.();
-    await Promise.resolve();
-    await Promise.resolve();
+    await flushAsyncWork();
+    await clock.advanceBy(10);
+    assert.strictEqual(calls, 2);
+    scheduler.dispose();
+  });
+
+  test("continues scheduling after a failed run", async () => {
+    const clock = new FakeClock();
+    const scheduler = new PollingScheduler(clock, fixedDecision(10));
+    let calls = 0;
+
+    scheduler.register({
+      key: "failure-recovery",
+      context: baseContext,
+      run: async () => {
+        calls += 1;
+        if (calls === 1) throw new Error("transient");
+        return { changed: false };
+      },
+    });
+
+    await clock.advanceBy(0);
+    assert.strictEqual(calls, 1);
     await clock.advanceBy(10);
     assert.strictEqual(calls, 2);
     scheduler.dispose();
