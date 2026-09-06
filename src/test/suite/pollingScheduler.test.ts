@@ -3,6 +3,7 @@ import type { PollingContext, PollingDecision } from "../../features/polling/dom
 import {
   PollingScheduler,
   type PollingClock,
+  type PollingLogger,
 } from "../../features/polling/services/pollingScheduler";
 
 interface TimerEntry {
@@ -143,6 +144,32 @@ suite("PollingScheduler", () => {
     assert.strictEqual(calls, 1);
     await clock.advanceBy(10);
     assert.strictEqual(calls, 2);
+    scheduler.dispose();
+  });
+
+  test("logs polling attempts with resource context", async () => {
+    const clock = new FakeClock();
+    const messages: string[] = [];
+    const logger: PollingLogger = { info: (message) => messages.push(message) };
+    const scheduler = new PollingScheduler(clock, fixedDecision(2_500), logger);
+
+    scheduler.register({
+      key: "repo:owner/name:pr:42",
+      context: baseContext,
+      run: async () => ({ changed: false }),
+    });
+
+    await clock.advanceBy(0);
+
+    assert.strictEqual(messages.length, 1);
+    assert.match(messages[0], /^\[polling\] attempt /);
+    assert.match(messages[0], /key=repo:owner\/name:pr:42/);
+    assert.match(messages[0], /resource=pull-request/);
+    assert.match(messages[0], /lifecycle=active/);
+    assert.match(messages[0], /visible=true/);
+    assert.match(messages[0], /windowActive=true/);
+    assert.match(messages[0], /delayMs=2500/);
+    assert.match(messages[0], /reason=test/);
     scheduler.dispose();
   });
 
