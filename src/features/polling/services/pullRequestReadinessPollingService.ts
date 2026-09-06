@@ -19,6 +19,8 @@ const PENDING_STATUS_NAMES = new Set([
   "in_progress",
 ]);
 const POST_ACTION_BURST_POLLS = 12;
+export const ACCELERATE_READINESS_POLLING_COMMAND =
+  "gitea.internal.accelerateReadinessPolling";
 
 export class PullRequestReadinessPollingService implements vscode.Disposable {
   private readonly disposables: vscode.Disposable[] = [];
@@ -46,6 +48,9 @@ export class PullRequestReadinessPollingService implements vscode.Disposable {
       this.session.onDidChangeState(() => this.syncRegistration()),
       this.repoManager.onDidChange(() => this.syncRegistration()),
       this.signals.onDidChange(() => this.registration?.reconsider()),
+      vscode.commands.registerCommand(ACCELERATE_READINESS_POLLING_COMMAND, () =>
+        this.accelerate(),
+      ),
     );
   }
 
