@@ -77,9 +77,14 @@ suite("Active pull request polling", () => {
     assert.notStrictEqual(before, after);
   });
 
-  test("fingerprint ignores title-only presentation changes", () => {
+  test("fingerprint changes for title and label updates", () => {
     const before = pullRequestFingerprint(pullRequest());
-    const after = pullRequestFingerprint(pullRequest({ title: "Renamed" }));
-    assert.strictEqual(before, after);
+    const after = pullRequestFingerprint(
+      pullRequest({
+        title: "Renamed",
+        labels: [{ id: 1, name: "bug", color: "ff0000" }],
+      }),
+    );
+    assert.notStrictEqual(before, after);
   });
 });
