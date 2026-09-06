@@ -89,6 +89,37 @@ suite("adaptivePollingPolicy", () => {
     );
   });
 
+  test("keeps pending CI runs at five seconds without unchanged backoff", () => {
+    assert.deepStrictEqual(
+      adaptivePollingDecision(
+        context({ resourceKind: "ci-runs", lifecycle: "pending", unchangedCount: 4 }),
+      ),
+      { kind: "poll", delayMs: 5_000, reason: "pending-live" },
+    );
+  });
+
+  test("keeps pending pull request checks at five seconds without unchanged backoff", () => {
+    assert.deepStrictEqual(
+      adaptivePollingDecision(
+        context({
+          resourceKind: "pull-request-readiness",
+          lifecycle: "pending",
+          unchangedCount: 4,
+        }),
+      ),
+      { kind: "poll", delayMs: 5_000, reason: "pending-live" },
+    );
+  });
+
+  test("slows pending resources while hidden", () => {
+    assert.deepStrictEqual(
+      adaptivePollingDecision(
+        context({ resourceKind: "ci-runs", lifecycle: "pending", visible: false }),
+      ),
+      { kind: "poll", delayMs: 20_000, reason: "hidden" },
+    );
+  });
+
   test("backs off exponentially when nothing changes", () => {
     assert.deepStrictEqual(
       adaptivePollingDecision(context({ unchangedCount: 2 })),
