@@ -19,6 +19,7 @@ import { ActivePullRequestPollingService } from "./features/polling/services/act
 import { CIRunsPollingService } from "./features/polling/services/ciRunsPollingService";
 import { IssuesPollingService } from "./features/polling/services/issuesPollingService";
 import { PollingLifecycleSignalService } from "./features/polling/services/pollingLifecycleSignalService";
+import { PullRequestReadinessPollingService } from "./features/polling/services/pullRequestReadinessPollingService";
 import {
   PollingScheduler,
   type PollingClock,
@@ -170,6 +171,14 @@ export async function activate(
     pollingScheduler,
     pollingSignals,
     api,
+    repoManager,
+    prSession,
+    prProvider,
+  );
+  const prReadinessPolling = new PullRequestReadinessPollingService(
+    pollingScheduler,
+    pollingSignals,
+    reviewApi,
     repoManager,
     prSession,
     prProvider,
@@ -424,6 +433,7 @@ export async function activate(
     postMergePullRequestView,
     pollingSignals,
     activePullRequestPolling,
+    prReadinessPolling,
     ciRunsPolling,
     issuesPolling,
     pollingScheduler,
@@ -494,6 +504,7 @@ export async function activate(
   await issueCreationSession.initialize();
   pollingSignals.initialize();
   activePullRequestPolling.initialize();
+  prReadinessPolling.initialize();
   ciRunsPolling.initialize();
   issuesPolling.initialize();
   await prSessionCoordinator.initialize();
