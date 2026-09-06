@@ -74,7 +74,7 @@ suite("Pull request readiness polling", () => {
       hasPendingChecks(
         status({
           state: "success",
-          statuses: [{ ...status().statuses[0], state: "in_progress" }],
+          statuses: [{ ...status().statuses[0], state: "pending" }],
         }),
       ),
       true,
