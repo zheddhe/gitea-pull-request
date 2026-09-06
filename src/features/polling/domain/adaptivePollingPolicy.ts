@@ -33,7 +33,7 @@ const ACTIVE_DELAYS_MS: Record<PollingResourceKind, number> = {
 };
 
 const TERMINAL_DELAY_MS = 5 * 60_000;
-const INACTIVE_WINDOW_DELAY_MS = 2 * 60_000;
+const INACTIVE_WINDOW_MIN_DELAY_MS = 2 * 60_000;
 const RECENT_ACTION_DELAY_MS = 2_000;
 const HIDDEN_MULTIPLIER = 4;
 const MAX_BACKOFF_MULTIPLIER = 4;
@@ -43,19 +43,15 @@ export function adaptivePollingDecision(context: PollingContext): PollingDecisio
     return { kind: "pause", reason: "in-flight" };
   }
 
-  if (!context.windowActive) {
-    return {
-      kind: "poll",
-      delayMs: INACTIVE_WINDOW_DELAY_MS,
-      reason: "window-inactive",
-    };
-  }
-
-  if (context.activity === "editing") {
+  if (context.activity === "editing" && isReviewSensitive(context.resourceKind)) {
     return { kind: "pause", reason: "editing" };
   }
 
-  if (context.activity === "recent-action" && context.lifecycle === "active") {
+  if (
+    context.windowActive &&
+    context.activity === "recent-action" &&
+    context.lifecycle === "active"
+  ) {
     return {
       kind: "poll",
       delayMs: context.visible ? RECENT_ACTION_DELAY_MS : RECENT_ACTION_DELAY_MS * 2,
@@ -63,22 +59,28 @@ export function adaptivePollingDecision(context: PollingContext): PollingDecisio
     };
   }
 
-  const baseDelay =
-    context.lifecycle === "terminal" || context.lifecycle === "post-merge"
-      ? TERMINAL_DELAY_MS
-      : ACTIVE_DELAYS_MS[context.resourceKind];
-
+  const stableLifecycle =
+    context.lifecycle === "terminal" || context.lifecycle === "post-merge";
+  const baseDelay = stableLifecycle
+    ? TERMINAL_DELAY_MS
+    : ACTIVE_DELAYS_MS[context.resourceKind];
   const visibilityMultiplier = context.visible ? 1 : HIDDEN_MULTIPLIER;
   const backoffMultiplier = Math.min(
     MAX_BACKOFF_MULTIPLIER,
     2 ** Math.min(context.unchangedCount, 2),
   );
 
+  const adaptiveDelay = baseDelay * visibilityMultiplier * backoffMultiplier;
+  const delayMs = context.windowActive
+    ? adaptiveDelay
+    : Math.max(adaptiveDelay, INACTIVE_WINDOW_MIN_DELAY_MS);
+
   return {
     kind: "poll",
-    delayMs: baseDelay * visibilityMultiplier * backoffMultiplier,
-    reason:
-      context.lifecycle === "terminal" || context.lifecycle === "post-merge"
+    delayMs,
+    reason: !context.windowActive
+      ? "window-inactive"
+      : stableLifecycle
         ? "stable-lifecycle"
         : context.visible
           ? context.unchangedCount > 0
@@ -86,4 +88,11 @@ export function adaptivePollingDecision(context: PollingContext): PollingDecisio
             : "active-visible"
           : "hidden",
   };
+}
+
+function isReviewSensitive(resourceKind: PollingResourceKind): boolean {
+  return (
+    resourceKind === "pull-request" ||
+    resourceKind === "pull-request-readiness"
+  );
 }
