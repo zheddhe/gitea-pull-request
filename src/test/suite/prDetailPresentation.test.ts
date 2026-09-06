@@ -139,7 +139,14 @@ suite("PR detail presentation", () => {
     assert.match(source, /newest\?'↓':'↑'/);
     assert.match(source, /function sortReviewHistory\(direction\)/);
     assert.match(source, /function setReviewHistorySort\(direction,persist=true\)/);
-    assert.match(source, /reviewHistorySort:savedState\.reviewHistorySort/);
+    assert.match(
+      source,
+      /let reviewHistorySort=savedState\.reviewHistorySort==='desc'\?'desc':'asc'/,
+    );
+    assert.match(
+      source,
+      /vscode\.setState\(Object\.assign\(\{\},vscode\.getState\(\)\|\|\{\},\{reviewHistorySort\}\)\)/,
+    );
   });
 
   test("restores file status color cues and readable file names", () => {
