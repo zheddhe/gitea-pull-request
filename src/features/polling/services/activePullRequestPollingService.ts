@@ -44,36 +44,34 @@ export class ActivePullRequestPollingService implements vscode.Disposable {
   }
 
   dispose(): void {
-    this.registration?.dispose();
-    this.registration = undefined;
-    this.registeredIdentity = undefined;
+    this.clearRegistration();
     for (const disposable of this.disposables) disposable.dispose();
     this.disposables.length = 0;
   }
 
   private syncRegistration(): void {
     const state = this.session.current;
-    const identity =
-      state.kind === "active"
-        ? `${state.repository.key}::pr:${state.pullRequest.number}`
-        : undefined;
+    if (state.kind !== "active") {
+      this.clearRegistration();
+      return;
+    }
 
+    const repoInfo = this.repoManager
+      .getRepos()
+      .find((repo) => repo.key === state.repository.key);
+    if (!repoInfo) {
+      this.clearRegistration();
+      return;
+    }
+
+    const identity = `${state.repository.key}::pr:${state.pullRequest.number}`;
+    this.resourceLifecycle = lifecycleForPullRequest(state.pullRequest);
     if (identity === this.registeredIdentity) {
       this.registration?.reconsider();
       return;
     }
 
-    this.registration?.dispose();
-    this.registration = undefined;
-    this.registeredIdentity = undefined;
-
-    if (state.kind !== "active") return;
-    const repoInfo = this.repoManager
-      .getRepos()
-      .find((repo) => repo.key === state.repository.key);
-    if (!repoInfo) return;
-
-    this.resourceLifecycle = lifecycleForPullRequest(state.pullRequest);
+    this.clearRegistration();
     this.registeredIdentity = identity;
     this.registration = this.scheduler.register({
       key: identity,
@@ -128,6 +126,12 @@ export class ActivePullRequestPollingService implements vscode.Disposable {
       },
     });
   }
+
+  private clearRegistration(): void {
+    this.registration?.dispose();
+    this.registration = undefined;
+    this.registeredIdentity = undefined;
+  }
 }
 
 export function lifecycleForPullRequest(
@@ -141,21 +145,31 @@ export function lifecycleForPullRequest(
 export function pullRequestFingerprint(
   pullRequest: Pick<
     GiteaPullRequest,
+    | "title"
+    | "body"
     | "state"
     | "merged"
     | "updated_at"
     | "comments"
     | "review_comments"
+    | "labels"
     | "head"
     | "base"
   >,
 ): string {
+  const labels = (pullRequest.labels ?? [])
+    .map((label) => `${label.id}:${label.name}:${label.color}`)
+    .sort()
+    .join(",");
   return [
+    pullRequest.title,
+    pullRequest.body,
     pullRequest.state,
     pullRequest.merged ? "merged" : "open",
     pullRequest.updated_at,
     pullRequest.comments,
     pullRequest.review_comments,
+    labels,
     pullRequest.head.sha,
     pullRequest.base.sha,
   ].join("|");
