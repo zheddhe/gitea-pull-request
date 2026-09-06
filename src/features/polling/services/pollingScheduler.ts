@@ -71,6 +71,10 @@ export class PollingScheduler {
       reconsiderAfterFlight: false,
     };
     this.resources.set(registration.key, resource);
+    const context = registration.context();
+    this.logger.debug(
+      `[polling] registered key=${registration.key} resource=${context.resourceKind} lifecycle=${context.lifecycle} activity=${context.activity} visible=${context.visible} windowActive=${context.windowActive}`,
+    );
     this.rescheduleTimer();
 
     return {
@@ -95,6 +99,9 @@ export class PollingScheduler {
     if (!resource) return;
     resource.disposed = true;
     this.resources.delete(key);
+    this.logger.debug(
+      `[polling] unregistered key=${key} resource=${resource.registration.context().resourceKind} unchanged=${resource.unchangedCount}`,
+    );
     this.rescheduleTimer();
   }
 
@@ -178,7 +185,7 @@ export class PollingScheduler {
     if (decision.kind === "pause") {
       resource.nextRunAt = undefined;
       this.logger.debug(
-        `[polling] paused key=${resource.registration.key} resource=${context.resourceKind} reason=${decision.reason}`,
+        `[polling] paused key=${resource.registration.key} resource=${context.resourceKind} lifecycle=${context.lifecycle} activity=${context.activity} visible=${context.visible} windowActive=${context.windowActive} unchanged=${resource.unchangedCount} reason=${decision.reason}`,
       );
       return;
     }
