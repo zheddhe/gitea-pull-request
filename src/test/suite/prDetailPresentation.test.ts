@@ -59,14 +59,16 @@ suite("PR detail presentation", () => {
     assert.match(source, /event\.key==='Escape'/);
   });
 
-  test("keeps only edit browser and refresh context actions beside the title", () => {
+  test("keeps edit beside the title and browser refresh in sticky tab chrome", () => {
     const title = source.indexOf('class="title-prefix"');
     const edit = source.indexOf('id="edit-title"', title);
-    const browser = source.indexOf('id="open-browser"', edit);
+    const tabs = source.indexOf('<nav class="tabs"', edit);
+    const browser = source.indexOf('id="open-browser"', tabs);
     const refresh = source.indexOf('id="refresh"', browser);
-    const tabs = source.indexOf('<nav class="tabs"', refresh);
-    assert.ok(title >= 0 && edit > title && browser > edit && refresh > browser);
-    assert.ok(tabs > refresh);
+    assert.ok(title >= 0 && edit > title && tabs > edit);
+    assert.ok(browser > tabs && refresh > browser);
+    assert.match(source, /\.tabs\{position:sticky;top:0/);
+    assert.match(source, /class="tab-actions"/);
     assert.doesNotMatch(source, /id="checkout"/);
     assert.doesNotMatch(source, /id="merge-method"/);
     assert.doesNotMatch(source, /id="merge"/);
@@ -126,16 +128,18 @@ suite("PR detail presentation", () => {
     assert.match(source, /window\.addEventListener\('message'/);
   });
 
-  test("enriches review history with inline COMMENT detail and sorting", () => {
+  test("enriches review history with inline COMMENT detail and integrated sorting", () => {
     assert.match(source, /comment\.pull_request_review_id === review\.id/);
     assert.match(source, /review-inline-summary/);
     assert.match(source, /review-inline-message/);
     assert.match(source, /reviewCommentBodies\[commentIndex\]/);
     assert.match(source, /data-review-time=/);
-    assert.match(source, /id="review-history-sort"/);
-    assert.match(source, />Oldest first<\/option>/);
-    assert.match(source, />Newest first<\/option>/);
+    assert.match(source, /id="review-history-sort" class="tab-sort"/);
+    assert.match(source, /title="Oldest first — click for newest first"/);
+    assert.match(source, /newest\?'↓':'↑'/);
     assert.match(source, /function sortReviewHistory\(direction\)/);
+    assert.match(source, /function setReviewHistorySort\(direction,persist=true\)/);
+    assert.match(source, /reviewHistorySort:savedState\.reviewHistorySort/);
   });
 
   test("restores file status color cues and readable file names", () => {
