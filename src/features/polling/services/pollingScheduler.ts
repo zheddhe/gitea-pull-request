@@ -42,6 +42,11 @@ export interface PollingRegistrationHandle {
 }
 
 const defaultLogger: PollingLogger = { debug };
+let activeScheduler: PollingScheduler | undefined;
+
+export function getActivePollingScheduler(): PollingScheduler | undefined {
+  return activeScheduler;
+}
 
 export class PollingScheduler {
   private readonly resources = new Map<string, ScheduledResource>();
@@ -53,7 +58,9 @@ export class PollingScheduler {
     private readonly decide: (context: PollingContext) => PollingDecision =
       adaptivePollingDecision,
     private readonly logger: PollingLogger = defaultLogger,
-  ) {}
+  ) {
+    activeScheduler = this;
+  }
 
   register(registration: PollingRegistration): PollingRegistrationHandle {
     if (this.disposed) throw new Error("PollingScheduler is disposed.");
@@ -92,6 +99,7 @@ export class PollingScheduler {
       this.timer = undefined;
     }
     this.resources.clear();
+    if (activeScheduler === this) activeScheduler = undefined;
   }
 
   private unregister(key: string): void {
