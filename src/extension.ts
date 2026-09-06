@@ -15,7 +15,14 @@ import { initOutputChannel } from "./debug/outputChannel";
 import { IssueCreationSessionService } from "./features/issues/services/issueCreationSessionService";
 import { IssueTemplateService } from "./features/issues/services/issueTemplateService";
 import { CreateIssueViewProvider } from "./features/issues/views/createIssueView";
+import { ActivePullRequestPollingService } from "./features/polling/services/activePullRequestPollingService";
+import { CIRunsPollingService } from "./features/polling/services/ciRunsPollingService";
 import { PollingLifecycleSignalService } from "./features/polling/services/pollingLifecycleSignalService";
+import {
+  PollingScheduler,
+  type PollingClock,
+} from "./features/polling/services/pollingScheduler";
+import { PollingVisibilityTreeViewTracker } from "./features/polling/services/pollingVisibilityTreeViewTracker";
 import { PollingVisibilityWebviewProvider } from "./features/polling/services/pollingVisibilityWebviewProvider";
 import { registerConflictResolutionCommands } from "./features/pullRequests/commands/conflictResolutionCommands";
 import { registerPullRequestSessionCommands } from "./features/pullRequests/commands/sessionCommands";
@@ -54,6 +61,12 @@ import { SidebarPullRequestProvider } from "./features/pullRequests/views/sideba
 import type { RepoInfo } from "./context/repoManager";
 import type { GiteaPullRequest } from "./api/types";
 
+const systemPollingClock: PollingClock = {
+  now: () => Date.now(),
+  setTimeout: (callback, delayMs) => setTimeout(callback, delayMs),
+  clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+};
+
 export async function activate(
   context: vscode.ExtensionContext,
 ): Promise<void> {
@@ -70,6 +83,7 @@ export async function activate(
   const prSession = new PullRequestSessionService();
   const reviewSessions = new PullRequestReviewSessionService();
   const pollingSignals = new PollingLifecycleSignalService(prSession, reviewSessions);
+  const pollingScheduler = new PollingScheduler(systemPollingClock);
   const reviewConversations = new PullRequestConversationService(api);
   const issueCreationSession = new IssueCreationSessionService();
   const branchCleanup = new BranchCleanupService();
@@ -151,6 +165,38 @@ export async function activate(
   const ciProvider = new CIRunsProvider(api, repoManager, auth);
   const issuesProvider = new IssuesProvider(api, repoManager, auth);
   const statusBar = new StatusBarManager(repoManager, auth);
+  const activePullRequestPolling = new ActivePullRequestPollingService(
+    pollingScheduler,
+    pollingSignals,
+    api,
+    repoManager,
+    prSession,
+    prProvider,
+  );
+  const ciRunsPolling = new CIRunsPollingService(
+    pollingScheduler,
+    pollingSignals,
+    ciProvider,
+  );
+
+  const ciRunsTree = vscode.window.createTreeView("gitea.ciRuns", {
+    treeDataProvider: ciProvider,
+  });
+  const ciRunsCreateCompactTree = vscode.window.createTreeView(
+    "gitea.ciRunsCreateCompact",
+    { treeDataProvider: ciProvider },
+  );
+  const ciRunsIssueCreateCompactTree = vscode.window.createTreeView(
+    "gitea.ciRunsIssueCreateCompact",
+    { treeDataProvider: ciProvider },
+  );
+  const ciVisibility = new PollingVisibilityTreeViewTracker(
+    "ci-runs",
+    pollingSignals,
+  );
+  ciVisibility.track(ciRunsTree);
+  ciVisibility.track(ciRunsCreateCompactTree);
+  ciVisibility.track(ciRunsIssueCreateCompactTree);
 
   context.subscriptions.push(
     vscode.workspace.registerTextDocumentContentProvider(
@@ -179,9 +225,10 @@ export async function activate(
       PostMergePullRequestViewProvider.viewType,
       trackedPostMergePullRequestView,
     ),
-    vscode.window.registerTreeDataProvider("gitea.ciRuns", ciProvider),
-    vscode.window.registerTreeDataProvider("gitea.ciRunsCreateCompact", ciProvider),
-    vscode.window.registerTreeDataProvider("gitea.ciRunsIssueCreateCompact", ciProvider),
+    ciRunsTree,
+    ciRunsCreateCompactTree,
+    ciRunsIssueCreateCompactTree,
+    ciVisibility,
     vscode.window.registerTreeDataProvider("gitea.issues", issuesProvider),
     vscode.window.registerTreeDataProvider("gitea.issuesCreateCompact", issuesProvider),
     vscode.window.registerTreeDataProvider("gitea.issuesIssueCreateMode", issuesProvider),
@@ -356,6 +403,9 @@ export async function activate(
     reviewPullRequestView,
     postMergePullRequestView,
     pollingSignals,
+    activePullRequestPolling,
+    ciRunsPolling,
+    pollingScheduler,
     prSessionCoordinator,
     conflictResolutionCoordinator,
     nativeReviewProjection,
@@ -415,6 +465,8 @@ export async function activate(
   await prSession.initialize();
   await issueCreationSession.initialize();
   pollingSignals.initialize();
+  activePullRequestPolling.initialize();
+  ciRunsPolling.initialize();
   await prSessionCoordinator.initialize();
   await conflictResolutionCoordinator.initialize();
   await nativeReviewProjection.initialize();
