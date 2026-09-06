@@ -1,5 +1,6 @@
 export type PollingResourceKind =
   | "pull-request"
+  | "pull-request-detail"
   | "pull-request-readiness"
   | "ci-runs"
   | "ci-job"
@@ -30,6 +31,7 @@ export type PollingDecision =
 
 const ACTIVE_DELAYS_MS: Record<PollingResourceKind, number> = {
   "pull-request": 15_000,
+  "pull-request-detail": 15_000,
   "pull-request-readiness": 10_000,
   "ci-runs": 10_000,
   "ci-job": 5_000,
@@ -125,8 +127,8 @@ export function adaptivePollingDecision(context: PollingContext): PollingDecisio
 }
 
 function isEditSensitive(resourceKind: PollingResourceKind): boolean {
-  // The active PR snapshot can cause broad view/session re-rendering, so it is
-  // paused while a pending review is being edited. Readiness polling is safe:
-  // the Review view retains its draft body while checks/reviews are updated.
-  return resourceKind === "pull-request";
+  // Broad PR/session and PR-detail renders can replace user-editable UI, so
+  // they pause while their relevant local editing state is active. Readiness
+  // polling is safe because the review draft is retained independently.
+  return resourceKind === "pull-request" || resourceKind === "pull-request-detail";
 }
