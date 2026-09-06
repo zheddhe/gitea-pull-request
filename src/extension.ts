@@ -478,7 +478,14 @@ export async function activate(
     workingFileBridge,
     reviewConversations,
   );
-  registerCICommands(context, api, ciProvider);
+  registerCICommands(
+    context,
+    api,
+    ciProvider,
+    ciRunsPolling,
+    pollingScheduler,
+    pollingSignals,
+  );
   registerIssueCommands(context, api, repoManager, auth, issuesProvider);
 
   await auth.initialize();
