@@ -411,6 +411,22 @@
         "command": "gitea.nativeReviewReopen",
         "title": "Reopen Conversation",
         "icon": "$(history)"
+      },
+      {
+        "command": "gitea.previousUnresolvedReviewConversation",
+        "title": "Previous Unresolved Review Conversation",
+        "icon": {
+          "light": "resources/icons/review-comment-up-light.svg",
+          "dark": "resources/icons/review-comment-up-dark.svg"
+        }
+      },
+      {
+        "command": "gitea.nextUnresolvedReviewConversation",
+        "title": "Next Unresolved Review Conversation",
+        "icon": {
+          "light": "resources/icons/review-comment-down-light.svg",
+          "dark": "resources/icons/review-comment-down-dark.svg"
+        }
       }
     ],
     "menus": {
@@ -596,6 +612,18 @@
           "command": "gitea.reopenIssue",
           "when": "viewItem == issue_closed",
           "group": "inline@4"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "gitea.previousUnresolvedReviewConversation",
+          "when": "resourceScheme == gitea-pr && gitea.prSession.active && gitea.reviewNavigationAvailable",
+          "group": "navigation@20"
+        },
+        {
+          "command": "gitea.nextUnresolvedReviewConversation",
+          "when": "resourceScheme == gitea-pr && gitea.prSession.active && gitea.reviewNavigationAvailable",
+          "group": "navigation@20"
         }
       ],
       "comments/commentThread/context": [
