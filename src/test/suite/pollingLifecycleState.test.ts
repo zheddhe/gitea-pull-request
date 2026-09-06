@@ -66,4 +66,13 @@ suite("PollingLifecycleState", () => {
     assert.strictEqual(state.setSurfaceVisible("ci-runs", true), true);
     assert.strictEqual(state.setSurfaceVisible("ci-runs", true), false);
   });
+
+  test("recent action expires without requiring an explicit reset", () => {
+    const state = new PollingLifecycleState();
+    state.setLifecycle("active");
+    state.markRecentAction(5_000, 2_000);
+
+    assert.strictEqual(state.snapshot(6_999).activity, "recent-action");
+    assert.strictEqual(state.snapshot(7_000).activity, "idle");
+  });
 });
