@@ -11,11 +11,20 @@ import type {
   PollingScheduler,
 } from "./pollingScheduler";
 
+const PENDING_STATUS_NAMES = new Set([
+  "pending",
+  "running",
+  "waiting",
+  "queued",
+  "in_progress",
+]);
+
 export class PullRequestReadinessPollingService implements vscode.Disposable {
   private readonly disposables: vscode.Disposable[] = [];
   private registration: PollingRegistrationHandle | undefined;
   private identity: string | undefined;
   private fingerprint: string | undefined;
+  private checksPending = true;
   private initialized = false;
 
   constructor(
@@ -70,6 +79,7 @@ export class PullRequestReadinessPollingService implements vscode.Disposable {
 
     this.clearRegistration();
     this.identity = identity;
+    this.checksPending = true;
     this.registration = this.scheduler.register({
       key: identity,
       context: () => ({
@@ -77,7 +87,7 @@ export class PullRequestReadinessPollingService implements vscode.Disposable {
           "pull-request-readiness",
           "pull-request-review",
         ),
-        lifecycle: "active",
+        lifecycle: this.checksPending ? "pending" : "active",
       }),
       run: async () => {
         const current = this.session.current;
@@ -92,6 +102,7 @@ export class PullRequestReadinessPollingService implements vscode.Disposable {
             this.reviewApi.getCombinedStatus(repoInfo, current.pullRequest.head.sha),
             this.reviewApi.listReviews(repoInfo, current.pullRequest.number),
           ]);
+          this.checksPending = hasPendingChecks(status);
           const nextFingerprint = readinessFingerprint(status, reviews);
           if (this.fingerprint === undefined) {
             this.fingerprint = nextFingerprint;
@@ -122,7 +133,16 @@ export class PullRequestReadinessPollingService implements vscode.Disposable {
     this.registration = undefined;
     this.identity = undefined;
     this.fingerprint = undefined;
+    this.checksPending = true;
   }
+}
+
+export function hasPendingChecks(status: GiteaCombinedStatus): boolean {
+  const aggregate = String(status.state ?? "").toLowerCase();
+  if (PENDING_STATUS_NAMES.has(aggregate)) return true;
+  return status.statuses.some((item) =>
+    PENDING_STATUS_NAMES.has(String(item.state ?? "").toLowerCase()),
+  );
 }
 
 export function readinessFingerprint(
