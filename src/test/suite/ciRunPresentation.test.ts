@@ -5,6 +5,7 @@ import type { RepoInfo } from "../../context/repoManager";
 import {
   CIJobItem,
   CIRunItem,
+  CIStepItem,
   ciRunsFingerprint,
   displayStatusForRun,
   runSecondaryMetadata,
@@ -101,23 +102,39 @@ suite("CI run presentation", () => {
     assert.doesNotMatch(item.tooltip.value, /undefined/);
   });
 
-  test("surfaces failure directly on the run row", () => {
+  test("surfaces failure as a semantic front dot and muted text status", () => {
     const item = new CIRunItem(run(), repoInfo);
     assert.match(String(item.description), /^failure · push · /);
     assert.strictEqual(item.contextValue, "ciRun_complete");
-    assert.strictEqual((item.iconPath as vscode.ThemeIcon).id, "error");
+    assert.strictEqual((item.iconPath as vscode.ThemeIcon).id, "circle-filled");
+    assert.strictEqual(
+      ((item.iconPath as vscode.ThemeIcon).color as vscode.ThemeColor).id,
+      "testing.iconFailed",
+    );
     assert.ok(item.tooltip instanceof vscode.MarkdownString);
     assert.match(item.tooltip.value, /Status: `failure`/);
-    assert.match(item.tooltip.value, /Event: `push`/);
-    assert.match(item.tooltip.value, /Date:/);
   });
 
-  test("marks running runs for cancel-only inline actions", () => {
-    const item = new CIRunItem(
+  test("uses orange semantic dot for running and queued token for pending", () => {
+    const running = new CIRunItem(
       run({ status: "running", conclusion: "" }),
       repoInfo,
     );
-    assert.strictEqual(item.contextValue, "ciRun_active");
+    assert.strictEqual(running.contextValue, "ciRun_active");
+    assert.strictEqual((running.iconPath as vscode.ThemeIcon).id, "circle-filled");
+    assert.strictEqual(
+      ((running.iconPath as vscode.ThemeIcon).color as vscode.ThemeColor).id,
+      "charts.orange",
+    );
+
+    const queued = new CIRunItem(
+      run({ status: "pending", conclusion: "" }),
+      repoInfo,
+    );
+    assert.strictEqual(
+      ((queued.iconPath as vscode.ThemeIcon).color as vscode.ThemeColor).id,
+      "testing.iconQueued",
+    );
   });
 
   test("marks completed and active jobs with distinct action contexts", () => {
@@ -130,6 +147,21 @@ suite("CI run presentation", () => {
       ).contextValue,
       "ciJob_active",
     );
+  });
+
+  test("exposes returned step data as semantic child rows", () => {
+    const step = {
+      name: "Install dependencies",
+      status: "completed",
+      conclusion: "success",
+      number: 1,
+      started_at: "2026-08-22T16:30:00Z",
+      completed_at: "2026-08-22T16:30:10Z",
+    };
+    const item = new CIStepItem(step, job({ steps: [step] }), 42, repoInfo);
+    assert.strictEqual(item.description, "success");
+    assert.strictEqual(item.contextValue, "ciStep");
+    assert.strictEqual((item.iconPath as vscode.ThemeIcon).id, "circle-filled");
   });
 
   test("polling fingerprint changes when run status changes", () => {
