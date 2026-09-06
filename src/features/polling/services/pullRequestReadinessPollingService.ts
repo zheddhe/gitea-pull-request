@@ -18,6 +18,7 @@ const PENDING_STATUS_NAMES = new Set([
   "queued",
   "in_progress",
 ]);
+const POST_ACTION_BURST_POLLS = 12;
 
 export class PullRequestReadinessPollingService implements vscode.Disposable {
   private readonly disposables: vscode.Disposable[] = [];
@@ -25,6 +26,7 @@ export class PullRequestReadinessPollingService implements vscode.Disposable {
   private identity: string | undefined;
   private fingerprint: string | undefined;
   private checksPending = true;
+  private burstPollsRemaining = 0;
   private initialized = false;
 
   constructor(
@@ -48,6 +50,7 @@ export class PullRequestReadinessPollingService implements vscode.Disposable {
   }
 
   accelerate(): void {
+    this.burstPollsRemaining = POST_ACTION_BURST_POLLS;
     this.registration?.accelerate();
   }
 
@@ -87,7 +90,8 @@ export class PullRequestReadinessPollingService implements vscode.Disposable {
           "pull-request-readiness",
           "pull-request-review",
         ),
-        lifecycle: this.checksPending ? "pending" : "active",
+        lifecycle:
+          this.checksPending || this.burstPollsRemaining > 0 ? "pending" : "active",
       }),
       run: async () => {
         const current = this.session.current;
@@ -103,6 +107,11 @@ export class PullRequestReadinessPollingService implements vscode.Disposable {
             this.reviewApi.listReviews(repoInfo, current.pullRequest.number),
           ]);
           this.checksPending = hasPendingChecks(status);
+          if (this.checksPending) {
+            this.burstPollsRemaining = 0;
+          } else if (this.burstPollsRemaining > 0) {
+            this.burstPollsRemaining -= 1;
+          }
           const nextFingerprint = readinessFingerprint(status, reviews);
           if (this.fingerprint === undefined) {
             this.fingerprint = nextFingerprint;
@@ -134,6 +143,7 @@ export class PullRequestReadinessPollingService implements vscode.Disposable {
     this.identity = undefined;
     this.fingerprint = undefined;
     this.checksPending = true;
+    this.burstPollsRemaining = 0;
   }
 }
 
