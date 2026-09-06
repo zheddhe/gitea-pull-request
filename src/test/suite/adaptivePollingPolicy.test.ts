@@ -32,6 +32,22 @@ suite("adaptivePollingPolicy", () => {
     );
   });
 
+  test("pauses PR detail polling while local editable UI is active", () => {
+    assert.deepStrictEqual(
+      adaptivePollingDecision(
+        context({ resourceKind: "pull-request-detail", activity: "editing" }),
+      ),
+      { kind: "pause", reason: "editing" },
+    );
+  });
+
+  test("uses active PR cadence for clean visible PR detail", () => {
+    assert.deepStrictEqual(
+      adaptivePollingDecision(context({ resourceKind: "pull-request-detail" })),
+      { kind: "poll", delayMs: 15_000, reason: "active-visible" },
+    );
+  });
+
   test("does not pause CI polling because a PR review is being edited", () => {
     assert.deepStrictEqual(
       adaptivePollingDecision(
