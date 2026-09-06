@@ -20,6 +20,7 @@ export class PollingLifecycleSignalService implements vscode.Disposable {
   private readonly disposables: vscode.Disposable[] = [];
   private readonly changeEmitter = new vscode.EventEmitter<PollingLifecycleSnapshot>();
   private initialized = false;
+  private disposed = false;
 
   readonly onDidChange = this.changeEmitter.event;
 
@@ -30,7 +31,7 @@ export class PollingLifecycleSignalService implements vscode.Disposable {
   ) {}
 
   initialize(): void {
-    if (this.initialized) return;
+    if (this.initialized || this.disposed) return;
     this.initialized = true;
 
     this.state.setWindowActive(vscode.window.state.focused);
@@ -63,15 +64,19 @@ export class PollingLifecycleSignalService implements vscode.Disposable {
   }
 
   setSurfaceVisible(surface: PollingSurface, visible: boolean): void {
+    if (this.disposed) return;
     if (this.state.setSurfaceVisible(surface, visible)) this.emit();
   }
 
   markUserAction(durationMs = 10_000): void {
+    if (this.disposed) return;
     this.state.markRecentAction(this.clock.now(), durationMs);
     this.emit();
   }
 
   dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
     for (const disposable of this.disposables) disposable.dispose();
     this.disposables.length = 0;
     this.changeEmitter.dispose();
@@ -106,6 +111,7 @@ export class PollingLifecycleSignalService implements vscode.Disposable {
   }
 
   private emit(): void {
+    if (this.disposed) return;
     const snapshot = this.snapshot();
     debug(
       `[polling] lifecycle windowActive=${snapshot.windowActive} lifecycle=${snapshot.lifecycle} activity=${snapshot.activity} visible=${[...snapshot.visibleSurfaces].sort().join(",") || "none"}`,
