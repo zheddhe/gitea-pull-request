@@ -2,6 +2,7 @@ export type CISemanticState =
   | "success"
   | "running"
   | "queued"
+  | "warning"
   | "failure"
   | "cancelled"
   | "skipped"
@@ -42,6 +43,8 @@ export function normalizeCIState(
     case "pending":
     case "blocked":
       return "queued";
+    case "warning":
+      return "warning";
     case "failure":
     case "failed":
     case "error":
@@ -109,14 +112,17 @@ export function externalCheckPresentation(
   status: string | undefined | null,
   targetUrl?: string | undefined,
 ): CIPresentationNode {
+  const state = normalizeCIState(status);
+  const runId = extractGiteaRunId(targetUrl);
+  const active = state === "running" || state === "queued";
   return {
     kind: "external-check",
-    state: normalizeCIState(status),
+    state,
     statusLabel: ciStatusLabel(status),
     actions: {
       openInBrowser: !!clean(targetUrl),
-      rerun: extractGiteaRunId(targetUrl) !== undefined,
-      cancel: false,
+      rerun: runId !== undefined && !active,
+      cancel: runId !== undefined && active,
       openLogs: false,
     },
   };
