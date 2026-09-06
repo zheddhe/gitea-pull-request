@@ -1,4 +1,4 @@
-import { info } from "../../../debug/outputChannel";
+import { debug } from "../../../debug/outputChannel";
 import {
   adaptivePollingDecision,
   type PollingContext,
@@ -22,7 +22,7 @@ export interface PollingRegistration {
 }
 
 export interface PollingLogger {
-  info(message: string): void;
+  debug(message: string): void;
 }
 
 interface ScheduledResource {
@@ -38,7 +38,7 @@ export interface PollingRegistrationHandle {
   accelerate(): void;
 }
 
-const defaultLogger: PollingLogger = { info };
+const defaultLogger: PollingLogger = { debug };
 
 export class PollingScheduler {
   private readonly resources = new Map<string, ScheduledResource>();
@@ -153,7 +153,7 @@ export class PollingScheduler {
       return;
     }
 
-    this.logger.info(
+    this.logger.debug(
       `[polling] attempt key=${resource.registration.key} resource=${context.resourceKind} lifecycle=${context.lifecycle} activity=${context.activity} visible=${context.visible} windowActive=${context.windowActive} unchanged=${resource.unchangedCount} delayMs=${decision.delayMs} reason=${decision.reason}`,
     );
 
