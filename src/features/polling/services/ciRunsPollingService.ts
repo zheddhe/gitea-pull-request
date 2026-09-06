@@ -6,10 +6,13 @@ import type {
   PollingScheduler,
 } from "./pollingScheduler";
 
+const POST_ACTION_BURST_POLLS = 12;
+
 export class CIRunsPollingService implements vscode.Disposable {
   private readonly disposables: vscode.Disposable[] = [];
   private registration: PollingRegistrationHandle | undefined;
   private initialized = false;
+  private burstPollsRemaining = 0;
 
   constructor(
     private readonly scheduler: PollingScheduler,
@@ -28,6 +31,11 @@ export class CIRunsPollingService implements vscode.Disposable {
   }
 
   accelerate(): void {
+    // Gitea may acknowledge a rerun/cancel before the newly queued state is
+    // visible through the runs endpoint. Keep a short live-polling window so
+    // one early terminal response cannot send the resource back to the
+    // five-minute terminal cadence.
+    this.burstPollsRemaining = POST_ACTION_BURST_POLLS;
     this.registration?.accelerate();
   }
 
@@ -42,6 +50,7 @@ export class CIRunsPollingService implements vscode.Disposable {
     if (!this.provider.hasLoadedRepos()) {
       this.registration?.dispose();
       this.registration = undefined;
+      this.burstPollsRemaining = 0;
       return;
     }
 
@@ -54,9 +63,20 @@ export class CIRunsPollingService implements vscode.Disposable {
       key: "ci-runs:loaded-repositories",
       context: () => ({
         ...this.signals.contextFor("ci-runs", "ci-runs"),
-        lifecycle: this.provider.hasActiveRuns() ? "active" : "terminal",
+        lifecycle:
+          this.provider.hasActiveRuns() || this.burstPollsRemaining > 0
+            ? "pending"
+            : "terminal",
       }),
-      run: async () => this.provider.pollLoadedRuns(),
+      run: async () => {
+        const result = await this.provider.pollLoadedRuns();
+        if (!this.provider.hasActiveRuns() && this.burstPollsRemaining > 0) {
+          this.burstPollsRemaining -= 1;
+        } else if (this.provider.hasActiveRuns()) {
+          this.burstPollsRemaining = 0;
+        }
+        return result;
+      },
     });
   }
 }
