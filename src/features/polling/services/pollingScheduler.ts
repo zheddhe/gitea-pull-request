@@ -123,8 +123,11 @@ export class PollingScheduler {
       (resource) => !resource.disposed && !resource.inFlight && resource.nextRunAt <= now,
     );
 
-    await Promise.all(due.map((resource) => this.runResource(resource)));
-    this.rescheduleTimer();
+    try {
+      await Promise.allSettled(due.map((resource) => this.runResource(resource)));
+    } finally {
+      this.rescheduleTimer();
+    }
   }
 
   private async runResource(resource: ScheduledResource): Promise<void> {
