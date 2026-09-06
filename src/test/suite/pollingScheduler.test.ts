@@ -150,7 +150,7 @@ suite("PollingScheduler", () => {
   test("logs polling attempts with resource context", async () => {
     const clock = new FakeClock();
     const messages: string[] = [];
-    const logger: PollingLogger = { info: (message) => messages.push(message) };
+    const logger: PollingLogger = { debug: (message) => messages.push(message) };
     const scheduler = new PollingScheduler(clock, fixedDecision(2_500), logger);
 
     scheduler.register({
