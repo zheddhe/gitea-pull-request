@@ -2,6 +2,11 @@ import * as vscode from "vscode";
 import { GiteaApiClient } from "../api/giteaApiClient";
 import type { GiteaWorkflowJob } from "../api/types";
 import type { RepoInfo } from "../context/repoManager";
+import type { PollingLifecycleSignalService } from "../features/polling/services/pollingLifecycleSignalService";
+import type {
+  PollingRegistrationHandle,
+  PollingScheduler,
+} from "../features/polling/services/pollingScheduler";
 
 interface LiveLogMessage {
   command: "refresh" | "openInBrowser";
@@ -11,19 +16,22 @@ export class LiveLogPanel {
   private static panels = new Map<number, LiveLogPanel>();
   private readonly panel: vscode.WebviewPanel;
   private disposables: vscode.Disposable[] = [];
-  private pollingTimer?: ReturnType<typeof setInterval>;
+  private registration: PollingRegistrationHandle | undefined;
   private isJobComplete = false;
   private lastLogLength = 0;
+  private lastStatus = "unknown";
 
   static async show(
     api: GiteaApiClient,
     repoInfo: RepoInfo,
     job: GiteaWorkflowJob,
+    scheduler: PollingScheduler,
+    signals: PollingLifecycleSignalService,
   ): Promise<void> {
     const existing = LiveLogPanel.panels.get(job.id);
     if (existing) {
       existing.panel.reveal(vscode.ViewColumn.One);
-      await existing.fetchLogs();
+      existing.registration?.accelerate();
       return;
     }
 
@@ -37,7 +45,7 @@ export class LiveLogPanel {
       },
     );
 
-    const instance = new LiveLogPanel(panel, api, repoInfo, job);
+    const instance = new LiveLogPanel(panel, api, repoInfo, job, scheduler, signals);
     LiveLogPanel.panels.set(job.id, instance);
     await instance.startStreaming();
   }
@@ -47,22 +55,34 @@ export class LiveLogPanel {
     private readonly api: GiteaApiClient,
     private readonly repoInfo: RepoInfo,
     private job: GiteaWorkflowJob,
+    private readonly scheduler: PollingScheduler,
+    private readonly signals: PollingLifecycleSignalService,
   ) {
     this.panel = panel;
     this.isJobComplete = isComplete(job);
+    this.lastStatus = displayStatus(job);
     panel.webview.html = this.getHtmlContent();
 
     panel.onDidDispose(() => this.dispose(), null, this.disposables);
+    panel.onDidChangeViewState(
+      () => this.registration?.reconsider(),
+      null,
+      this.disposables,
+    );
     panel.webview.onDidReceiveMessage(
       (message: LiveLogMessage) => void this.handleMessage(message),
       null,
       this.disposables,
     );
+    this.disposables.push(
+      this.signals.onDidChange(() => this.registration?.reconsider()),
+    );
   }
 
   private async handleMessage(message: LiveLogMessage): Promise<void> {
     if (message.command === "refresh") {
-      await this.fetchLogs();
+      if (this.registration) this.registration.accelerate();
+      else await this.fetchLogs();
       return;
     }
     if (message.command === "openInBrowser" && this.job.html_url) {
@@ -74,26 +94,26 @@ export class LiveLogPanel {
     await this.fetchLogs();
     if (this.isJobComplete) return;
 
-    this.pollingTimer = setInterval(() => {
-      if (this.isJobComplete) {
-        this.stopStreaming();
-        return;
-      }
-      void this.fetchLogs();
-    }, 2000);
+    const key = `ci-logs:${this.repoInfo.key}:${this.job.id}`;
+    this.registration = this.scheduler.register({
+      key,
+      context: () => ({
+        ...this.signals.contextFor("ci-logs", "live-log"),
+        visible: this.panel.visible,
+        lifecycle: this.isJobComplete ? "terminal" : "active",
+      }),
+      run: async () => this.fetchLogs(),
+    });
   }
 
-  private stopStreaming(): void {
-    if (!this.pollingTimer) return;
-    clearInterval(this.pollingTimer);
-    this.pollingTimer = undefined;
-  }
-
-  private async fetchLogs(): Promise<void> {
+  private async fetchLogs(): Promise<{ changed: boolean }> {
     try {
+      const previousStatus = this.lastStatus;
+      const previousLength = this.lastLogLength;
       const updatedJob = await this.api.getWorkflowJob(this.repoInfo, this.job.id);
       this.job = updatedJob;
       this.isJobComplete = isComplete(updatedJob);
+      this.lastStatus = displayStatus(updatedJob);
       this.panel.title = `Job: ${updatedJob.name}`;
 
       const logs = await this.api.getJobLogs(this.repoInfo, updatedJob.id);
@@ -112,12 +132,20 @@ export class LiveLogPanel {
         completedAt: formatDateTime(updatedJob.completed_at),
       });
 
-      if (this.isJobComplete) this.stopStreaming();
+      if (this.isJobComplete) {
+        this.registration?.dispose();
+        this.registration = undefined;
+      }
+      return {
+        changed:
+          previousLength !== this.lastLogLength || previousStatus !== this.lastStatus,
+      };
     } catch (error) {
       await this.panel.webview.postMessage({
         type: "error",
         message: (error as Error).message,
       });
+      return { changed: false };
     }
   }
 
@@ -182,7 +210,8 @@ function escapeHtml(text){const div=document.createElement('div');div.textConten
 
   dispose(): void {
     LiveLogPanel.panels.delete(this.job.id);
-    this.stopStreaming();
+    this.registration?.dispose();
+    this.registration = undefined;
     for (const disposable of this.disposables) disposable.dispose();
     this.disposables = [];
   }
