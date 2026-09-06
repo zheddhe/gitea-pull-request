@@ -8,6 +8,7 @@ import type {
 import type { RepoInfo } from "../../context/repoManager";
 import { NativeReviewProjectionService } from "../../features/pullRequests/services/nativeReviewProjectionService";
 import { PullRequestConversationService } from "../../features/pullRequests/services/pullRequestConversationService";
+import { PullRequestReviewSessionService } from "../../features/pullRequests/services/pullRequestReviewSessionService";
 import { PullRequestSessionService } from "../../features/pullRequests/services/pullRequestSessionService";
 
 const user: GiteaUser = {
@@ -129,11 +130,13 @@ suite("Native review projection service", () => {
       ],
     });
     const session = await activeSession();
+    const pending = new PullRequestReviewSessionService();
     const captured: CapturedThread[] = [];
     const projection = new NativeReviewProjectionService(
       conversations,
       { getRepos: () => [repoInfo] },
       session,
+      pending,
       fakeController(captured),
       async () => fakeDocument(20),
     );
@@ -154,6 +157,7 @@ suite("Native review projection service", () => {
     );
 
     projection.dispose();
+    pending.dispose();
     conversations.dispose();
     session.dispose();
   });
@@ -165,11 +169,13 @@ suite("Native review projection service", () => {
       ],
     });
     const session = await activeSession();
+    const pending = new PullRequestReviewSessionService();
     const captured: CapturedThread[] = [];
     const projection = new NativeReviewProjectionService(
       conversations,
       { getRepos: () => [repoInfo] },
       session,
+      pending,
       fakeController(captured),
       async () => fakeDocument(20),
     );
@@ -181,6 +187,7 @@ suite("Native review projection service", () => {
     assert.strictEqual(captured[0].range.start.line, 5);
 
     projection.dispose();
+    pending.dispose();
     conversations.dispose();
     session.dispose();
   });
@@ -190,11 +197,13 @@ suite("Native review projection service", () => {
       listAllPRReviewComments: async () => [comment(1, { position: 50 })],
     });
     const session = await activeSession();
+    const pending = new PullRequestReviewSessionService();
     const captured: CapturedThread[] = [];
     const projection = new NativeReviewProjectionService(
       conversations,
       { getRepos: () => [repoInfo] },
       session,
+      pending,
       fakeController(captured),
       async () => fakeDocument(10),
     );
@@ -204,6 +213,7 @@ suite("Native review projection service", () => {
     assert.strictEqual(captured.length, 0);
 
     projection.dispose();
+    pending.dispose();
     conversations.dispose();
     session.dispose();
   });
@@ -217,11 +227,13 @@ suite("Native review projection service", () => {
       ],
     });
     const session = await activeSession();
+    const pending = new PullRequestReviewSessionService();
     const captured: CapturedThread[] = [];
     const projection = new NativeReviewProjectionService(
       conversations,
       { getRepos: () => [repoInfo] },
       session,
+      pending,
       fakeController(captured),
       async () => fakeDocument(20),
     );
@@ -235,6 +247,7 @@ suite("Native review projection service", () => {
     );
 
     projection.dispose();
+    pending.dispose();
     conversations.dispose();
     session.dispose();
   });
