@@ -17,6 +17,7 @@ import { IssueTemplateService } from "./features/issues/services/issueTemplateSe
 import { CreateIssueViewProvider } from "./features/issues/views/createIssueView";
 import { ActivePullRequestPollingService } from "./features/polling/services/activePullRequestPollingService";
 import { CIRunsPollingService } from "./features/polling/services/ciRunsPollingService";
+import { IssuesPollingService } from "./features/polling/services/issuesPollingService";
 import { PollingLifecycleSignalService } from "./features/polling/services/pollingLifecycleSignalService";
 import {
   PollingScheduler,
@@ -178,6 +179,11 @@ export async function activate(
     pollingSignals,
     ciProvider,
   );
+  const issuesPolling = new IssuesPollingService(
+    pollingScheduler,
+    pollingSignals,
+    issuesProvider,
+  );
 
   const ciRunsTree = vscode.window.createTreeView("gitea.ciRuns", {
     treeDataProvider: ciProvider,
@@ -197,6 +203,25 @@ export async function activate(
   ciVisibility.track(ciRunsTree);
   ciVisibility.track(ciRunsCreateCompactTree);
   ciVisibility.track(ciRunsIssueCreateCompactTree);
+
+  const issuesTree = vscode.window.createTreeView("gitea.issues", {
+    treeDataProvider: issuesProvider,
+  });
+  const issuesCreateCompactTree = vscode.window.createTreeView(
+    "gitea.issuesCreateCompact",
+    { treeDataProvider: issuesProvider },
+  );
+  const issuesIssueCreateModeTree = vscode.window.createTreeView(
+    "gitea.issuesIssueCreateMode",
+    { treeDataProvider: issuesProvider },
+  );
+  const issuesVisibility = new PollingVisibilityTreeViewTracker(
+    "issues",
+    pollingSignals,
+  );
+  issuesVisibility.track(issuesTree);
+  issuesVisibility.track(issuesCreateCompactTree);
+  issuesVisibility.track(issuesIssueCreateModeTree);
 
   context.subscriptions.push(
     vscode.workspace.registerTextDocumentContentProvider(
@@ -229,9 +254,10 @@ export async function activate(
     ciRunsCreateCompactTree,
     ciRunsIssueCreateCompactTree,
     ciVisibility,
-    vscode.window.registerTreeDataProvider("gitea.issues", issuesProvider),
-    vscode.window.registerTreeDataProvider("gitea.issuesCreateCompact", issuesProvider),
-    vscode.window.registerTreeDataProvider("gitea.issuesIssueCreateMode", issuesProvider),
+    issuesTree,
+    issuesCreateCompactTree,
+    issuesIssueCreateModeTree,
+    issuesVisibility,
     vscode.commands.registerCommand("gitea.createPRSidebar", async () => {
       if (issueCreationSession.current.kind === "creating") {
         vscode.window.showWarningMessage(
@@ -364,22 +390,16 @@ export async function activate(
     ),
     vscode.commands.registerCommand("gitea.openActivePR", async () => {
       const state = prSession.current;
-      if (state.kind !== "active") {
-        return;
-      }
+      if (state.kind !== "active") return;
       await vscode.env.openExternal(vscode.Uri.parse(state.pullRequest.html_url));
     }),
     vscode.commands.registerCommand("gitea.viewActivePRDetail", async () => {
       const state = prSession.current;
-      if (state.kind !== "active") {
-        return;
-      }
+      if (state.kind !== "active") return;
       const repoInfo = repoManager
         .getRepos()
         .find((repo) => repo.key === state.repository.key);
-      if (!repoInfo) {
-        return;
-      }
+      if (!repoInfo) return;
       await PRDetailPanel.show(
         context.extensionUri,
         createPullRequestConversationApiView(
@@ -405,6 +425,7 @@ export async function activate(
     pollingSignals,
     activePullRequestPolling,
     ciRunsPolling,
+    issuesPolling,
     pollingScheduler,
     prSessionCoordinator,
     conflictResolutionCoordinator,
@@ -467,6 +488,7 @@ export async function activate(
   pollingSignals.initialize();
   activePullRequestPolling.initialize();
   ciRunsPolling.initialize();
+  issuesPolling.initialize();
   await prSessionCoordinator.initialize();
   await conflictResolutionCoordinator.initialize();
   await nativeReviewProjection.initialize();
