@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { debug } from "../../../debug/outputChannel";
 import type { PollingResourceKind } from "../domain/adaptivePollingPolicy";
 import {
   PollingLifecycleState,
@@ -105,6 +106,10 @@ export class PollingLifecycleSignalService implements vscode.Disposable {
   }
 
   private emit(): void {
-    this.changeEmitter.fire(this.snapshot());
+    const snapshot = this.snapshot();
+    debug(
+      `[polling] lifecycle windowActive=${snapshot.windowActive} lifecycle=${snapshot.lifecycle} activity=${snapshot.activity} visible=${[...snapshot.visibleSurfaces].sort().join(",") || "none"}`,
+    );
+    this.changeEmitter.fire(snapshot);
   }
 }
