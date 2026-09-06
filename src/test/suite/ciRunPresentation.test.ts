@@ -7,6 +7,7 @@ import {
   CIRunItem,
   CIStepItem,
   ciRunsFingerprint,
+  displayNameForRun,
   displayStatusForRun,
   runSecondaryMetadata,
 } from "../../views/ciRunsProvider";
@@ -24,8 +25,8 @@ suite("CI run presentation", () => {
   function run(overrides: Partial<GiteaWorkflowRun> = {}): GiteaWorkflowRun {
     return {
       id: 42,
-      name: "CI",
-      display_title: "Build",
+      name: "CI payment dummy",
+      display_title: "Fix payment validation",
       status: "completed",
       conclusion: "failure",
       workflow_id: "ci.yml",
@@ -37,7 +38,7 @@ suite("CI run presentation", () => {
       html_url: "https://gitea.example.test/owner/repo/actions/runs/42",
       head_branch: "main",
       head_sha: "abc123",
-      head_commit: { message: "Test commit", author: { name: "Dev" } },
+      head_commit: { message: "Fix payment validation", author: { name: "Dev" } },
       repository: {} as GiteaWorkflowRun["repository"],
       jobs_url: "https://gitea.example.test/api/jobs",
       ...overrides,
@@ -58,6 +59,19 @@ suite("CI run presentation", () => {
       ...overrides,
     };
   }
+
+  test("uses workflow name as the primary run label and keeps commit title in tooltip", () => {
+    const source = run();
+    assert.strictEqual(displayNameForRun(source), "CI payment dummy");
+    const item = new CIRunItem(source, repoInfo);
+    assert.strictEqual(item.label, "CI payment dummy");
+    assert.ok(item.tooltip instanceof vscode.MarkdownString);
+    assert.match(item.tooltip.value, /Commit title: Fix payment validation/);
+  });
+
+  test("falls back to run number when workflow name is absent", () => {
+    assert.strictEqual(displayNameForRun(run({ name: "" })), "Run #12");
+  });
 
   test("uses conclusion as the primary status once a run is completed", () => {
     assert.strictEqual(displayStatusForRun(run()), "failure");
