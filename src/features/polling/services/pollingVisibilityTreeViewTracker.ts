@@ -5,7 +5,8 @@ import type { PollingLifecycleSignalService } from "./pollingLifecycleSignalServ
 /**
  * Aggregates visibility for one logical polling surface represented by one or
  * more VS Code TreeViews. The surface is visible while any tracked TreeView is
- * visible.
+ * visible. TreeView disposal is owned by the extension subscription set; this
+ * tracker only observes visibility and is disposed alongside those views.
  */
 export class PollingVisibilityTreeViewTracker implements vscode.Disposable {
   private readonly views = new Set<vscode.TreeView<unknown>>();
@@ -17,15 +18,8 @@ export class PollingVisibilityTreeViewTracker implements vscode.Disposable {
   ) {}
 
   track<T>(view: vscode.TreeView<T>): void {
-    const tracked = view as vscode.TreeView<unknown>;
-    this.views.add(tracked);
-    this.disposables.push(
-      view.onDidChangeVisibility(() => this.sync()),
-      view.onDidDispose(() => {
-        this.views.delete(tracked);
-        this.sync();
-      }),
-    );
+    this.views.add(view as vscode.TreeView<unknown>);
+    this.disposables.push(view.onDidChangeVisibility(() => this.sync()));
     this.sync();
   }
 
