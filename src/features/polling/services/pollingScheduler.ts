@@ -1,3 +1,4 @@
+import { info } from "../../../debug/outputChannel";
 import {
   adaptivePollingDecision,
   type PollingContext,
@@ -20,6 +21,10 @@ export interface PollingRegistration {
   run(): Promise<PollingRunResult>;
 }
 
+export interface PollingLogger {
+  info(message: string): void;
+}
+
 interface ScheduledResource {
   registration: PollingRegistration;
   unchangedCount: number;
@@ -33,6 +38,8 @@ export interface PollingRegistrationHandle {
   accelerate(): void;
 }
 
+const defaultLogger: PollingLogger = { info };
+
 export class PollingScheduler {
   private readonly resources = new Map<string, ScheduledResource>();
   private timer: unknown | undefined;
@@ -42,6 +49,7 @@ export class PollingScheduler {
     private readonly clock: PollingClock,
     private readonly decide: (context: PollingContext) => PollingDecision =
       adaptivePollingDecision,
+    private readonly logger: PollingLogger = defaultLogger,
   ) {}
 
   register(registration: PollingRegistration): PollingRegistrationHandle {
@@ -144,6 +152,10 @@ export class PollingScheduler {
       resource.nextRunAt = this.clock.now() + 1_000;
       return;
     }
+
+    this.logger.info(
+      `[polling] attempt key=${resource.registration.key} resource=${context.resourceKind} lifecycle=${context.lifecycle} activity=${context.activity} visible=${context.visible} windowActive=${context.windowActive} unchanged=${resource.unchangedCount} delayMs=${decision.delayMs} reason=${decision.reason}`,
+    );
 
     resource.inFlight = true;
     try {
