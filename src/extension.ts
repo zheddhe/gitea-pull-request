@@ -38,6 +38,7 @@ import { PullRequestSessionService } from "./features/pullRequests/services/pull
 import { PullRequestReviewApi } from "./features/pullRequests/services/pullRequestReviewApi";
 import { PullRequestReviewSessionService } from "./features/pullRequests/services/pullRequestReviewSessionService";
 import { ResilientGiteaApiClient } from "./features/pullRequests/services/resilientGiteaApiClient";
+import { ReviewNavigationSignalService } from "./features/pullRequests/services/reviewNavigationSignalService";
 import { ReviewedFileStateService } from "./features/pullRequests/services/reviewedFileStateService";
 import {
   PULL_REQUEST_SNAPSHOT_SCHEME,
@@ -81,6 +82,12 @@ export async function activate(
     repoManager,
     prSession,
     reviewSessions,
+  );
+  const reviewNavigationSignals = new ReviewNavigationSignalService(
+    reviewConversations,
+    reviewSessions,
+    prSession,
+    repoManager,
   );
   const prSessionCoordinator = new PullRequestSessionCoordinator(
     api,
@@ -330,6 +337,7 @@ export async function activate(
     prSessionCoordinator,
     conflictResolutionCoordinator,
     nativeReviewProjection,
+    reviewNavigationSignals,
     prSession,
     reviewSessions,
     reviewConversations,
@@ -387,6 +395,7 @@ export async function activate(
   await prSessionCoordinator.initialize();
   await conflictResolutionCoordinator.initialize();
   await nativeReviewProjection.initialize();
+  await reviewNavigationSignals.initialize();
   statusBar.refresh();
 
   const session = await auth.getSession();
