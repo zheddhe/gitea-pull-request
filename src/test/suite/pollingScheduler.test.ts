@@ -173,6 +173,39 @@ suite("PollingScheduler", () => {
     scheduler.dispose();
   });
 
+  test("paused resources stay unscheduled until reconsidered", async () => {
+    const clock = new FakeClock();
+    let paused = true;
+    let calls = 0;
+    const scheduler = new PollingScheduler(clock, () =>
+      paused
+        ? { kind: "pause", reason: "editing" }
+        : { kind: "poll", delayMs: 10, reason: "active" },
+    );
+    const handle = scheduler.register({
+      key: "paused",
+      context: baseContext,
+      run: async () => {
+        calls += 1;
+        return { changed: false };
+      },
+    });
+
+    await clock.advanceBy(0);
+    assert.strictEqual(calls, 0);
+    assert.strictEqual(clock.timerCount(), 0);
+
+    await clock.advanceBy(10_000);
+    assert.strictEqual(calls, 0);
+
+    paused = false;
+    handle.reconsider();
+    assert.strictEqual(clock.timerCount(), 1);
+    await clock.advanceBy(10);
+    assert.strictEqual(calls, 1);
+    scheduler.dispose();
+  });
+
   test("accelerate schedules an immediate run", async () => {
     const clock = new FakeClock();
     const scheduler = new PollingScheduler(clock, fixedDecision(10_000));
@@ -190,6 +223,36 @@ suite("PollingScheduler", () => {
     assert.strictEqual(calls, 1);
     await clock.advanceBy(1_000);
     handle.accelerate();
+    await clock.advanceBy(0);
+    assert.strictEqual(calls, 2);
+    scheduler.dispose();
+  });
+
+  test("accelerate during a run schedules one immediate follow-up", async () => {
+    const clock = new FakeClock();
+    const scheduler = new PollingScheduler(clock, fixedDecision(10_000));
+    let calls = 0;
+    let resolveRun: (() => void) | undefined;
+    const handle = scheduler.register({
+      key: "accelerated-in-flight",
+      context: baseContext,
+      run: () => {
+        calls += 1;
+        if (calls > 1) return Promise.resolve({ changed: true });
+        return new Promise((resolve) => {
+          resolveRun = () => resolve({ changed: false });
+        });
+      },
+    });
+
+    await clock.advanceBy(0);
+    assert.strictEqual(calls, 1);
+    handle.accelerate();
+    await clock.advanceBy(1_000);
+    assert.strictEqual(calls, 1);
+
+    resolveRun?.();
+    await flushAsyncWork();
     await clock.advanceBy(0);
     assert.strictEqual(calls, 2);
     scheduler.dispose();
