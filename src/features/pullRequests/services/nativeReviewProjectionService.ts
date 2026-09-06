@@ -17,7 +17,10 @@ import {
 } from "../domain/reviewConversationPlacement";
 import type { PullRequestWorkspaceState } from "../domain/pullRequestState";
 import type { ReviewConversation } from "../domain/reviewConversationModel";
-import type { PullRequestConversationService } from "./pullRequestConversationService";
+import type {
+  PullRequestConversationService,
+  PullRequestConversationSnapshot,
+} from "./pullRequestConversationService";
 import type { PullRequestReviewSessionService } from "./pullRequestReviewSessionService";
 import type { PullRequestSessionService } from "./pullRequestSessionService";
 import {
@@ -60,6 +63,7 @@ export class NativeReviewProjectionService implements vscode.Disposable {
   private readonly disposables: vscode.Disposable[] = [];
   private readonly threads = new Map<number, vscode.CommentThread>();
   private readonly threadBindings = new WeakMap<vscode.CommentThread, NativeThreadBinding>();
+  private readonly internalConversationLoads = new Set<string>();
   private projectionEpoch = 0;
   private nextPendingId = 1;
 
@@ -95,6 +99,16 @@ export class NativeReviewProjectionService implements vscode.Disposable {
           return;
         }
         this.applyPendingSession(change.session);
+        if (change.reason === "reconcile") {
+          void this.reloadPersistedConversations(
+            change.repositoryKey,
+            change.pullRequestNumber,
+          );
+        }
+      }),
+      this.conversations.onDidChange((snapshot) => {
+        if (this.internalConversationLoads.has(snapshotIdentity(snapshot))) return;
+        void this.applyConversationSnapshot(snapshot);
       }),
     );
     if (ownsController) {
@@ -203,45 +217,149 @@ export class NativeReviewProjectionService implements vscode.Disposable {
       return;
     }
 
-    try {
-      const [snapshot, capabilities] = await Promise.all([
-        this.conversations.load(repoInfo, state.pullRequest, true),
-        Promise.resolve(
-          this.executeCommand<GiteaServerCapabilities>(
-            "gitea.getReviewCapabilities",
-            repoInfo,
-          ),
-        )
-          .then((value) => value ?? NO_CAPABILITIES)
-          .catch(() => NO_CAPABILITIES),
-      ]);
-      if (epoch !== this.projectionEpoch) return;
+    const loadKey = snapshotIdentityFor(
+      repoInfo.key,
+      state.pullRequest.number,
+      state.pullRequest.base.sha,
+      state.pullRequest.head.sha,
+    );
 
+    try {
+      this.internalConversationLoads.add(loadKey);
+      let loaded:
+        | [PullRequestConversationSnapshot, GiteaServerCapabilities]
+        | undefined;
+      try {
+        loaded = await Promise.all([
+          this.conversations.load(repoInfo, state.pullRequest, true),
+          this.loadCapabilities(repoInfo),
+        ]);
+      } finally {
+        this.internalConversationLoads.delete(loadKey);
+      }
+      if (!loaded || epoch !== this.projectionEpoch) return;
+
+      const [snapshot, capabilities] = loaded;
       const pending = this.pendingSessions.get(
         repoInfo,
         state.pullRequest.number,
       );
-      for (const conversation of snapshot.conversations) {
-        if (epoch !== this.projectionEpoch) return;
-        await this.projectConversation(
-          repoInfo,
-          state.pullRequest,
-          conversation,
-          capabilities,
-          pending,
-          epoch,
-        );
-      }
-
-      debug(
-        `[native-review] projected repo=${repoInfo.key} pr=#${state.pullRequest.number} threads=${this.threads.size}`,
+      await this.projectSnapshot(
+        repoInfo,
+        state.pullRequest,
+        snapshot,
+        capabilities,
+        pending,
+        epoch,
       );
     } catch (error) {
+      this.internalConversationLoads.delete(loadKey);
       if (epoch !== this.projectionEpoch) return;
       warn(
         `[native-review] projection failed repo=${repoInfo.key} pr=#${state.pullRequest.number}: ${(error as Error).message}`,
       );
     }
+  }
+
+  private async reloadPersistedConversations(
+    repositoryKey: string,
+    pullRequestNumber: number,
+  ): Promise<void> {
+    const state = this.session.current;
+    if (
+      state.kind !== "active" ||
+      state.repository.key !== repositoryKey ||
+      state.pullRequest.number !== pullRequestNumber
+    ) {
+      return;
+    }
+    const repoInfo = this.repoManager
+      .getRepos()
+      .find((repo) => repo.key === repositoryKey);
+    if (!repoInfo) return;
+
+    try {
+      await this.conversations.load(repoInfo, state.pullRequest, true);
+    } catch (error) {
+      warn(
+        `[native-review] persisted reload after reconcile failed repo=${repoInfo.key} pr=#${pullRequestNumber}: ${(error as Error).message}`,
+      );
+    }
+  }
+
+  private async applyConversationSnapshot(
+    snapshot: PullRequestConversationSnapshot,
+  ): Promise<void> {
+    const state = this.session.current;
+    if (
+      state.kind !== "active" ||
+      state.repository.key !== snapshot.repositoryKey ||
+      state.pullRequest.number !== snapshot.pullRequestNumber ||
+      state.pullRequest.base.sha !== snapshot.baseSha ||
+      state.pullRequest.head.sha !== snapshot.headSha
+    ) {
+      return;
+    }
+
+    const repoInfo = this.repoManager
+      .getRepos()
+      .find((repo) => repo.key === state.repository.key);
+    if (!repoInfo) return;
+
+    const epoch = ++this.projectionEpoch;
+    this.clearThreads();
+    try {
+      const capabilities = await this.loadCapabilities(repoInfo);
+      if (epoch !== this.projectionEpoch) return;
+      const pending = this.pendingSessions.get(
+        repoInfo,
+        state.pullRequest.number,
+      );
+      await this.projectSnapshot(
+        repoInfo,
+        state.pullRequest,
+        snapshot,
+        capabilities,
+        pending,
+        epoch,
+      );
+      debug(
+        `[native-review] rebound persisted conversations repo=${repoInfo.key} pr=#${state.pullRequest.number} head=${state.pullRequest.head.sha.slice(0, 8)}`,
+      );
+    } catch (error) {
+      if (epoch !== this.projectionEpoch) return;
+      warn(
+        `[native-review] persisted rebind failed repo=${repoInfo.key} pr=#${state.pullRequest.number}: ${(error as Error).message}`,
+      );
+    }
+  }
+
+  private async projectSnapshot(
+    repoInfo: RepoInfo,
+    pullRequest: GiteaPullRequest,
+    snapshot: PullRequestConversationSnapshot,
+    capabilities: GiteaServerCapabilities,
+    pending: PendingReviewSession,
+    epoch: number,
+  ): Promise<void> {
+    let fallbackCount = 0;
+    for (const conversation of snapshot.conversations) {
+      if (epoch !== this.projectionEpoch) return;
+      const placed = await this.projectConversation(
+        repoInfo,
+        pullRequest,
+        conversation,
+        capabilities,
+        pending,
+        epoch,
+      );
+      if (!placed) fallbackCount += 1;
+    }
+
+    if (epoch !== this.projectionEpoch) return;
+    debug(
+      `[native-review] projected repo=${repoInfo.key} pr=#${pullRequest.number} head=${pullRequest.head.sha.slice(0, 8)} threads=${this.threads.size} fallback=${fallbackCount}`,
+    );
   }
 
   private async projectConversation(
@@ -251,9 +369,14 @@ export class NativeReviewProjectionService implements vscode.Disposable {
     capabilities: GiteaServerCapabilities,
     pending: PendingReviewSession,
     epoch: number,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const placement = resolveReviewConversationPlacement(conversation);
-    if (placement.kind !== "placed") return;
+    if (placement.kind !== "placed") {
+      debug(
+        `[native-review] fallback root=${conversation.root.id} reason=${placement.reason}`,
+      );
+      return false;
+    }
 
     const uri = createPullRequestSnapshotUri(
       createPullRequestSnapshotDocumentIdentity(
@@ -264,14 +387,14 @@ export class NativeReviewProjectionService implements vscode.Disposable {
       ),
     );
     const document = await this.openTextDocument(uri);
-    if (epoch !== this.projectionEpoch) return;
+    if (epoch !== this.projectionEpoch) return false;
 
     const range = rangeForPlacement(document, placement);
     if (!range) {
       debug(
-        `[native-review] unplaceable root=${conversation.root.id} path=${placement.path} line=${placement.line} side=${placement.side}`,
+        `[native-review] fallback root=${conversation.root.id} reason=lineMissing path=${placement.path} line=${placement.line} side=${placement.side}`,
       );
-      return;
+      return false;
     }
 
     const persistedComments = [conversation.root, ...conversation.replies].map(
@@ -294,6 +417,7 @@ export class NativeReviewProjectionService implements vscode.Disposable {
     thread.canReply = capabilities.inlineReviewReplies;
     this.applyPendingState(thread, binding, pending);
     this.threads.set(conversation.root.id, thread);
+    return true;
   }
 
   private applyPendingSession(pending: PendingReviewSession): void {
@@ -356,6 +480,19 @@ export class NativeReviewProjectionService implements vscode.Disposable {
       : vscode.CommentThreadCollapsibleState.Expanded;
   }
 
+  private async loadCapabilities(
+    repoInfo: RepoInfo,
+  ): Promise<GiteaServerCapabilities> {
+    return Promise.resolve(
+      this.executeCommand<GiteaServerCapabilities>(
+        "gitea.getReviewCapabilities",
+        repoInfo,
+      ),
+    )
+      .then((value) => value ?? NO_CAPABILITIES)
+      .catch(() => NO_CAPABILITIES);
+  }
+
   private pendingId(kind: string, rootCommentId: number): string {
     return `native-${kind}-${rootCommentId}-${this.nextPendingId++}`;
   }
@@ -403,6 +540,24 @@ function toNativePendingReply(reply: PendingReviewReply): vscode.Comment {
     author: { name: "Pending reply · not submitted" },
     contextValue: "giteaPendingReviewReply",
   };
+}
+
+function snapshotIdentity(snapshot: PullRequestConversationSnapshot): string {
+  return snapshotIdentityFor(
+    snapshot.repositoryKey,
+    snapshot.pullRequestNumber,
+    snapshot.baseSha,
+    snapshot.headSha,
+  );
+}
+
+function snapshotIdentityFor(
+  repositoryKey: string,
+  pullRequestNumber: number,
+  baseSha: string,
+  headSha: string,
+): string {
+  return [repositoryKey, pullRequestNumber, baseSha, headSha].join("::");
 }
 
 function safeUri(raw: string | undefined): vscode.Uri | undefined {

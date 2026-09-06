@@ -28,6 +28,13 @@ const repoInfo: RepoInfo = {
   key: "https://gitea.example|alice/repo",
 };
 
+const repositoryRef = {
+  key: repoInfo.key,
+  fullName: "alice/repo",
+  owner: "alice",
+  name: "repo",
+};
+
 const pullRequest = {
   number: 42,
   title: "Native review",
@@ -42,6 +49,14 @@ const pullRequest = {
     repo: { full_name: "alice/repo" },
   },
 } as unknown as GiteaPullRequest;
+
+function pullRequestAtHead(headSha: string): GiteaPullRequest {
+  return {
+    ...pullRequest,
+    base: { ...pullRequest.base },
+    head: { ...pullRequest.head, sha: headSha },
+  } as GiteaPullRequest;
+}
 
 function comment(
   id: number,
@@ -109,16 +124,22 @@ function fakeDocument(lineCount: number): vscode.TextDocument {
 async function activeSession(): Promise<PullRequestSessionService> {
   const session = new PullRequestSessionService(async () => undefined);
   await session.initialize();
-  await session.activate(
-    {
-      key: repoInfo.key,
-      fullName: "alice/repo",
-      owner: "alice",
-      name: "repo",
-    },
-    pullRequest,
-  );
+  await session.activate(repositoryRef, pullRequest);
   return session;
+}
+
+async function waitFor(
+  condition: () => boolean,
+  description: string,
+  timeoutMs = 1000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition()) {
+    if (Date.now() >= deadline) {
+      assert.fail(`Timed out waiting for ${description}`);
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve, 5));
+  }
 }
 
 suite("Native review projection service", () => {
@@ -245,6 +266,151 @@ suite("Native review projection service", () => {
       captured[0].thread.collapsibleState,
       vscode.CommentThreadCollapsibleState.Collapsed,
     );
+
+    projection.dispose();
+    pending.dispose();
+    conversations.dispose();
+    session.dispose();
+  });
+
+  test("reloads persisted conversations after pending submission reconciliation", async () => {
+    let persisted = [comment(1)];
+    let loads = 0;
+    const conversations = new PullRequestConversationService({
+      listAllPRReviewComments: async () => {
+        loads += 1;
+        return persisted;
+      },
+    });
+    const session = await activeSession();
+    const pending = new PullRequestReviewSessionService();
+    const captured: CapturedThread[] = [];
+    const projection = new NativeReviewProjectionService(
+      conversations,
+      { getRepos: () => [repoInfo] },
+      session,
+      pending,
+      fakeController(captured),
+      async () => fakeDocument(20),
+    );
+
+    await projection.initialize();
+    pending.queueReply(repoInfo, 42, {
+      id: "reply-1",
+      rootCommentId: 1,
+      body: "pending reply",
+    });
+    assert.strictEqual(captured[0].thread.comments.length, 2);
+
+    persisted = [comment(1), comment(2, { in_reply_to_id: 1 })];
+    pending.reconcile(repoInfo, 42, {
+      succeededInlineCommentIds: [],
+      succeededReplyIds: ["reply-1"],
+      succeededConversationActionIds: [],
+      errors: [],
+    });
+    await waitFor(
+      () => captured.length === 2,
+      "persisted conversation reprojection after reconciliation",
+    );
+
+    assert.ok(loads >= 2);
+    assert.strictEqual(
+      (captured[0].thread as unknown as { disposed: boolean }).disposed,
+      true,
+    );
+    assert.strictEqual(captured[1].thread.comments.length, 2);
+    assert.deepStrictEqual(
+      captured[1].thread.comments.map((item) => item.author.name),
+      ["reviewer", "reviewer"],
+    );
+    assert.strictEqual(pending.get(repoInfo, 42).replies.length, 0);
+
+    projection.dispose();
+    pending.dispose();
+    conversations.dispose();
+    session.dispose();
+  });
+
+  test("rebinds to a new immutable head while preserving pending review work", async () => {
+    const conversations = new PullRequestConversationService({
+      listAllPRReviewComments: async () => [comment(1)],
+    });
+    const session = await activeSession();
+    const pending = new PullRequestReviewSessionService();
+    pending.queueReply(repoInfo, 42, {
+      id: "reply-1",
+      rootCommentId: 1,
+      body: "keep me",
+    });
+    const captured: CapturedThread[] = [];
+    const projection = new NativeReviewProjectionService(
+      conversations,
+      { getRepos: () => [repoInfo] },
+      session,
+      pending,
+      fakeController(captured),
+      async () => fakeDocument(20),
+    );
+
+    await projection.initialize();
+    assert.match(captured[0].uri.query, /sha=head-sha/);
+
+    await session.activate(repositoryRef, pullRequestAtHead("head-sha-2"));
+    await waitFor(
+      () => captured.length === 2,
+      "native thread rebind to the refreshed head",
+    );
+
+    assert.strictEqual(
+      (captured[0].thread as unknown as { disposed: boolean }).disposed,
+      true,
+    );
+    assert.match(captured[1].uri.query, /sha=head-sha-2/);
+    assert.strictEqual(captured[1].thread.comments.length, 2);
+    assert.strictEqual(pending.get(repoInfo, 42).replies[0].body, "keep me");
+
+    projection.dispose();
+    pending.dispose();
+    conversations.dispose();
+    session.dispose();
+  });
+
+  test("drops a thread instead of guessing a placement after head refresh", async () => {
+    let refreshed = false;
+    const conversations = new PullRequestConversationService({
+      listAllPRReviewComments: async () =>
+        refreshed ? [comment(1, { position: 50 })] : [comment(1)],
+    });
+    const session = await activeSession();
+    const pending = new PullRequestReviewSessionService();
+    pending.queueReply(repoInfo, 42, {
+      id: "reply-1",
+      rootCommentId: 1,
+      body: "preserved fallback work",
+    });
+    const captured: CapturedThread[] = [];
+    const projection = new NativeReviewProjectionService(
+      conversations,
+      { getRepos: () => [repoInfo] },
+      session,
+      pending,
+      fakeController(captured),
+      async () => fakeDocument(10),
+    );
+
+    await projection.initialize();
+    assert.strictEqual(captured.length, 1);
+
+    refreshed = true;
+    await session.activate(repositoryRef, pullRequestAtHead("head-sha-2"));
+    await waitFor(
+      () => (captured[0].thread as unknown as { disposed: boolean }).disposed,
+      "unplaceable thread disposal after head refresh",
+    );
+
+    assert.strictEqual(captured.length, 1);
+    assert.strictEqual(pending.get(repoInfo, 42).replies.length, 1);
 
     projection.dispose();
     pending.dispose();

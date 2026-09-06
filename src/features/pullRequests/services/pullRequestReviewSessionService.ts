@@ -11,11 +11,14 @@ import {
   type PendingReviewSubmissionResult,
 } from "../domain/pendingReviewSession";
 
+export type PullRequestReviewSessionChangeReason = "mutation" | "reconcile";
+
 export interface PullRequestReviewSessionChange {
   key: string;
   repositoryKey: string;
   pullRequestNumber: number;
   session: PendingReviewSession;
+  reason: PullRequestReviewSessionChangeReason;
 }
 
 /**
@@ -116,6 +119,7 @@ export class PullRequestReviewSessionService implements vscode.Disposable {
       repoInfo.key,
       pullRequestNumber,
       reconcilePendingReviewSubmission(current, result),
+      "reconcile",
     );
   }
 
@@ -147,6 +151,7 @@ export class PullRequestReviewSessionService implements vscode.Disposable {
     repositoryKey: string,
     pullRequestNumber: number,
     session: PendingReviewSession,
+    reason: PullRequestReviewSessionChangeReason = "mutation",
   ): PendingReviewSession {
     const normalized = normalizeSession(session);
     const key = reviewSessionKey(repositoryKey, pullRequestNumber);
@@ -159,6 +164,7 @@ export class PullRequestReviewSessionService implements vscode.Disposable {
       repositoryKey,
       pullRequestNumber,
       session: snapshot,
+      reason,
     });
     return cloneSession(snapshot);
   }
