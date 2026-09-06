@@ -4,16 +4,20 @@ import { CIRunsProvider, CIRunItem, CIJobItem, RepoGroupItem } from "../views/ci
 import { LiveLogPanel } from "../views/liveLogPanel";
 import type { GiteaWorkflowRun } from "../api/types";
 import type { RepoInfo } from "../context/repoManager";
+import type { CIRunsPollingService } from "../features/polling/services/ciRunsPollingService";
+import type { PollingLifecycleSignalService } from "../features/polling/services/pollingLifecycleSignalService";
+import type { PollingScheduler } from "../features/polling/services/pollingScheduler";
 
 export function registerCICommands(
   context: vscode.ExtensionContext,
   api: GiteaApiClient,
   ciProvider: CIRunsProvider,
+  ciPolling: CIRunsPollingService,
+  pollingScheduler: PollingScheduler,
+  pollingSignals: PollingLifecycleSignalService,
 ): void {
   context.subscriptions.push(
-    vscode.commands.registerCommand("gitea.refreshCI", () =>
-      ciProvider.refresh(),
-    ),
+    vscode.commands.registerCommand("gitea.refreshCI", () => ciProvider.refresh()),
 
     vscode.commands.registerCommand("gitea.refreshRepo", async (arg: RepoGroupItem) => {
       if (arg instanceof RepoGroupItem) {
@@ -40,12 +44,10 @@ export function registerCICommands(
         const run = arg instanceof CIRunItem ? arg.run : arg;
         const repoInfo = arg instanceof CIRunItem ? arg.repoInfo : undefined;
         if (!repoInfo) {
-          vscode.window.showErrorMessage(
-            "Cannot determine repository for this run.",
-          );
+          vscode.window.showErrorMessage("Cannot determine repository for this run.");
           return;
         }
-        await rerunWorkflow(api, repoInfo, run, ciProvider);
+        await rerunWorkflow(api, repoInfo, run, ciPolling);
       },
     ),
 
@@ -55,12 +57,10 @@ export function registerCICommands(
         const run = arg instanceof CIRunItem ? arg.run : arg;
         const repoInfo = arg instanceof CIRunItem ? arg.repoInfo : undefined;
         if (!repoInfo) {
-          vscode.window.showErrorMessage(
-            "Cannot determine repository for this run.",
-          );
+          vscode.window.showErrorMessage("Cannot determine repository for this run.");
           return;
         }
-        await cancelRun(api, repoInfo, run, ciProvider);
+        await cancelRun(api, repoInfo, run, ciPolling);
       },
     ),
 
@@ -71,7 +71,13 @@ export function registerCICommands(
           vscode.window.showWarningMessage("Select a job to view its logs.");
           return;
         }
-        await LiveLogPanel.show(api, arg.repoInfo, arg.job);
+        await LiveLogPanel.show(
+          api,
+          arg.repoInfo,
+          arg.job,
+          pollingScheduler,
+          pollingSignals,
+        );
       },
     ),
 
@@ -82,7 +88,7 @@ export function registerCICommands(
           vscode.window.showWarningMessage("Select a job to re-run.");
           return;
         }
-        await rerunJob(api, arg, ciProvider);
+        await rerunJob(api, arg, ciPolling);
       },
     ),
   );
@@ -92,16 +98,14 @@ async function rerunWorkflow(
   api: GiteaApiClient,
   repoInfo: RepoInfo,
   run: GiteaWorkflowRun,
-  ciProvider: CIRunsProvider,
+  ciPolling: CIRunsPollingService,
 ): Promise<void> {
   const confirm = await vscode.window.showWarningMessage(
     `Re-run workflow run #${run.run_number}?`,
     { modal: true },
     "Re-run",
   );
-  if (confirm !== "Re-run") {
-    return;
-  }
+  if (confirm !== "Re-run") return;
 
   await vscode.window.withProgress(
     {
@@ -112,11 +116,9 @@ async function rerunWorkflow(
       try {
         await api.rerunWorkflow(repoInfo, run.id);
         vscode.window.showInformationMessage("Re-run triggered.");
-        setTimeout(() => ciProvider.refresh(), 2000);
+        ciPolling.accelerate();
       } catch (err) {
-        vscode.window.showErrorMessage(
-          `Re-run failed: ${(err as Error).message}`,
-        );
+        vscode.window.showErrorMessage(`Re-run failed: ${(err as Error).message}`);
       }
     },
   );
@@ -125,16 +127,14 @@ async function rerunWorkflow(
 async function rerunJob(
   api: GiteaApiClient,
   item: CIJobItem,
-  ciProvider: CIRunsProvider,
+  ciPolling: CIRunsPollingService,
 ): Promise<void> {
   const confirm = await vscode.window.showWarningMessage(
     `Re-run job ${item.job.name}?`,
     { modal: true },
     "Re-run Job",
   );
-  if (confirm !== "Re-run Job") {
-    return;
-  }
+  if (confirm !== "Re-run Job") return;
 
   await vscode.window.withProgress(
     {
@@ -145,11 +145,9 @@ async function rerunJob(
       try {
         await api.rerunWorkflowJob(item.repoInfo, item.runId, item.job.id);
         vscode.window.showInformationMessage(`Job re-run triggered: ${item.job.name}`);
-        setTimeout(() => ciProvider.refresh(), 2000);
+        ciPolling.accelerate();
       } catch (err) {
-        vscode.window.showErrorMessage(
-          `Job re-run failed: ${(err as Error).message}`,
-        );
+        vscode.window.showErrorMessage(`Job re-run failed: ${(err as Error).message}`);
       }
     },
   );
@@ -159,16 +157,14 @@ async function cancelRun(
   api: GiteaApiClient,
   repoInfo: RepoInfo,
   run: GiteaWorkflowRun,
-  ciProvider: CIRunsProvider,
+  ciPolling: CIRunsPollingService,
 ): Promise<void> {
   const confirm = await vscode.window.showWarningMessage(
     `Cancel run #${run.run_number}?`,
     { modal: true },
     "Cancel Run",
   );
-  if (confirm !== "Cancel Run") {
-    return;
-  }
+  if (confirm !== "Cancel Run") return;
 
   await vscode.window.withProgress(
     {
@@ -179,11 +175,9 @@ async function cancelRun(
       try {
         await api.cancelWorkflowRun(repoInfo, run.id);
         vscode.window.showInformationMessage("Run cancelled.");
-        setTimeout(() => ciProvider.refresh(), 1500);
+        ciPolling.accelerate();
       } catch (err) {
-        vscode.window.showErrorMessage(
-          `Cancel failed: ${(err as Error).message}`,
-        );
+        vscode.window.showErrorMessage(`Cancel failed: ${(err as Error).message}`);
       }
     },
   );
