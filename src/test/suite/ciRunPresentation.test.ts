@@ -5,6 +5,7 @@ import type { RepoInfo } from "../../context/repoManager";
 import {
   CIJobItem,
   CIRunItem,
+  ciRunsFingerprint,
   displayStatusForRun,
   runSecondaryMetadata,
 } from "../../views/ciRunsProvider";
@@ -129,5 +130,19 @@ suite("CI run presentation", () => {
       ).contextValue,
       "ciJob_active",
     );
+  });
+
+  test("polling fingerprint changes when run status changes", () => {
+    const before = ciRunsFingerprint([run({ status: "running", conclusion: "" })]);
+    const after = ciRunsFingerprint([
+      run({ status: "completed", conclusion: "success", updated_at: "2026-08-22T16:32:00Z" }),
+    ]);
+    assert.notStrictEqual(before, after);
+  });
+
+  test("polling fingerprint ignores presentation-only fields", () => {
+    const before = ciRunsFingerprint([run()]);
+    const after = ciRunsFingerprint([run({ display_title: "Renamed locally" })]);
+    assert.strictEqual(before, after);
   });
 });
