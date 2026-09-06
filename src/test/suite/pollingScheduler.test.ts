@@ -147,7 +147,7 @@ suite("PollingScheduler", () => {
     scheduler.dispose();
   });
 
-  test("logs polling attempts with resource context", async () => {
+  test("logs registration and polling attempts with resource context", async () => {
     const clock = new FakeClock();
     const messages: string[] = [];
     const logger: PollingLogger = { debug: (message) => messages.push(message) };
@@ -161,15 +161,45 @@ suite("PollingScheduler", () => {
 
     await clock.advanceBy(0);
 
-    assert.strictEqual(messages.length, 1);
-    assert.match(messages[0], /^\[polling\] attempt /);
+    assert.match(messages[0], /^\[polling\] registered /);
     assert.match(messages[0], /key=repo:owner\/name:pr:42/);
-    assert.match(messages[0], /resource=pull-request/);
-    assert.match(messages[0], /lifecycle=active/);
-    assert.match(messages[0], /visible=true/);
-    assert.match(messages[0], /windowActive=true/);
-    assert.match(messages[0], /delayMs=2500/);
-    assert.match(messages[0], /reason=test/);
+
+    const attempt = messages.find((message) => message.startsWith("[polling] attempt "));
+    assert.ok(attempt);
+    assert.match(attempt, /key=repo:owner\/name:pr:42/);
+    assert.match(attempt, /resource=pull-request/);
+    assert.match(attempt, /lifecycle=active/);
+    assert.match(attempt, /visible=true/);
+    assert.match(attempt, /windowActive=true/);
+    assert.match(attempt, /unchanged=0/);
+    assert.match(attempt, /delayMs=2500/);
+    assert.match(attempt, /reason=test/);
+    scheduler.dispose();
+  });
+
+  test("logs paused resources with their current unchanged count", async () => {
+    const clock = new FakeClock();
+    const messages: string[] = [];
+    const logger: PollingLogger = { debug: (message) => messages.push(message) };
+    const scheduler = new PollingScheduler(
+      clock,
+      () => ({ kind: "pause", reason: "editing" }),
+      logger,
+    );
+
+    scheduler.register({
+      key: "paused",
+      context: baseContext,
+      run: async () => ({ changed: false }),
+    });
+    await clock.advanceBy(0);
+
+    const paused = messages.find((message) => message.startsWith("[polling] paused "));
+    assert.ok(paused);
+    assert.match(paused, /resource=pull-request/);
+    assert.match(paused, /activity=idle/);
+    assert.match(paused, /unchanged=0/);
+    assert.match(paused, /reason=editing/);
     scheduler.dispose();
   });
 
