@@ -25,10 +25,19 @@ suite("adaptivePollingPolicy", () => {
     );
   });
 
-  test("pauses while the user is editing", () => {
+  test("pauses review-sensitive polling while the user is editing", () => {
     assert.deepStrictEqual(
       adaptivePollingDecision(context({ activity: "editing" })),
       { kind: "pause", reason: "editing" },
+    );
+  });
+
+  test("does not pause CI polling because a PR review is being edited", () => {
+    assert.deepStrictEqual(
+      adaptivePollingDecision(
+        context({ resourceKind: "ci-runs", activity: "editing" }),
+      ),
+      { kind: "poll", delayMs: 10_000, reason: "active-visible" },
     );
   });
 
@@ -39,10 +48,37 @@ suite("adaptivePollingPolicy", () => {
     );
   });
 
-  test("slows polling when the VS Code window is inactive", () => {
+  test("does not apply recent-action acceleration while the window is inactive", () => {
+    assert.deepStrictEqual(
+      adaptivePollingDecision(
+        context({ activity: "recent-action", windowActive: false }),
+      ),
+      { kind: "poll", delayMs: 120_000, reason: "window-inactive" },
+    );
+  });
+
+  test("slows active polling when the VS Code window is inactive", () => {
     assert.deepStrictEqual(
       adaptivePollingDecision(context({ windowActive: false })),
       { kind: "poll", delayMs: 120_000, reason: "window-inactive" },
+    );
+  });
+
+  test("never speeds up a terminal resource when the window becomes inactive", () => {
+    assert.deepStrictEqual(
+      adaptivePollingDecision(
+        context({ lifecycle: "terminal", windowActive: false }),
+      ),
+      { kind: "poll", delayMs: 300_000, reason: "window-inactive" },
+    );
+  });
+
+  test("preserves hidden and backoff modifiers while the window is inactive", () => {
+    assert.deepStrictEqual(
+      adaptivePollingDecision(
+        context({ windowActive: false, visible: false, unchangedCount: 2 }),
+      ),
+      { kind: "poll", delayMs: 240_000, reason: "window-inactive" },
     );
   });
 
@@ -71,6 +107,15 @@ suite("adaptivePollingPolicy", () => {
     assert.deepStrictEqual(
       adaptivePollingDecision(context({ lifecycle: "terminal" })),
       { kind: "poll", delayMs: 300_000, reason: "stable-lifecycle" },
+    );
+  });
+
+  test("applies hidden slowdown to terminal resources", () => {
+    assert.deepStrictEqual(
+      adaptivePollingDecision(
+        context({ lifecycle: "terminal", visible: false }),
+      ),
+      { kind: "poll", delayMs: 1_200_000, reason: "stable-lifecycle" },
     );
   });
 });
