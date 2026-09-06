@@ -25,7 +25,7 @@ suite("adaptivePollingPolicy", () => {
     );
   });
 
-  test("pauses review-sensitive polling while the user is editing", () => {
+  test("pauses broad active PR refresh while the user is editing", () => {
     assert.deepStrictEqual(
       adaptivePollingDecision(context({ activity: "editing" })),
       { kind: "pause", reason: "editing" },
@@ -38,6 +38,20 @@ suite("adaptivePollingPolicy", () => {
         context({ resourceKind: "ci-runs", activity: "editing" }),
       ),
       { kind: "poll", delayMs: 10_000, reason: "active-visible" },
+    );
+  });
+
+  test("keeps pending readiness live while a PR review is being edited", () => {
+    assert.deepStrictEqual(
+      adaptivePollingDecision(
+        context({
+          resourceKind: "pull-request-readiness",
+          lifecycle: "pending",
+          activity: "editing",
+          unchangedCount: 3,
+        }),
+      ),
+      { kind: "poll", delayMs: 5_000, reason: "pending-live" },
     );
   });
 
