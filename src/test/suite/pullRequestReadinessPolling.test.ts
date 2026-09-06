@@ -1,6 +1,9 @@
 import * as assert from "assert";
 import type { GiteaCombinedStatus, GiteaReview } from "../../api/types";
-import { readinessFingerprint } from "../../features/polling/services/pullRequestReadinessPollingService";
+import {
+  hasPendingChecks,
+  readinessFingerprint,
+} from "../../features/polling/services/pullRequestReadinessPollingService";
 
 function status(overrides: Partial<GiteaCombinedStatus> = {}): GiteaCombinedStatus {
   return {
@@ -63,5 +66,30 @@ suite("Pull request readiness polling", () => {
     const before = readinessFingerprint(status(), [review()]);
     const after = readinessFingerprint(status(), [review({ state: "APPROVED" })]);
     assert.notStrictEqual(before, after);
+  });
+
+  test("detects aggregate and individual pending check states", () => {
+    assert.strictEqual(hasPendingChecks(status()), true);
+    assert.strictEqual(
+      hasPendingChecks(
+        status({
+          state: "success",
+          statuses: [{ ...status().statuses[0], state: "in_progress" }],
+        }),
+      ),
+      true,
+    );
+  });
+
+  test("treats completed checks as stable", () => {
+    assert.strictEqual(
+      hasPendingChecks(
+        status({
+          state: "success",
+          statuses: [{ ...status().statuses[0], state: "success" }],
+        }),
+      ),
+      false,
+    );
   });
 });
