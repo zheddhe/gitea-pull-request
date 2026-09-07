@@ -35,17 +35,35 @@ suite("PR detail presentation", () => {
     assert.doesNotMatch(source, /postMessage\(\{ command: "loading" \}\)/);
   });
 
-  test("places review status in the PR title and keeps branches out of detail", () => {
-    const dot = source.indexOf('class="state-dot');
-    const review = source.indexOf('class="review-state', dot);
+  test("keeps review title lifecycle and last activity on one persistent line", () => {
+    const review = source.indexOf('class="review-state');
     const title = source.indexOf('class="title-prefix"', review);
-    assert.ok(dot >= 0 && review > dot && title > review);
+    const titleText = source.indexOf('id="title-text"', title);
+    const state = source.indexOf('class="badge ${stateClass}"', titleText);
+    const activity = source.indexOf('class="activity-meta"', state);
+    assert.ok(review >= 0 && title > review && titleText > title);
+    assert.ok(state > titleText && activity > state);
+    assert.doesNotMatch(source, /class="state-dot/);
     assert.match(source, /review-approved/);
     assert.match(source, /review-changes-requested/);
     assert.match(source, /review-pending/);
+    assert.match(source, /\$\{stateLabel\}<\/span>/);
+    assert.match(source, /by <strong>\$\{escHtml\(lastActivity\.actor\)\}<\/strong>/);
+    assert.match(source, /\$\{escHtml\(lastActivityDate\)\}/);
     assert.doesNotMatch(source, /class="branch-row"/);
     assert.doesNotMatch(source, /id="base-select"/);
     assert.doesNotMatch(source, /post\('updateBase'/);
+  });
+
+  test("derives last visible PR activity from discussion review inline and commits", () => {
+    assert.match(source, /const activityCandidates: Array<\{ actor: string; at: string \}>/);
+    assert.match(source, /\.\.\.comments\.map\(\(comment\) => \(\{/);
+    assert.match(source, /\.\.\.reviews\.map\(\(review\) => \(\{/);
+    assert.match(source, /\.\.\.reviewComments\.map\(\(comment\) => \(\{/);
+    assert.match(source, /comment\.resolver && comment\.updated_at !== comment\.created_at/);
+    assert.match(source, /\.\.\.commits\.map\(\(commit\) => \(\{/);
+    assert.match(source, /commit\.author\?\.login \|\| commit\.commit\.author\.name/);
+    assert.match(source, /const lastActivity = activityCandidates\.reduce/);
   });
 
   test("keeps the title prefix fixed while editing only the title value", () => {
@@ -59,14 +77,19 @@ suite("PR detail presentation", () => {
     assert.match(source, /event\.key==='Escape'/);
   });
 
-  test("keeps only edit browser and refresh context actions beside the title", () => {
-    const title = source.indexOf('class="title-prefix"');
-    const edit = source.indexOf('id="edit-title"', title);
-    const browser = source.indexOf('id="open-browser"', edit);
+  test("keeps PR identity and tabs sticky with browser refresh directly after tabs", () => {
+    const chrome = source.indexOf('class="detail-chrome"');
+    const title = source.indexOf('class="title-prefix"', chrome);
+    const tabs = source.indexOf('<nav class="tabs"', title);
+    const commits = source.indexOf('id="commits-tab"', tabs);
+    const actions = source.indexOf('class="tab-actions"', commits);
+    const browser = source.indexOf('id="open-browser"', actions);
     const refresh = source.indexOf('id="refresh"', browser);
-    const tabs = source.indexOf('<nav class="tabs"', refresh);
-    assert.ok(title >= 0 && edit > title && browser > edit && refresh > browser);
-    assert.ok(tabs > refresh);
+    assert.ok(chrome >= 0 && title > chrome && tabs > title);
+    assert.ok(commits > tabs && actions > commits && browser > actions && refresh > browser);
+    assert.match(source, /\.detail-chrome\{position:sticky;top:0/);
+    assert.match(source, /\.tab-actions\{[^}]*margin-left:2px/);
+    assert.doesNotMatch(source, /\.tab-actions\{[^}]*margin-left:auto/);
     assert.doesNotMatch(source, /id="checkout"/);
     assert.doesNotMatch(source, /id="merge-method"/);
     assert.doesNotMatch(source, /id="merge"/);
@@ -126,16 +149,25 @@ suite("PR detail presentation", () => {
     assert.match(source, /window\.addEventListener\('message'/);
   });
 
-  test("enriches review history with inline COMMENT detail and sorting", () => {
+  test("enriches review history with inline COMMENT detail and integrated sorting", () => {
     assert.match(source, /comment\.pull_request_review_id === review\.id/);
     assert.match(source, /review-inline-summary/);
     assert.match(source, /review-inline-message/);
     assert.match(source, /reviewCommentBodies\[commentIndex\]/);
     assert.match(source, /data-review-time=/);
-    assert.match(source, /id="review-history-sort"/);
-    assert.match(source, />Oldest first<\/option>/);
-    assert.match(source, />Newest first<\/option>/);
+    assert.match(source, /id="review-history-sort" class="tab-sort"/);
+    assert.match(source, /title="Oldest first — click for newest first"/);
+    assert.match(source, /newest\?'↓':'↑'/);
     assert.match(source, /function sortReviewHistory\(direction\)/);
+    assert.match(source, /function setReviewHistorySort\(direction,persist=true\)/);
+    assert.match(
+      source,
+      /let reviewHistorySort=savedState\.reviewHistorySort==='desc'\?'desc':'asc'/,
+    );
+    assert.match(
+      source,
+      /vscode\.setState\(Object\.assign\(\{\},vscode\.getState\(\)\|\|\{\},\{reviewHistorySort\}\)\)/,
+    );
   });
 
   test("restores file status color cues and readable file names", () => {

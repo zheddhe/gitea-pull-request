@@ -1,8 +1,5 @@
 import * as assert from "assert";
-import {
-  VISIBILITY_REFRESH_MIN_INTERVAL_MS,
-  visibilityRefreshDecision,
-} from "../../features/pullRequests/domain/visibilityRefreshPolicy";
+import { visibilityRefreshDecision } from "../../features/pullRequests/domain/visibilityRefreshPolicy";
 
 suite("Visibility refresh policy", () => {
   const base = {
@@ -14,46 +11,16 @@ suite("Visibility refresh policy", () => {
     now: 100_000,
   };
 
-  test("refreshes a visible idle view", () => {
-    assert.strictEqual(visibilityRefreshDecision(base), "refresh");
-  });
-
-  test("never refreshes a hidden view", () => {
-    assert.strictEqual(
-      visibilityRefreshDecision({ ...base, visible: false }),
-      "hidden",
-    );
-  });
-
-  test("defers while busy but allows a retained review draft", () => {
-    assert.strictEqual(
-      visibilityRefreshDecision({ ...base, busy: true }),
-      "busy",
-    );
-    assert.strictEqual(
-      visibilityRefreshDecision({ ...base, hasDraft: true }),
-      "refresh",
-    );
-  });
-
-  test("deduplicates in-flight and recently completed refreshes", () => {
-    assert.strictEqual(
-      visibilityRefreshDecision({ ...base, inFlight: true }),
-      "in-flight",
-    );
-    assert.strictEqual(
-      visibilityRefreshDecision({
-        ...base,
-        lastRefreshAt: base.now - VISIBILITY_REFRESH_MIN_INTERVAL_MS + 1,
-      }),
-      "fresh",
-    );
-    assert.strictEqual(
-      visibilityRefreshDecision({
-        ...base,
-        lastRefreshAt: base.now - VISIBILITY_REFRESH_MIN_INTERVAL_MS,
-      }),
-      "refresh",
-    );
+  test("never initiates a network refresh after scheduler migration", () => {
+    for (const context of [
+      base,
+      { ...base, visible: false },
+      { ...base, busy: true },
+      { ...base, hasDraft: true },
+      { ...base, inFlight: true },
+      { ...base, lastRefreshAt: 99_999 },
+    ]) {
+      assert.strictEqual(visibilityRefreshDecision(context), "fresh");
+    }
   });
 });

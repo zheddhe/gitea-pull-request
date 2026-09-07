@@ -170,6 +170,8 @@ export interface GiteaWorkflowRun {
     | "pending";
   conclusion: string;
   workflow_id: string;
+  /** Workflow path returned by recent Gitea Actions APIs when available. */
+  path?: string;
   run_number: number;
   event: string;
   run_started_at: string;

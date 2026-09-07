@@ -14,6 +14,7 @@ import {
   conversationCommentIds,
   type ReviewConversation,
 } from "../features/pullRequests/domain/reviewConversationModel";
+import { pullRequestDetailFingerprint } from "../features/pullRequests/domain/pullRequestDetailPolling";
 import type {
   PendingConversationAction,
   PendingInlineComment,
@@ -21,6 +22,10 @@ import type {
   PendingReviewSession,
   PendingReviewSubmissionResult,
 } from "../features/pullRequests/domain/pendingReviewSession";
+import {
+  getActivePollingScheduler,
+  type PollingRegistrationHandle,
+} from "../features/polling/services/pollingScheduler";
 import { log } from "../debug/outputChannel";
 
 const REPLY_ICON = `<svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M6.7 3 2 7l4.7 4V8.5c3.4 0 5.5 1 7.3 3.5-.5-4.6-2.8-7-7.3-7V3z"/></svg>`;
@@ -102,9 +107,13 @@ function parsePatch(patch: string): DiffLine[] {
 }
 
 export class PRDetailPanel {
-  private static panels = new Map<number, PRDetailPanel>();
+  private static panels = new Map<string, PRDetailPanel>();
   private readonly panel: vscode.WebviewPanel;
   private disposables: vscode.Disposable[] = [];
+  private pollingRegistration: PollingRegistrationHandle | undefined;
+  private remoteFingerprint: string | undefined;
+  private remoteRefreshPending = false;
+  private editing = false;
 
   static async show(
     extensionUri: vscode.Uri,
@@ -112,10 +121,12 @@ export class PRDetailPanel {
     repoInfo: RepoInfo,
     pr: GiteaPullRequest,
   ): Promise<void> {
-    const existing = PRDetailPanel.panels.get(pr.number);
+    const panelKey = `${repoInfo.key}::pr:${pr.number}`;
+    const existing = PRDetailPanel.panels.get(panelKey);
     if (existing) {
       existing.panel.reveal(vscode.ViewColumn.One);
       await existing.update(pr);
+      existing.pollingRegistration?.accelerate();
       return;
     }
     const panel = vscode.window.createWebviewPanel(
@@ -124,8 +135,15 @@ export class PRDetailPanel {
       vscode.ViewColumn.One,
       { enableScripts: true, retainContextWhenHidden: true },
     );
-    const instance = new PRDetailPanel(panel, extensionUri, api, repoInfo, pr);
-    PRDetailPanel.panels.set(pr.number, instance);
+    const instance = new PRDetailPanel(
+      panel,
+      extensionUri,
+      api,
+      repoInfo,
+      pr,
+      panelKey,
+    );
+    PRDetailPanel.panels.set(panelKey, instance);
     await instance.update(pr);
   }
 
@@ -135,15 +153,76 @@ export class PRDetailPanel {
     private readonly api: GiteaApiClient,
     private readonly repoInfo: RepoInfo,
     private pr: GiteaPullRequest,
+    private readonly panelKey: string,
   ) {
     this.panel = panel;
     void this.extensionUri;
-    panel.onDidDispose(() => this.dispose(), null, this.disposables);
-    panel.webview.onDidReceiveMessage(
-      (message) => this.handleMessage(message),
-      null,
-      this.disposables,
+    this.disposables.push(
+      panel.onDidDispose(() => this.dispose()),
+      panel.onDidChangeViewState(() => this.pollingRegistration?.reconsider()),
+      vscode.window.onDidChangeWindowState(() =>
+        this.pollingRegistration?.reconsider(),
+      ),
+      panel.webview.onDidReceiveMessage((message) => this.handleMessage(message)),
     );
+    this.initializePolling();
+  }
+
+  private initializePolling(): void {
+    const scheduler = getActivePollingScheduler();
+    if (!scheduler) return;
+    this.pollingRegistration = scheduler.register({
+      key: `${this.repoInfo.key}::pr-detail:${this.pr.number}`,
+      context: () => ({
+        resourceKind: "pull-request-detail",
+        windowActive: vscode.window.state.focused,
+        visible: this.panel.visible,
+        activity: this.editing ? "editing" : "idle",
+        lifecycle:
+          this.pr.state === "open" && !this.pr.merged ? "active" : "terminal",
+      }),
+      run: async () => this.pollRemoteChanges(),
+    });
+  }
+
+  private async pollRemoteChanges(): Promise<{ changed: boolean }> {
+    try {
+      const [pullRequest, comments, reviews, reviewComments] = await Promise.all([
+        this.api.getPullRequest(this.repoInfo, this.pr.number),
+        this.api.listPRComments(this.repoInfo, this.pr.number),
+        this.api.listReviews(this.repoInfo, this.pr.number),
+        this.api
+          .listAllPRReviewComments(this.repoInfo, this.pr.number)
+          .catch(() => [] as GiteaReviewComment[]),
+      ]);
+      const fingerprint = pullRequestDetailFingerprint({
+        pullRequest,
+        comments,
+        reviews,
+        reviewComments,
+      });
+      if (this.remoteFingerprint === undefined) {
+        this.remoteFingerprint = fingerprint;
+        return { changed: false };
+      }
+      if (fingerprint === this.remoteFingerprint) return { changed: false };
+      if (this.editing) {
+        this.remoteRefreshPending = true;
+        return { changed: true };
+      }
+
+      this.remoteFingerprint = fingerprint;
+      this.remoteRefreshPending = false;
+      this.pr = pullRequest;
+      this.panel.title = `PR #${pullRequest.number}: ${pullRequest.title}`;
+      await this.update(pullRequest);
+      return { changed: true };
+    } catch (error) {
+      log(
+        `[polling] pr-detail failed repo=${this.repoInfo.label} pr=#${this.pr.number}: ${(error as Error).message}`,
+      );
+      return { changed: false };
+    }
   }
 
   private async handleMessage(message: {
@@ -151,6 +230,18 @@ export class PRDetailPanel {
     [key: string]: unknown;
   }): Promise<void> {
     switch (message.command) {
+      case "editingStateChanged": {
+        const editing = message.editing === true;
+        if (editing === this.editing) break;
+        this.editing = editing;
+        if (!editing && this.remoteRefreshPending) {
+          this.remoteRefreshPending = false;
+          this.pollingRegistration?.accelerate();
+        } else {
+          this.pollingRegistration?.reconsider();
+        }
+        break;
+      }
       case "queuePendingInlineReviewComment":
         await this.mutatePendingReviewSession(
           "gitea.queuePendingInlineReviewComment",
@@ -225,8 +316,16 @@ export class PRDetailPanel {
         );
         break;
       case "refresh":
+        if (this.editing) {
+          this.remoteRefreshPending = true;
+          vscode.window.showInformationMessage(
+            "Pull request refresh deferred until the current edit is finished.",
+          );
+          break;
+        }
         this.pr = await this.api.getPullRequest(this.repoInfo, this.pr.number);
         await this.update(this.pr);
+        this.pollingRegistration?.accelerate();
         break;
       case "openInBrowser":
         await vscode.env.openExternal(vscode.Uri.parse(this.pr.html_url));
@@ -373,6 +472,7 @@ export class PRDetailPanel {
         body.trim(),
       );
       await this.update(this.pr);
+      this.pollingRegistration?.accelerate();
       vscode.window.showInformationMessage(
         `Reply posted on PR #${this.pr.number}.`,
       );
@@ -397,6 +497,7 @@ export class PRDetailPanel {
         commentId,
       );
       await this.update(this.pr);
+      this.pollingRegistration?.accelerate();
     } catch (error) {
       vscode.window.showErrorMessage(
         `Failed to ${resolved ? "resolve" : "reopen"} inline review conversation: ${(error as Error).message}`,
@@ -450,6 +551,7 @@ export class PRDetailPanel {
       );
       this.panel.title = `PR #${this.pr.number}: ${this.pr.title}`;
       await this.update(this.pr);
+      this.pollingRegistration?.accelerate();
       vscode.window.showInformationMessage(
         `PR #${this.pr.number} ${successLabel}.`,
       );
@@ -477,6 +579,7 @@ export class PRDetailPanel {
       );
       this.pr = await this.api.getPullRequest(this.repoInfo, this.pr.number);
       await this.update(this.pr);
+      this.pollingRegistration?.accelerate();
       vscode.window.showInformationMessage(
         `${comments.length} inline comment(s) submitted on PR #${this.pr.number}.`,
       );
@@ -493,6 +596,7 @@ export class PRDetailPanel {
       await this.api.addPRComment(this.repoInfo, this.pr.number, body);
       this.pr = await this.api.getPullRequest(this.repoInfo, this.pr.number);
       await this.update(this.pr);
+      this.pollingRegistration?.accelerate();
     } catch (error) {
       vscode.window.showErrorMessage(`Failed: ${(error as Error).message}`);
     }
@@ -503,6 +607,7 @@ export class PRDetailPanel {
     try {
       await this.api.updateComment(this.repoInfo, commentId, body.trim());
       await this.update(this.pr);
+      this.pollingRegistration?.accelerate();
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to edit comment: ${(error as Error).message}`);
     }
@@ -561,6 +666,7 @@ export class PRDetailPanel {
         capabilities,
         pendingReviewSession,
       );
+      this.editing = false;
     } catch (error) {
       this.panel.webview.html = `<!DOCTYPE html><html><body style="padding:20px;color:var(--vscode-foreground);background:var(--vscode-editor-background);font-family:var(--vscode-font-family)"><h2>Error loading PR</h2><p>${escHtml((error as Error).message)}</p></body></html>`;
     }
@@ -757,22 +863,36 @@ export class PRDetailPanel {
           ? "Changes Requested"
           : "Pending";
 
-    const labelsHtml =
-      pr.labels
-        ?.map(
-          (label) =>
-            `<span class="label" style="--label-color:#${escHtml(label.color)}">${escHtml(label.name)}</span>`,
-        )
-        .join("") ?? "";
-    const assignees = pr.assignees?.length
-      ? pr.assignees.map((assignee) => assignee.login).join(", ")
-      : pr.assignee?.login;
-    const assigneesHtml = assignees
-      ? `<span>assigned to <strong>${escHtml(assignees)}</strong></span>`
-      : "";
-    const milestoneHtml = pr.milestone
-      ? `<span class="muted">Milestone: ${escHtml(pr.milestone.title)}</span>`
-      : "";
+    const activityCandidates: Array<{ actor: string; at: string }> = [
+      { actor: pr.user.login, at: pr.created_at },
+      ...comments.map((comment) => ({
+        actor: comment.user.login,
+        at: comment.updated_at || comment.created_at,
+      })),
+      ...reviews.map((review) => ({
+        actor: review.user.login,
+        at: review.submitted_at,
+      })),
+      ...reviewComments.map((comment) => ({
+        actor:
+          comment.resolver && comment.updated_at !== comment.created_at
+            ? comment.resolver.login
+            : comment.user.login,
+        at: comment.updated_at || comment.created_at,
+      })),
+      ...commits.map((commit) => ({
+        actor: commit.author?.login || commit.commit.author.name,
+        at: commit.commit.author.date,
+      })),
+    ].filter((item) => !Number.isNaN(new Date(item.at).getTime()));
+    const lastActivity = activityCandidates.reduce(
+      (latest, candidate) =>
+        new Date(candidate.at).getTime() > new Date(latest.at).getTime()
+          ? candidate
+          : latest,
+      activityCandidates[0] ?? { actor: pr.user.login, at: pr.updated_at || pr.created_at },
+    );
+    const lastActivityDate = new Date(lastActivity.at).toLocaleString();
 
     const editIcon = `<svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M11.3 1.7a1 1 0 0 1 1.4 0l1.6 1.6a1 1 0 0 1 0 1.4l-8.6 8.6-3.2.7.7-3.2 8.1-9.1zm.7 1.1-7.9 8.8-.3 1.1 1.1-.3 8.3-8.3L12 2.8z"/></svg>`;
     const refreshIcon = `<svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M13.2 3.8A6 6 0 1 0 14 9h-1.2a4.8 4.8 0 1 1-.7-4.3L10 6h5V1l-1.8 2.8z"/></svg>`;
@@ -876,33 +996,33 @@ export class PRDetailPanel {
 <style>
 :root{--surface:var(--vscode-editor-background);--subtle:var(--vscode-textBlockQuote-background,var(--vscode-editor-inactiveSelectionBackground));--fg:var(--vscode-foreground);--muted:var(--vscode-descriptionForeground);--border:var(--vscode-panel-border,var(--vscode-widget-border));--focus:var(--vscode-focusBorder);--input-bg:var(--vscode-input-background);--input-fg:var(--vscode-input-foreground);--input-border:var(--vscode-input-border,transparent);--button-bg:var(--vscode-button-background);--button-fg:var(--vscode-button-foreground);--button-secondary-bg:var(--vscode-button-secondaryBackground);--button-secondary-fg:var(--vscode-button-secondaryForeground);--success:var(--vscode-testing-iconPassed,var(--vscode-charts-green));--danger:var(--vscode-testing-iconFailed,var(--vscode-errorForeground));--warning:var(--vscode-editorWarning-foreground,var(--vscode-charts-yellow));--info:var(--vscode-textLink-foreground);--merged:var(--vscode-charts-purple);--mono:var(--vscode-editor-font-family)}
 *{box-sizing:border-box}html,body{margin:0;background:var(--surface);color:var(--fg)}body{font-family:var(--vscode-font-family);font-size:var(--vscode-font-size,13px);line-height:1.45;padding:16px 20px}button,input,textarea,select{font:inherit}
-.title-row{display:flex;align-items:center;gap:7px;min-width:0;margin-bottom:5px;white-space:nowrap}.title-prefix{font-size:1.22em;font-weight:600;flex:0 0 auto}.title-text{font-size:1.22em;font-weight:600;overflow:hidden;text-overflow:ellipsis}.title-input{display:none;min-width:180px;width:min(520px,45vw);font-size:1.22em;font-weight:600;padding:1px 5px}.title-row.editing .title-text{display:none}.title-row.editing .title-input{display:inline-block}.state-dot{width:8px;height:8px;border-radius:50%;flex:0 0 8px;background:currentColor}.state-open{color:var(--success)}.state-closed{color:var(--danger)}.state-merged{color:var(--merged)}.review-state{display:inline-flex;align-items:center;border:1px solid currentColor;border-radius:999px;padding:1px 7px;font-size:.82em;font-weight:600}.review-approved{color:var(--success)}.review-changes-requested{color:var(--danger)}.review-pending{color:var(--warning)}
-.icon-btn{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;padding:2px;border:0;border-radius:3px;background:transparent;color:var(--muted);cursor:pointer}.icon-btn:hover{background:var(--vscode-toolbar-hoverBackground,var(--subtle));color:var(--fg)}.icon-btn svg{width:14px;height:14px}.meta-row{display:flex;align-items:center;flex-wrap:wrap;gap:6px 9px;color:var(--muted);font-size:.92em;margin-bottom:12px}.meta-row strong{color:var(--fg)}.badge{display:inline-flex;border:1px solid currentColor;border-radius:999px;padding:1px 7px;font-size:.82em;font-weight:600;text-transform:uppercase}.label{border:1px solid var(--label-color);border-radius:999px;padding:1px 7px;font-size:.78em}
-.btn{border:1px solid transparent;border-radius:2px;padding:4px 10px;min-height:26px;cursor:pointer;background:var(--button-bg);color:var(--button-fg)}.btn.sec{background:var(--button-secondary-bg);color:var(--button-secondary-fg)}.btn:focus-visible,.icon-btn:focus-visible,.tab:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,.file-header:focus-visible{outline:1px solid var(--focus);outline-offset:2px}
-.tabs{display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:14px}.tab{display:inline-flex;align-items:center;gap:6px;background:transparent;border:0;border-bottom:2px solid transparent;color:var(--muted);cursor:pointer;padding:6px 10px}.tab.active{color:var(--fg);border-bottom-color:var(--focus);font-weight:600}.tab-icon{width:15px;height:15px}.tab-content{display:none}.tab-content.active{display:block}
+.detail-chrome{position:sticky;top:0;z-index:7;margin:0 -20px 14px;padding:0 20px;background:var(--surface);box-shadow:0 3px 8px color-mix(in srgb,#000 10%,transparent)}.title-row{display:flex;align-items:center;gap:7px;min-width:0;white-space:nowrap;padding:5px 0 3px;overflow:hidden}.title-prefix{font-size:1.08em;font-weight:600;flex:0 0 auto}.title-text{font-size:1.08em;font-weight:600;overflow:hidden;text-overflow:ellipsis;min-width:0}.title-input{display:none;min-width:180px;width:min(520px,38vw);font-size:1.08em;font-weight:600;padding:1px 5px}.title-row.editing .title-text{display:none}.title-row.editing .title-input{display:inline-block}.state-open{color:var(--success)}.state-closed{color:var(--danger)}.state-merged{color:var(--merged)}.review-state{display:inline-flex;align-items:center;border:1px solid currentColor;border-radius:999px;padding:1px 7px;font-size:.82em;font-weight:600;flex:0 0 auto}.review-approved{color:var(--success)}.review-changes-requested{color:var(--danger)}.review-pending{color:var(--warning)}.activity-meta{display:inline-flex;align-items:center;gap:5px;color:var(--muted);font-size:.88em;flex:0 0 auto}.activity-meta strong{color:var(--fg)}
+.icon-btn{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;padding:2px;border:0;border-radius:3px;background:transparent;color:var(--muted);cursor:pointer}.icon-btn:hover{background:var(--vscode-toolbar-hoverBackground,var(--subtle));color:var(--fg)}.icon-btn svg{width:14px;height:14px}.badge{display:inline-flex;border:1px solid currentColor;border-radius:999px;padding:1px 7px;font-size:.82em;font-weight:600;text-transform:uppercase;flex:0 0 auto}
+.btn{border:1px solid transparent;border-radius:2px;padding:4px 10px;min-height:26px;cursor:pointer;background:var(--button-bg);color:var(--button-fg)}.btn.sec{background:var(--button-secondary-bg);color:var(--button-secondary-fg)}.btn:focus-visible,.icon-btn:focus-visible,.tab:focus-visible,.tab-sort:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,.file-header:focus-visible{outline:1px solid var(--focus);outline-offset:2px}
+.tabs{display:flex;align-items:stretch;gap:2px;border-bottom:1px solid var(--border);margin:0;padding:0;background:var(--surface)}.tab-group{display:inline-flex;align-items:stretch}.tab{display:inline-flex;align-items:center;gap:6px;background:transparent;border:0;border-bottom:2px solid transparent;color:var(--muted);cursor:pointer;padding:7px 10px}.tab.active{color:var(--fg);border-bottom-color:var(--focus);font-weight:600}.tab-icon{width:15px;height:15px}.tab-sort{display:inline-flex;align-items:center;justify-content:center;min-width:25px;padding:0 5px;border:0;border-bottom:2px solid transparent;background:transparent;color:var(--muted);cursor:pointer;font-weight:700}.tab-sort:hover{background:var(--vscode-toolbar-hoverBackground,var(--subtle));color:var(--fg)}.tab-actions{display:flex;align-items:center;gap:2px;margin-left:2px}.tab-actions .icon-btn{width:27px;height:27px}.tab-content{display:none}.tab-content.active{display:block}
 .section-card,.comment,.submitted-review,.file-block{border:1px solid var(--border);border-radius:3px;margin-bottom:10px;overflow:hidden}.section-card{margin-bottom:14px}.section-bar,.comment-header,.review-header{display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--subtle);border-bottom:1px solid var(--border)}.section-bar{justify-content:flex-start;font-weight:600}.section-content,.comment-body,.review-body{padding:10px 12px}.description-editor,.comment-editor,.inline-comment-form{padding:10px 12px;background:var(--subtle)}.description-editor textarea{min-height:140px}.comment-editor textarea{min-height:90px}.editor-actions,.inline-actions,.review-batch-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.review-fixed-footer{position:fixed;left:20px;right:20px;bottom:0;z-index:8;background:var(--vscode-editorWidget-background,var(--subtle));border:1px solid var(--border);border-bottom:0;border-radius:4px 4px 0 0;box-shadow:0 -4px 14px color-mix(in srgb,#000 22%,transparent);overflow:hidden}.review-fixed-footer[hidden]{display:none}.inline-review-toolbar{padding:10px 12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;border-bottom:1px solid var(--border)}.inline-review-toolbar[hidden]{display:none}.capability-note{color:var(--muted);font-size:.82em;margin-bottom:8px;display:inline-block}.submit-inline{display:none}.submit-inline.visible{display:inline-flex}
 .review-navigation-toolbar{display:flex;align-items:center;justify-content:flex-start;gap:3px;padding:6px 7px;background:var(--surface)}.review-navigation-toolbar[hidden]{display:none}.review-navigation-toolbar .icon-btn{width:26px;height:26px}.review-navigation-toolbar .icon-btn svg{width:16px;height:16px}.review-navigation-position{min-width:92px;text-align:center;color:var(--muted);font-size:.86em}.review-conversation.review-navigation-target{outline:1px solid var(--focus);outline-offset:2px;box-shadow:0 0 0 2px color-mix(in srgb,var(--focus) 18%,transparent)}
 textarea,input[type="text"],select{background:var(--input-bg);color:var(--input-fg);border:1px solid var(--input-border);border-radius:2px;padding:6px 8px}textarea,input[type="text"]{width:100%;resize:vertical}.markdown-body{line-height:1.5;overflow-wrap:anywhere}.markdown-body h1{font-size:1.28em}.markdown-body h2{font-size:1.16em}.markdown-body h3{font-size:1.06em}.markdown-body code,.sha,.file-path,.diff-table{font-family:var(--mono)}.markdown-body pre{overflow:auto}.avatar{width:20px;height:20px;border-radius:50%}.time{margin-left:auto;color:var(--muted);font-size:.92em}.comment-time,.review-time{color:var(--muted);font-size:.92em}.empty,.muted{color:var(--muted)}
-.submitted-review{border-left-width:3px}.submitted-review-approved{border-left-color:var(--success)}.submitted-review-request_changes{border-left-color:var(--danger)}.submitted-review-comment,.submitted-review-commented{border-left-color:var(--info)}.review-badge{font-size:.78em;border:1px solid currentColor;border-radius:999px;padding:1px 6px}.review-badge-approved{color:var(--success)}.review-badge-request_changes{color:var(--danger)}.review-badge-comment,.submitted-review-commented{color:var(--info)}.section-heading{font-size:1em;font-weight:600;margin:14px 0 8px}.review-history-toolbar{display:flex;justify-content:flex-start;align-items:center;gap:8px;margin:0 0 10px}.review-history-toolbar label{color:var(--muted);font-size:.9em}.review-history-toolbar select{width:auto;min-width:130px}.review-inline-summary{border-top:1px solid var(--border);padding:8px 10px}.review-inline-summary>strong{display:block;margin-bottom:6px}.review-inline-message{padding:7px 0;border-top:1px solid var(--border)}.review-inline-message:first-of-type{border-top:0}.review-inline-location{display:flex;align-items:center;gap:8px;color:var(--muted);margin-bottom:4px}.review-inline-location code{color:var(--fg)}
+.submitted-review{border-left-width:3px}.submitted-review-approved{border-left-color:var(--success)}.submitted-review-request_changes{border-left-color:var(--danger)}.submitted-review-comment,.submitted-review-commented{border-left-color:var(--info)}.review-badge{font-size:.78em;border:1px solid currentColor;border-radius:999px;padding:1px 6px}.review-badge-approved{color:var(--success)}.review-badge-request_changes{color:var(--danger)}.review-badge-comment,.submitted-review-commented{color:var(--info)}.section-heading{font-size:1em;font-weight:600;margin:14px 0 8px}.review-inline-summary{border-top:1px solid var(--border);padding:8px 10px}.review-inline-summary>strong{display:block;margin-bottom:6px}.review-inline-message{padding:7px 0;border-top:1px solid var(--border)}.review-inline-message:first-of-type{border-top:0}.review-inline-location{display:flex;align-items:center;gap:8px;color:var(--muted);margin-bottom:4px}.review-inline-location code{color:var(--fg)}
 .commit-entry{display:flex;align-items:center;gap:10px;padding:7px 4px;border-bottom:1px solid var(--border);min-width:0}.commit-message{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.commit-author{color:var(--muted);flex:0 0 auto}.file-header{width:100%;display:flex;align-items:center;gap:8px;border:0;background:var(--subtle);color:var(--fg);padding:7px 10px;cursor:pointer;text-align:left}.file-status{display:inline-flex;width:17px;height:17px;align-items:center;justify-content:center;border:1px solid currentColor;border-radius:2px;font-size:.72em;font-weight:600}.file-status-added{color:var(--success)}.file-status-deleted{color:var(--danger)}.file-status-modified,.file-status-changed{color:var(--warning)}.file-status-renamed{color:var(--info)}.file-path{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--fg)}.file-stats{flex:0 0 auto}.additions{color:var(--success)}.deletions{color:var(--danger)}.file-toggle-icon{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;color:var(--muted);flex:0 0 20px}.file-toggle-icon svg{width:14px;height:14px}.file-toggle-icon .collapse-icon{display:none}.file-header[aria-expanded="true"] .file-toggle-icon .expand-icon{display:none}.file-header[aria-expanded="true"] .file-toggle-icon .collapse-icon{display:inline-flex}.file-diff{overflow:auto;border-top:1px solid var(--border)}.diff-table{width:100%;border-collapse:collapse;font-size:.9em;table-layout:fixed}.ln{width:44px;text-align:right;padding:0 6px;color:var(--muted);background:var(--subtle);border-right:1px solid var(--border)}.lc{padding:0 8px;white-space:pre}.lc pre{margin:0;font:inherit}.diff-add .lc{background:color-mix(in srgb,var(--success) 12%,transparent)}.diff-del .lc{background:color-mix(in srgb,var(--danger) 12%,transparent)}.diff-hunk td{background:color-mix(in srgb,var(--info) 10%,transparent);color:var(--info)}.clickable-line{cursor:pointer}.review-comment-card,.pending-review-comment{padding:8px 12px;background:var(--subtle)}.review-comment-card{border-left:3px solid var(--info)}.review-comment-header{display:flex;align-items:center;gap:8px}.review-comment-body{margin-top:6px}.pending-review-comment{border-left:3px dashed var(--warning);display:flex;gap:8px}.pending-body{flex:1}.remove-pending{background:none;border:0;color:var(--muted);cursor:pointer}
 .review-conversation{position:relative;margin:8px 0;border:1px solid var(--border);border-left:3px solid var(--info);border-radius:3px;background:transparent;overflow:hidden}.review-conversation.standalone{margin:8px 0}.review-conversation.conversation-resolved{border-left-color:var(--success);opacity:.86}.conversation-event{display:flex;align-items:center;gap:7px;padding:5px 10px;border-bottom:1px solid var(--border);background:color-mix(in srgb,var(--success) 7%,var(--subtle));color:var(--muted);font-size:.86em}.conversation-event>svg{width:14px;height:14px;flex:0 0 14px;color:var(--success)}.conversation-event strong{color:var(--fg)}.conversation-event-actions{display:inline-flex;align-items:center;gap:2px;margin-left:2px}.conversation-event-actions .icon-btn{width:24px;height:24px}.conversation-collapse-toggle .collapse-icon{display:none}.conversation-resolved:not(.conversation-collapsed) .conversation-collapse-toggle .expand-icon{display:none}.conversation-resolved:not(.conversation-collapsed) .conversation-collapse-toggle .collapse-icon{display:inline-flex}.conversation-resolved.conversation-collapsed .conversation-content{display:none}.conversation-resolved.conversation-collapsed .conversation-event{border-bottom:0}.conversation-root{border-left:0;background:var(--subtle);padding:10px 12px}.review-reply{position:relative;margin-left:22px;padding:9px 12px 9px 16px;border-top:1px solid var(--border);border-left:1px solid var(--border);background:color-mix(in srgb,var(--subtle) 55%,transparent)}.review-reply::before{content:"";position:absolute;left:-1px;top:17px;width:10px;border-top:1px solid var(--border)}.conversation-actions{display:inline-flex;justify-content:flex-start;align-items:center;gap:2px;margin-left:2px}.conversation-actions .icon-btn{width:24px;height:24px}.conversation-state{margin-left:4px;font-size:.82em}.reply-form{margin-left:22px;padding:9px 12px 11px 16px;border-top:1px solid var(--border);border-left:1px solid var(--border);background:color-mix(in srgb,var(--subtle) 45%,transparent)}.reply-form textarea{min-height:70px}.reply-form .inline-actions{justify-content:flex-start}.pending-review-operation{border-left-color:var(--warning)!important;background:color-mix(in srgb,var(--warning) 7%,var(--subtle))!important}.pending-review-operation .pending-operation-label{color:var(--warning);font-size:.82em}.pending-conversation-action{display:inline-flex;align-items:center;gap:5px;margin-left:4px;padding:2px 6px;border:1px dashed var(--warning);border-radius:3px;color:var(--warning);font-size:.82em}.pending-conversation-action button{border:0;background:transparent;color:inherit;cursor:pointer;padding:0 2px}.pending-review-warning{color:var(--warning);font-size:.82em}
 </style>
 </head>
 <body>
+<div class="detail-chrome">
 <header>
   <div id="title-row" class="title-row">
-    <span class="state-dot ${stateClass}" aria-hidden="true"></span>
     <span class="review-state review-${reviewStatus}">${reviewLabel}</span>
     <span class="title-prefix">Pull Request #${pr.number}</span>
-    <span id="title-text" class="title-text">${escHtml(pr.title)}</span>
+    <span id="title-text" class="title-text" title="${escHtml(pr.title)}">${escHtml(pr.title)}</span>
     <input id="title-input" class="title-input" type="text" aria-label="Pull request title" value="${escHtml(pr.title)}">
     <button id="edit-title" class="icon-btn" title="Edit title" aria-label="Edit pull request title">${editIcon}</button>
-    <button id="open-browser" class="icon-btn" title="Open in Browser" aria-label="Open pull request in browser">${externalIcon}</button>
-    <button id="refresh" class="icon-btn" title="Refresh pull request" aria-label="Refresh pull request">${refreshIcon}</button>
+    <span class="badge ${stateClass}">${stateLabel}</span>
+    <span class="activity-meta">by <strong>${escHtml(lastActivity.actor)}</strong><span>${escHtml(lastActivityDate)}</span></span>
   </div>
-  <div class="meta-row"><span class="badge ${stateClass}">${stateLabel}</span><span>by <strong>${escHtml(pr.user.login)}</strong></span><span>${escHtml(new Date(pr.created_at).toLocaleDateString())}</span>${labelsHtml}${assigneesHtml}${milestoneHtml}</div>
 </header>
-<nav class="tabs" role="tablist" aria-label="Pull request detail sections"><button class="tab active" id="inline-reviews-tab" data-tab="inline-reviews" role="tab" aria-selected="true">${inlineIcon}<span>Inline Reviews (${reviewConversations.length})</span></button><button class="tab" id="review-history-tab" data-tab="review-history" role="tab" aria-selected="false">${historyIcon}<span>Review History (${activeReviews.length})</span></button><button class="tab" id="discussion-tab" data-tab="discussion" role="tab" aria-selected="false">${discussionIcon}<span>Discussion (${comments.length})</span></button><button class="tab" id="commits-tab" data-tab="commits" role="tab" aria-selected="false">Commits (${commits.length})</button></nav>
+<nav class="tabs" role="tablist" aria-label="Pull request detail sections"><button class="tab active" id="inline-reviews-tab" data-tab="inline-reviews" role="tab" aria-selected="true">${inlineIcon}<span>Inline Reviews (${reviewConversations.length})</span></button><span class="tab-group"><button class="tab" id="review-history-tab" data-tab="review-history" role="tab" aria-selected="false">${historyIcon}<span>Review History (${activeReviews.length})</span></button><button id="review-history-sort" class="tab-sort" title="Oldest first — click for newest first" aria-label="Review history sorted oldest first">↑</button></span><button class="tab" id="discussion-tab" data-tab="discussion" role="tab" aria-selected="false">${discussionIcon}<span>Discussion (${comments.length})</span></button><button class="tab" id="commits-tab" data-tab="commits" role="tab" aria-selected="false">Commits (${commits.length})</button><span class="tab-actions"><button id="open-browser" class="icon-btn" title="Open in Browser" aria-label="Open pull request in browser">${externalIcon}</button><button id="refresh" class="icon-btn" title="Refresh pull request" aria-label="Refresh pull request">${refreshIcon}</button></span></nav>
+</div>
 <section id="tab-inline-reviews" class="tab-content active" role="tabpanel" aria-labelledby="inline-reviews-tab">
   <div id="review-fixed-footer" class="review-fixed-footer">
     <div id="inline-review-toolbar" class="inline-review-toolbar" hidden><button id="submit-review" class="btn submit-inline">Submit review changes</button><button id="discard-review" class="btn sec submit-inline">Discard pending</button><span id="pending-review-warning" class="pending-review-warning"></span></div>
@@ -912,7 +1032,7 @@ textarea,input[type="text"],select{background:var(--input-bg);color:var(--input-
   ${filesHtml}
   ${unplacedInlineHtml}
 </section>
-<section id="tab-review-history" class="tab-content" role="tabpanel" aria-labelledby="review-history-tab"><div class="review-history-toolbar"><label for="review-history-sort">Sort</label><select id="review-history-sort" aria-label="Sort review history"><option value="asc" selected>Oldest first</option><option value="desc">Newest first</option></select></div><div id="review-history-list">${reviewsHtml}</div></section>
+<section id="tab-review-history" class="tab-content" role="tabpanel" aria-labelledby="review-history-tab"><div id="review-history-list">${reviewsHtml}</div></section>
 <section id="tab-discussion" class="tab-content" role="tabpanel" aria-labelledby="discussion-tab">
   <section class="section-card"><div class="section-bar"><span>Description</span><button id="edit-body" class="icon-btn" title="Edit description" aria-label="Edit pull request description">${editIcon}</button></div><div id="body-view" class="section-content">${bodyHtml ? `<div class="markdown-body">${bodyHtml}</div>` : '<div class="empty">(no description)</div>'}</div><div id="body-editor" class="description-editor" hidden><textarea id="body-input">${escHtml(pr.body || "")}</textarea><div class="editor-actions"><button id="save-body" class="btn">Save</button><button id="cancel-body" class="btn sec">Cancel</button></div></div></section>
   <div class="section-bar"><span>Comments (${comments.length})</span></div><div>${commentsHtml}</div><div><textarea id="comment-body" aria-label="Add a comment" style="height:70px" placeholder="Write a comment..."></textarea><div class="editor-actions"><button id="post-comment" class="btn">Post Comment</button></div></div>
@@ -927,9 +1047,13 @@ let openFormKey=null;
 let titleCancelled=false;
 let currentReviewNavigationRootId=typeof savedState.currentReviewNavigationRootId==='string'?savedState.currentReviewNavigationRootId:null;
 let reviewNavigationHighlightTimer=null;
+let reviewHistorySort=savedState.reviewHistorySort==='desc'?'desc':'asc';
+let lastEditingState=false;
 const originalTitle=${JSON.stringify(pr.title)};
 function post(command,extra){vscode.postMessage(Object.assign({command},extra||{}));}
 function makePendingId(prefix){return prefix+'-'+Date.now()+'-'+Math.random().toString(36).slice(2,8);}
+function currentEditingState(){if(document.getElementById('title-row')?.classList.contains('editing'))return true;if(document.getElementById('body-editor')?.hidden===false)return true;if(Array.from(document.querySelectorAll('.comment-editor')).some((item)=>item.hidden===false))return true;if(Array.from(document.querySelectorAll('.reply-form')).some((item)=>item.hidden===false))return true;if(Array.from(document.querySelectorAll('.comment-form-row')).some((item)=>item.hidden===false))return true;const commentBody=document.getElementById('comment-body');return !!commentBody&&String(commentBody.value||'').trim().length>0;}
+function notifyEditingState(){const next=currentEditingState();if(next===lastEditingState)return;lastEditingState=next;post('editingStateChanged',{editing:next});}
 function syncReviewFooter(){const footer=document.getElementById('review-fixed-footer');const inlineTab=document.getElementById('tab-inline-reviews');const pending=document.getElementById('inline-review-toolbar');const navigation=document.getElementById('review-navigation-toolbar');const active=inlineTab?.classList.contains('active')===true;const visible=active&&((pending&&!pending.hidden)||(navigation&&!navigation.hidden));if(footer)footer.hidden=!visible;document.body.style.paddingBottom=visible&&footer?Math.ceil(footer.getBoundingClientRect().height+16)+'px':'';}function applyPendingReviewSession(session){const source=session&&typeof session==='object'?session:{};pendingReviewSession={inlineComments:Array.isArray(source.inlineComments)?source.inlineComments:[],replies:Array.isArray(source.replies)?source.replies:[],conversationActions:Array.isArray(source.conversationActions)?source.conversationActions:[]};restorePendingReviewOverlays();updateReviewNavigation();syncReviewFooter();}
 function persistExpandedResolved(){vscode.setState(Object.assign({},vscode.getState()||{},{expandedResolvedConversations:Array.from(expandedResolvedConversations)}));}
 function persistReviewNavigation(){vscode.setState(Object.assign({},vscode.getState()||{},{currentReviewNavigationRootId:currentReviewNavigationRootId}));}
@@ -951,11 +1075,12 @@ function renderPendingConversationAction(item){if(document.querySelector('[data-
 function restorePendingReviewOverlays(){document.querySelectorAll('[data-pending-id]').forEach((el)=>el.remove());let unmatched=0;pendingReviewSession.inlineComments.forEach((item)=>{if(!renderPendingInline(item))unmatched+=1;});pendingReviewSession.replies.forEach((item)=>{if(!renderPendingReply(item))unmatched+=1;});pendingReviewSession.conversationActions.forEach((item)=>{if(!renderPendingConversationAction(item))unmatched+=1;});showPendingWarning(unmatched);updatePendingCount();updateReviewNavigation();}
 function queueConversationAction(rootCommentId,action){post('queuePendingConversationAction',{action:{id:makePendingId('action'),rootCommentId:Number(rootCommentId),action:action}});}
 function showTab(name,button,persist=true){document.querySelectorAll('.tab-content').forEach((el)=>el.classList.remove('active'));document.querySelectorAll('.tab').forEach((el)=>{el.classList.remove('active');el.setAttribute('aria-selected','false');});document.getElementById('tab-'+name)?.classList.add('active');button.classList.add('active');button.setAttribute('aria-selected','true');if(persist)vscode.setState(Object.assign({},vscode.getState()||{},{activeTab:name}));requestAnimationFrame(syncReviewFooter);}
-function setTitleEditing(editing){document.getElementById('title-row').classList.toggle('editing',editing);if(editing){titleCancelled=false;const input=document.getElementById('title-input');input.focus();input.select();}}
+function setTitleEditing(editing){document.getElementById('title-row').classList.toggle('editing',editing);if(editing){titleCancelled=false;const input=document.getElementById('title-input');input.focus();input.select();}notifyEditingState();}
 function saveTitle(){if(titleCancelled)return;const input=document.getElementById('title-input');const title=(input.value||'').trim();if(!title){input.value=originalTitle;setTitleEditing(false);return;}if(title===originalTitle){setTitleEditing(false);return;}post('editTitle',{title});}
-function setBodyEditing(editing){document.getElementById('body-view').hidden=editing;document.getElementById('body-editor').hidden=!editing;if(editing)document.getElementById('body-input')?.focus();}
-function setCommentEditing(id,editing){const view=document.getElementById('comment-view-'+id);const editor=document.getElementById('comment-editor-'+id);if(view)view.hidden=editing;if(editor)editor.hidden=!editing;if(editing)document.getElementById('comment-input-'+id)?.focus();}
+function setBodyEditing(editing){document.getElementById('body-view').hidden=editing;document.getElementById('body-editor').hidden=!editing;if(editing)document.getElementById('body-input')?.focus();notifyEditingState();}
+function setCommentEditing(id,editing){const view=document.getElementById('comment-view-'+id);const editor=document.getElementById('comment-editor-'+id);if(view)view.hidden=editing;if(editor)editor.hidden=!editing;if(editing)document.getElementById('comment-input-'+id)?.focus();notifyEditingState();}
 function sortReviewHistory(direction){const list=document.getElementById('review-history-list');if(!list)return;const items=Array.from(list.querySelectorAll('.submitted-review'));items.sort((left,right)=>{const a=Number(left.dataset.reviewTime||0);const b=Number(right.dataset.reviewTime||0);return direction==='desc'?b-a:a-b;});items.forEach((item)=>list.appendChild(item));}
+function setReviewHistorySort(direction,persist=true){reviewHistorySort=direction==='desc'?'desc':'asc';sortReviewHistory(reviewHistorySort);const button=document.getElementById('review-history-sort');if(button){const newest=reviewHistorySort==='desc';button.textContent=newest?'↓':'↑';button.title=newest?'Newest first — click for oldest first':'Oldest first — click for newest first';button.setAttribute('aria-label','Review history sorted '+(newest?'newest':'oldest')+' first');}if(persist)vscode.setState(Object.assign({},vscode.getState()||{},{reviewHistorySort}));}
 document.querySelectorAll('.conversation-resolved').forEach((conversation)=>setResolvedConversationExpanded(conversation,expandedResolvedConversations.has(String(conversation.dataset.rootCommentId)),false));
 document.querySelectorAll('.conversation-collapse-toggle').forEach((button)=>button.addEventListener('click',()=>{const conversation=button.closest('.review-conversation');if(!conversation)return;setResolvedConversationExpanded(conversation,conversation.classList.contains('conversation-collapsed'));}));
 document.getElementById('previous-unresolved')?.addEventListener('click',()=>navigateReviewConversation(-1));document.getElementById('next-unresolved')?.addEventListener('click',()=>navigateReviewConversation(1));
@@ -964,17 +1089,20 @@ document.getElementById('open-browser')?.addEventListener('click',()=>post('open
 document.querySelectorAll('.edit-comment').forEach((button)=>button.addEventListener('click',()=>setCommentEditing(button.dataset.commentId,true)));document.querySelectorAll('.cancel-comment').forEach((button)=>button.addEventListener('click',()=>setCommentEditing(button.dataset.commentId,false)));document.querySelectorAll('.save-comment').forEach((button)=>button.addEventListener('click',()=>{const id=button.dataset.commentId;const input=document.getElementById('comment-input-'+id);const body=(input?.value||'').trim();if(!body)return;post('editComment',{commentId:Number(id),body});}));
 document.querySelectorAll('.reply-toggle').forEach((button)=>button.addEventListener('click',()=>{const id=button.dataset.commentId;const form=document.getElementById('reply-form-'+id);if(!form)return;form.hidden=!form.hidden;if(!form.hidden)form.querySelector('textarea')?.focus();}));document.querySelectorAll('.cancel-reply').forEach((button)=>button.addEventListener('click',()=>{const form=document.getElementById('reply-form-'+button.dataset.commentId);if(form)form.hidden=true;}));document.querySelectorAll('.submit-reply').forEach((button)=>button.addEventListener('click',()=>{const id=button.dataset.commentId;const form=document.getElementById('reply-form-'+id);const input=form?.querySelector('textarea');const body=(input?.value||'').trim();if(!body)return;const item={id:makePendingId('reply'),rootCommentId:Number(id),body:body};post('queuePendingReviewReply',{reply:item});input.value='';form.hidden=true;}));
 document.querySelectorAll('.resolve-conversation').forEach((button)=>button.addEventListener('click',()=>queueConversationAction(Number(button.dataset.commentId),'resolve')));document.querySelectorAll('.reopen-conversation').forEach((button)=>button.addEventListener('click',()=>queueConversationAction(Number(button.dataset.commentId),'reopen')));
-document.getElementById('post-comment')?.addEventListener('click',()=>{const input=document.getElementById('comment-body');const body=(input.value||'').trim();if(!body)return;post('addComment',{body});input.value='';});document.querySelectorAll('[data-tab]').forEach((button)=>button.addEventListener('click',()=>showTab(button.dataset.tab,button)));document.getElementById('submit-review')?.addEventListener('click',(event)=>{const button=event.currentTarget;if(pendingReviewCount()===0)return;button.disabled=true;post('submitPendingReview');});document.getElementById('discard-review')?.addEventListener('click',()=>post('clearPendingReviewSession'));document.getElementById('review-history-sort')?.addEventListener('change',(event)=>sortReviewHistory(event.currentTarget.value));
+document.getElementById('post-comment')?.addEventListener('click',()=>{const input=document.getElementById('comment-body');const body=(input.value||'').trim();if(!body)return;post('addComment',{body});input.value='';notifyEditingState();});document.querySelectorAll('[data-tab]').forEach((button)=>button.addEventListener('click',()=>showTab(button.dataset.tab,button)));document.getElementById('submit-review')?.addEventListener('click',(event)=>{const button=event.currentTarget;if(pendingReviewCount()===0)return;button.disabled=true;post('submitPendingReview');});document.getElementById('discard-review')?.addEventListener('click',()=>post('clearPendingReviewSession'));document.getElementById('review-history-sort')?.addEventListener('click',()=>setReviewHistorySort(reviewHistorySort==='asc'?'desc':'asc'));
 document.querySelectorAll('[data-file-toggle]').forEach((button)=>button.addEventListener('click',()=>{const index=button.dataset.fileToggle;const diff=document.getElementById('file-diff-'+index);const expanded=button.getAttribute('aria-expanded')==='true';button.setAttribute('aria-expanded',String(!expanded));if(diff)diff.hidden=expanded;}));document.querySelectorAll('.clickable-line').forEach((row)=>row.addEventListener('click',()=>{const key=row.dataset.fileIndex+'-'+row.dataset.pos;const form=document.getElementById('comment-form-'+key);if(!form)return;if(openFormKey&&openFormKey!==key){const previous=document.getElementById('comment-form-'+openFormKey);if(previous)previous.hidden=true;}form.hidden=!form.hidden;openFormKey=form.hidden?null:key;if(!form.hidden)form.querySelector('textarea')?.focus();}));document.querySelectorAll('.cancel-inline').forEach((button)=>button.addEventListener('click',(event)=>{event.stopPropagation();button.closest('tr').hidden=true;openFormKey=null;}));document.querySelectorAll('.add-inline').forEach((button)=>button.addEventListener('click',(event)=>{event.stopPropagation();const row=button.closest('tr');const input=row.querySelector('textarea');const body=(input.value||'').trim();if(!body)return;const item={id:makePendingId('inline'),path:row.dataset.path,new_position:parseInt(row.dataset.newLine||'0',10),old_position:parseInt(row.dataset.oldLine||'0',10),body:body};post('queuePendingInlineReviewComment',{comment:item});row.hidden=true;input.value='';openFormKey=null;}));document.querySelectorAll('.markdown-body a[href]').forEach((link)=>link.addEventListener('click',(event)=>{event.preventDefault();post('openExternal',{url:link.getAttribute('href')});}));
+document.addEventListener('input',()=>notifyEditingState());document.addEventListener('click',()=>requestAnimationFrame(notifyEditingState));document.addEventListener('focusout',()=>requestAnimationFrame(notifyEditingState));
 window.addEventListener('message',(event)=>{const message=event.data;if(!message)return;if(message.type==='pendingReviewSessionChanged'){applyPendingReviewSession(message.session);return;}if(message.type!=='pendingReviewSubmissionResult')return;applyPendingReviewSession(message.session);const submit=document.getElementById('submit-review');if(submit)submit.disabled=false;const result=message.result||{};const succeeded=(Array.isArray(result.succeededInlineCommentIds)?result.succeededInlineCommentIds.length:0)+(Array.isArray(result.succeededReplyIds)?result.succeededReplyIds.length:0)+(Array.isArray(result.succeededConversationActionIds)?result.succeededConversationActionIds.length:0);if(succeeded>0)post('refresh');});
-const restoredTab=typeof savedState.activeTab==='string'?savedState.activeTab:'inline-reviews';const restoredButton=document.querySelector('[data-tab="'+restoredTab+'"]');if(restoredButton)showTab(restoredTab,restoredButton,false);restorePendingReviewOverlays();updateReviewNavigation();window.addEventListener('resize',syncReviewFooter);if(typeof ResizeObserver!=='undefined'){const footer=document.getElementById('review-fixed-footer');if(footer)new ResizeObserver(syncReviewFooter).observe(footer);}requestAnimationFrame(syncReviewFooter);
+const restoredTab=typeof savedState.activeTab==='string'?savedState.activeTab:'inline-reviews';const restoredButton=document.querySelector('[data-tab="'+restoredTab+'"]');if(restoredButton)showTab(restoredTab,restoredButton,false);setReviewHistorySort(reviewHistorySort,false);restorePendingReviewOverlays();updateReviewNavigation();window.addEventListener('resize',syncReviewFooter);if(typeof ResizeObserver!=='undefined'){const footer=document.getElementById('review-fixed-footer');if(footer)new ResizeObserver(syncReviewFooter).observe(footer);}requestAnimationFrame(()=>{syncReviewFooter();notifyEditingState();});
 </script>
 </body>
 </html>`;
   }
 
   dispose(): void {
-    PRDetailPanel.panels.delete(this.pr.number);
+    PRDetailPanel.panels.delete(this.panelKey);
+    this.pollingRegistration?.dispose();
+    this.pollingRegistration = undefined;
     for (const disposable of this.disposables) disposable.dispose();
     this.disposables = [];
   }

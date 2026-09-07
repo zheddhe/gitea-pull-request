@@ -3,6 +3,7 @@ import { GiteaApiClient } from "../api/giteaApiClient";
 import { AuthManager } from "../auth/authManager";
 import { RepoManager, RepoInfo } from "../context/repoManager";
 import type { GiteaIssue } from "../api/types";
+import { warn } from "../debug/outputChannel";
 
 export type IssueFilter = "open" | "closed";
 
@@ -18,6 +19,24 @@ export function isIssueAssignedTo(issue: GiteaIssue, username: string): boolean 
     issue.assignee?.login === username ||
     issue.assignees?.some((assignee) => assignee.login === username) === true
   );
+}
+
+export function issueListFingerprint(issues: readonly GiteaIssue[]): string {
+  return issues
+    .map((issue) =>
+      [
+        issue.number,
+        issue.state,
+        issue.updated_at,
+        issue.title,
+        issue.comments,
+        issue.assignee?.login ?? "",
+        (issue.assignees ?? []).map((assignee) => assignee.login).sort().join(","),
+        (issue.labels ?? []).map((label) => `${label.id}:${label.name}:${label.color}`).sort().join(","),
+        issue.milestone?.id ?? "",
+      ].join("|"),
+    )
+    .join("\n");
 }
 
 export class IssueScopeItem extends vscode.TreeItem {
@@ -47,10 +66,7 @@ export class RepoGroupItem extends vscode.TreeItem {
 }
 
 export class AssignedIssuesItem extends vscode.TreeItem {
-  constructor(
-    public readonly issues: GiteaIssue[],
-    public readonly repoInfo: RepoInfo,
-  ) {
+  constructor(public readonly issues: GiteaIssue[], public readonly repoInfo: RepoInfo) {
     super(
       `Assigned to Me (${issues.length})`,
       issues.length > 0
@@ -81,12 +97,8 @@ export class IssueItem extends vscode.TreeItem {
     if (issue.labels?.length) {
       tooltipLines.push(`Labels: ${issue.labels.map((l) => l.name).join(", ")}`);
     }
-    if (issue.milestone) {
-      tooltipLines.push(`Milestone: ${issue.milestone.title}`);
-    }
-    if (issue.body?.trim()) {
-      tooltipLines.push("", "---", "", issue.body.trim());
-    }
+    if (issue.milestone) tooltipLines.push(`Milestone: ${issue.milestone.title}`);
+    if (issue.body?.trim()) tooltipLines.push("", "---", "", issue.body.trim());
     const tooltip = new vscode.MarkdownString(tooltipLines.join("\n\n"));
     tooltip.isTrusted = false;
     tooltip.supportHtml = false;
@@ -116,6 +128,8 @@ export class LoadMoreIssueItem extends vscode.TreeItem {
 export class IssuesProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
   private _onDidChangeTreeData = new vscode.EventEmitter<vscode.TreeItem | undefined | null | void>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
+  private readonly _onDidChangePollingState = new vscode.EventEmitter<void>();
+  readonly onDidChangePollingState = this._onDidChangePollingState.event;
   private filter: IssueFilter = "open";
   private stateMap = new Map<string, RepoIssueState>();
 
@@ -129,14 +143,46 @@ export class IssuesProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
   }
 
   getFilter(): IssueFilter { return this.filter; }
+
   setFilter(filter: IssueFilter): void {
     if (this.filter === filter) return;
     this.filter = filter;
     this.refresh();
   }
+
   refresh(): void {
     this.stateMap.clear();
     this._onDidChangeTreeData.fire();
+    this._onDidChangePollingState.fire();
+  }
+
+  hasLoadedRepos(): boolean {
+    return this.stateMap.size > 0;
+  }
+
+  async pollLoadedIssues(): Promise<{ changed: boolean }> {
+    let changed = false;
+    for (const [repoKey, state] of this.stateMap) {
+      const repoInfo = this.repoManager.getRepos().find((repo) => repo.key === repoKey);
+      if (!repoInfo || state.loading) continue;
+      try {
+        const config = vscode.workspace.getConfiguration("gitea");
+        const limit = config.get<number>("itemsPerPage") ?? 20;
+        const result = await this.api.listIssues(repoInfo, this.filter, 1, limit);
+        const previousFirstPage = state.issues.slice(0, limit);
+        const repoChanged = issueListFingerprint(previousFirstPage) !== issueListFingerprint(result.items);
+        if (repoChanged) {
+          const tail = state.page > 1 ? state.issues.slice(limit) : [];
+          state.issues = [...result.items, ...tail];
+          state.hasMore = state.page > 1 ? state.hasMore : result.hasMore;
+          changed = true;
+          this._onDidChangeTreeData.fire();
+        }
+      } catch (error) {
+        warn(`[polling] issues failed repo=${repoInfo.label}: ${(error as Error).message}`);
+      }
+    }
+    return { changed };
   }
 
   async loadMore(repoKey: string): Promise<void> {
@@ -181,14 +227,12 @@ export class IssuesProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
     return [];
   }
 
-  private async getRepoChildren(
-    repoInfo: RepoInfo,
-    username: string,
-  ): Promise<vscode.TreeItem[]> {
+  private async getRepoChildren(repoInfo: RepoInfo, username: string): Promise<vscode.TreeItem[]> {
     let state = this.stateMap.get(repoInfo.key);
     if (!state) {
       state = { issues: [], page: 1, hasMore: false, loading: false };
       this.stateMap.set(repoInfo.key, state);
+      this._onDidChangePollingState.fire();
       await this.fetchForRepo(repoInfo, state);
       return [];
     }
@@ -198,21 +242,15 @@ export class IssuesProvider implements vscode.TreeDataProvider<vscode.TreeItem> 
       return [item];
     }
 
-    const assignedIssues = state.issues.filter((issue) =>
-      isIssueAssignedTo(issue, username),
-    );
+    const assignedIssues = state.issues.filter((issue) => isIssueAssignedTo(issue, username));
     const assigned = new AssignedIssuesItem(assignedIssues, repoInfo);
-
     if (state.issues.length === 0) {
       const empty = new vscode.TreeItem(`No ${this.filter} issues`, vscode.TreeItemCollapsibleState.None);
       empty.iconPath = new vscode.ThemeIcon("info");
       return [assigned, empty];
     }
 
-    const items: vscode.TreeItem[] = [
-      assigned,
-      ...state.issues.map((issue) => new IssueItem(issue, repoInfo)),
-    ];
+    const items: vscode.TreeItem[] = [assigned, ...state.issues.map((issue) => new IssueItem(issue, repoInfo))];
     if (state.hasMore) items.push(new LoadMoreIssueItem(repoInfo.key, this.filter));
     return items;
   }

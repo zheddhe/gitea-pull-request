@@ -5,8 +5,13 @@ import type { RepoInfo } from "../../context/repoManager";
 import {
   CIJobItem,
   CIRunItem,
+  CIStepItem,
+  ciRunsFingerprint,
+  displayNameForRun,
   displayStatusForRun,
+  resolveWorkflowName,
   runSecondaryMetadata,
+  workflowLookupKeys,
 } from "../../views/ciRunsProvider";
 
 suite("CI run presentation", () => {
@@ -22,11 +27,12 @@ suite("CI run presentation", () => {
   function run(overrides: Partial<GiteaWorkflowRun> = {}): GiteaWorkflowRun {
     return {
       id: 42,
-      name: "CI",
-      display_title: "Build",
+      name: "",
+      display_title: "Fix payment validation",
       status: "completed",
       conclusion: "failure",
       workflow_id: "ci.yml",
+      path: ".gitea/workflows/ci.yml",
       run_number: 12,
       event: "push",
       run_started_at: "2026-08-22T16:30:00Z",
@@ -35,8 +41,8 @@ suite("CI run presentation", () => {
       html_url: "https://gitea.example.test/owner/repo/actions/runs/42",
       head_branch: "main",
       head_sha: "abc123",
-      head_commit: { message: "Test commit", author: { name: "Dev" } },
-      repository: {} as GiteaWorkflowRun["repository"],
+      head_commit: { message: "Fix payment validation", author: { name: "Dev" } },
+      repository: { default_branch: "main" } as GiteaWorkflowRun["repository"],
       jobs_url: "https://gitea.example.test/api/jobs",
       ...overrides,
     };
@@ -56,6 +62,87 @@ suite("CI run presentation", () => {
       ...overrides,
     };
   }
+
+  test("uses resolved workflow identity as the primary run label", () => {
+    const source = run();
+    assert.strictEqual(displayNameForRun(source, "CI"), "CI (main)");
+    const item = new CIRunItem(source, repoInfo, "CI");
+    assert.strictEqual(item.label, "CI (main)");
+    assert.strictEqual(item.description?.toString().startsWith("#12 · failure · push"), true);
+    assert.ok(item.tooltip instanceof vscode.MarkdownString);
+    assert.match(item.tooltip.value, /Run: `#12`/);
+    assert.match(item.tooltip.value, /Workflow: `.gitea\/workflows\/ci.yml`/);
+    assert.match(item.tooltip.value, /Commit title: Fix payment validation/);
+  });
+
+  test("resolves workflow metadata by id path or basename", () => {
+    const names = new Map<string, string>([
+      [".gitea/workflows/ci.yml", "CI"],
+      ["ci.yml", "CI"],
+    ]);
+    assert.strictEqual(resolveWorkflowName(run(), names), "CI");
+    assert.strictEqual(
+      resolveWorkflowName(run({ workflow_id: "", path: ".gitea/workflows/ci.yml" }), names),
+      "CI",
+    );
+    assert.deepStrictEqual(workflowLookupKeys("./.gitea/workflows/ci.yml"), [
+      "./.gitea/workflows/ci.yml",
+      ".gitea/workflows/ci.yml",
+      "ci.yml",
+    ]);
+  });
+
+  test("strips run ref suffixes before matching workflow paths", () => {
+    const names = new Map<string, string>([
+      [".gitea/workflows/ci.yml", "CI"],
+      ["ci.yml", "CI"],
+    ]);
+
+    assert.deepStrictEqual(
+      workflowLookupKeys(".gitea/workflows/ci.yml@main"),
+      [".gitea/workflows/ci.yml@main", ".gitea/workflows/ci.yml", "ci.yml"],
+    );
+    assert.deepStrictEqual(
+      workflowLookupKeys(".gitea/workflows/ci.yml@refs/pull/70/head"),
+      [
+        ".gitea/workflows/ci.yml@refs/pull/70/head",
+        ".gitea/workflows/ci.yml",
+        "ci.yml",
+      ],
+    );
+    assert.strictEqual(
+      resolveWorkflowName(
+        run({ workflow_id: "", path: ".gitea/workflows/ci.yml@refs/pull/70/head" }),
+        names,
+      ),
+      "CI",
+    );
+    assert.strictEqual(
+      displayNameForRun(
+        run({ name: "", workflow_id: "", path: ".gitea/workflows/ci.yml@main" }),
+      ),
+      "ci (main)",
+    );
+  });
+
+  test("falls back through run name path workflow id and run number", () => {
+    assert.strictEqual(
+      displayNameForRun(run({ name: "CI payment dummy" })),
+      "CI payment dummy (main)",
+    );
+    assert.strictEqual(
+      displayNameForRun(run({ name: "", workflow_id: "", path: ".gitea/workflows/ci.yml" })),
+      "ci (main)",
+    );
+    assert.strictEqual(
+      displayNameForRun(run({ name: "", workflow_id: "build.yml", path: "" })),
+      "build (main)",
+    );
+    assert.strictEqual(
+      displayNameForRun(run({ name: "", workflow_id: "", path: "" })),
+      "Run #12 (main)",
+    );
+  });
 
   test("uses conclusion as the primary status once a run is completed", () => {
     assert.strictEqual(displayStatusForRun(run()), "failure");
@@ -93,30 +180,49 @@ suite("CI run presentation", () => {
         head_commit: undefined as unknown as GiteaWorkflowRun["head_commit"],
       }),
       repoInfo,
+      "CI",
     );
 
-    assert.strictEqual(item.description, "failure");
+    assert.strictEqual(item.description, "#12 · failure");
     assert.ok(item.tooltip instanceof vscode.MarkdownString);
     assert.doesNotMatch(item.tooltip.value, /undefined/);
   });
 
-  test("surfaces failure directly on the run row", () => {
-    const item = new CIRunItem(run(), repoInfo);
-    assert.match(String(item.description), /^failure · push · /);
+  test("surfaces failure as a semantic front dot and muted text status", () => {
+    const item = new CIRunItem(run(), repoInfo, "CI");
+    assert.match(String(item.description), /^#12 · failure · push · /);
     assert.strictEqual(item.contextValue, "ciRun_complete");
-    assert.strictEqual((item.iconPath as vscode.ThemeIcon).id, "error");
+    assert.strictEqual((item.iconPath as vscode.ThemeIcon).id, "circle-filled");
+    assert.strictEqual(
+      ((item.iconPath as vscode.ThemeIcon).color as vscode.ThemeColor).id,
+      "testing.iconFailed",
+    );
     assert.ok(item.tooltip instanceof vscode.MarkdownString);
     assert.match(item.tooltip.value, /Status: `failure`/);
-    assert.match(item.tooltip.value, /Event: `push`/);
-    assert.match(item.tooltip.value, /Date:/);
   });
 
-  test("marks running runs for cancel-only inline actions", () => {
-    const item = new CIRunItem(
+  test("uses orange semantic dot for running and queued token for pending", () => {
+    const running = new CIRunItem(
       run({ status: "running", conclusion: "" }),
       repoInfo,
+      "CI",
     );
-    assert.strictEqual(item.contextValue, "ciRun_active");
+    assert.strictEqual(running.contextValue, "ciRun_active");
+    assert.strictEqual((running.iconPath as vscode.ThemeIcon).id, "circle-filled");
+    assert.strictEqual(
+      ((running.iconPath as vscode.ThemeIcon).color as vscode.ThemeColor).id,
+      "charts.orange",
+    );
+
+    const queued = new CIRunItem(
+      run({ status: "pending", conclusion: "" }),
+      repoInfo,
+      "CI",
+    );
+    assert.strictEqual(
+      ((queued.iconPath as vscode.ThemeIcon).color as vscode.ThemeColor).id,
+      "testing.iconQueued",
+    );
   });
 
   test("marks completed and active jobs with distinct action contexts", () => {
@@ -129,5 +235,34 @@ suite("CI run presentation", () => {
       ).contextValue,
       "ciJob_active",
     );
+  });
+
+  test("exposes returned step data as semantic child rows", () => {
+    const step = {
+      name: "Install dependencies",
+      status: "completed",
+      conclusion: "success",
+      number: 1,
+      started_at: "2026-08-22T16:30:00Z",
+      completed_at: "2026-08-22T16:30:10Z",
+    };
+    const item = new CIStepItem(step, job({ steps: [step] }), 42, repoInfo);
+    assert.strictEqual(item.description, "success");
+    assert.strictEqual(item.contextValue, "ciStep");
+    assert.strictEqual((item.iconPath as vscode.ThemeIcon).id, "circle-filled");
+  });
+
+  test("polling fingerprint changes when run status changes", () => {
+    const before = ciRunsFingerprint([run({ status: "running", conclusion: "" })]);
+    const after = ciRunsFingerprint([
+      run({ status: "completed", conclusion: "success", updated_at: "2026-08-22T16:32:00Z" }),
+    ]);
+    assert.notStrictEqual(before, after);
+  });
+
+  test("polling fingerprint ignores presentation-only fields", () => {
+    const before = ciRunsFingerprint([run()]);
+    const after = ciRunsFingerprint([run({ display_title: "Renamed locally" })]);
+    assert.strictEqual(before, after);
   });
 });
