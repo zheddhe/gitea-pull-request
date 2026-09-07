@@ -6,6 +6,7 @@ import {
   CIJobItem,
   CIRunItem,
   CIStepItem,
+  ciJobCacheKey,
   ciRunsFingerprint,
   displayNameForRun,
   displayStatusForRun,
@@ -225,6 +226,28 @@ suite("CI run presentation", () => {
     );
   });
 
+  test("keeps unknown run and job states read-only", () => {
+    assert.strictEqual(
+      new CIRunItem(
+        run({
+          status: "mystery" as unknown as GiteaWorkflowRun["status"],
+          conclusion: "",
+        }),
+        repoInfo,
+        "CI",
+      ).contextValue,
+      "ciRun_readonly",
+    );
+    assert.strictEqual(
+      new CIJobItem(
+        job({ status: "mystery", conclusion: "" }),
+        42,
+        repoInfo,
+      ).contextValue,
+      "ciJob_readonly",
+    );
+  });
+
   test("marks completed and active jobs with distinct action contexts", () => {
     assert.strictEqual(new CIJobItem(job(), 42, repoInfo).contextValue, "ciJob_complete");
     assert.strictEqual(
@@ -234,6 +257,15 @@ suite("CI run presentation", () => {
         repoInfo,
       ).contextValue,
       "ciJob_active",
+    );
+  });
+
+  test("scopes job cache keys by repository as well as run id", () => {
+    const otherRepo = { ...repoInfo, key: "https://gitea.example.test|owner/other" };
+    assert.notStrictEqual(ciJobCacheKey(repoInfo, 42), ciJobCacheKey(otherRepo, 42));
+    assert.strictEqual(
+      ciJobCacheKey(repoInfo, 42),
+      "https://gitea.example.test|owner/repo:42",
     );
   });
 

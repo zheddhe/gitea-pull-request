@@ -69,6 +69,16 @@ export function ciStatusLabel(
   return effective.replace(/_/g, " ");
 }
 
+export function isCITerminalState(state: CISemanticState): boolean {
+  return (
+    state === "success" ||
+    state === "warning" ||
+    state === "failure" ||
+    state === "cancelled" ||
+    state === "skipped"
+  );
+}
+
 export function runPresentation(
   status: string | undefined | null,
   conclusion: string | undefined | null,
@@ -82,7 +92,7 @@ export function runPresentation(
     statusLabel: ciStatusLabel(status, conclusion),
     actions: {
       openInBrowser: !!clean(targetUrl),
-      rerun: !active,
+      rerun: isCITerminalState(state),
       cancel: active,
       openLogs: false,
     },
@@ -101,7 +111,7 @@ export function jobPresentation(
     statusLabel: ciStatusLabel(status, conclusion),
     actions: {
       openInBrowser: !!clean(targetUrl),
-      rerun: state !== "running" && state !== "queued",
+      rerun: isCITerminalState(state),
       cancel: false,
       openLogs: true,
     },
@@ -121,7 +131,7 @@ export function externalCheckPresentation(
     statusLabel: ciStatusLabel(status),
     actions: {
       openInBrowser: !!clean(targetUrl),
-      rerun: runId !== undefined && !active,
+      rerun: runId !== undefined && isCITerminalState(state),
       cancel: runId !== undefined && active,
       openLogs: false,
     },
