@@ -229,7 +229,10 @@ suite("CI run presentation", () => {
   test("keeps unknown run and job states read-only", () => {
     assert.strictEqual(
       new CIRunItem(
-        run({ status: "mystery", conclusion: "" }),
+        run({
+          status: "mystery" as unknown as GiteaWorkflowRun["status"],
+          conclusion: "",
+        }),
         repoInfo,
         "CI",
       ).contextValue,
