@@ -1,6 +1,12 @@
 import * as vscode from "vscode";
 import { GiteaApiClient } from "../api/giteaApiClient";
-import { CIRunsProvider, CIRunItem, CIJobItem, RepoGroupItem } from "../views/ciRunsProvider";
+import {
+  CIRunsProvider,
+  CIRunItem,
+  CIJobItem,
+  CIArtifactItem,
+  RepoGroupItem,
+} from "../views/ciRunsProvider";
 import { LiveLogPanel } from "../views/liveLogPanel";
 import type { GiteaWorkflowRun } from "../api/types";
 import type { RepoInfo } from "../context/repoManager";
@@ -89,6 +95,17 @@ export function registerCICommands(
           return;
         }
         await rerunJob(api, arg, ciPolling);
+      },
+    ),
+
+    vscode.commands.registerCommand(
+      "gitea.downloadArtifact",
+      async (arg: CIArtifactItem) => {
+        if (!(arg instanceof CIArtifactItem)) {
+          vscode.window.showWarningMessage("Select an artifact to download.");
+          return;
+        }
+        await ciProvider.downloadArtifact(arg);
       },
     ),
   );
