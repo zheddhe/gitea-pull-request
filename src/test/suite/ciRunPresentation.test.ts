@@ -25,7 +25,7 @@ suite("CI run presentation", () => {
   function run(overrides: Partial<GiteaWorkflowRun> = {}): GiteaWorkflowRun {
     return {
       id: 42,
-      name: "CI payment dummy",
+      name: "",
       display_title: "Fix payment validation",
       status: "completed",
       conclusion: "failure",
@@ -39,7 +39,7 @@ suite("CI run presentation", () => {
       head_branch: "main",
       head_sha: "abc123",
       head_commit: { message: "Fix payment validation", author: { name: "Dev" } },
-      repository: {} as GiteaWorkflowRun["repository"],
+      repository: { default_branch: "main" } as GiteaWorkflowRun["repository"],
       jobs_url: "https://gitea.example.test/api/jobs",
       ...overrides,
     };
@@ -60,17 +60,23 @@ suite("CI run presentation", () => {
     };
   }
 
-  test("uses workflow name as the primary run label and keeps commit title in tooltip", () => {
+  test("uses resolved workflow identity as the primary run label", () => {
     const source = run();
-    assert.strictEqual(displayNameForRun(source), "CI payment dummy");
-    const item = new CIRunItem(source, repoInfo);
-    assert.strictEqual(item.label, "CI payment dummy");
+    assert.strictEqual(displayNameForRun(source, "CI"), "CI (main)");
+    const item = new CIRunItem(source, repoInfo, "CI");
+    assert.strictEqual(item.label, "CI (main)");
+    assert.strictEqual(item.description?.toString().startsWith("#12 · failure · push"), true);
     assert.ok(item.tooltip instanceof vscode.MarkdownString);
+    assert.match(item.tooltip.value, /Run: `#12`/);
     assert.match(item.tooltip.value, /Commit title: Fix payment validation/);
   });
 
-  test("falls back to run number when workflow name is absent", () => {
-    assert.strictEqual(displayNameForRun(run({ name: "" })), "Run #12");
+  test("falls back through run name and workflow id without losing branch identity", () => {
+    assert.strictEqual(
+      displayNameForRun(run({ name: "CI payment dummy" })),
+      "CI payment dummy (main)",
+    );
+    assert.strictEqual(displayNameForRun(run()), "ci.yml (main)");
   });
 
   test("uses conclusion as the primary status once a run is completed", () => {
@@ -109,16 +115,17 @@ suite("CI run presentation", () => {
         head_commit: undefined as unknown as GiteaWorkflowRun["head_commit"],
       }),
       repoInfo,
+      "CI",
     );
 
-    assert.strictEqual(item.description, "failure");
+    assert.strictEqual(item.description, "#12 · failure");
     assert.ok(item.tooltip instanceof vscode.MarkdownString);
     assert.doesNotMatch(item.tooltip.value, /undefined/);
   });
 
   test("surfaces failure as a semantic front dot and muted text status", () => {
-    const item = new CIRunItem(run(), repoInfo);
-    assert.match(String(item.description), /^failure · push · /);
+    const item = new CIRunItem(run(), repoInfo, "CI");
+    assert.match(String(item.description), /^#12 · failure · push · /);
     assert.strictEqual(item.contextValue, "ciRun_complete");
     assert.strictEqual((item.iconPath as vscode.ThemeIcon).id, "circle-filled");
     assert.strictEqual(
@@ -133,6 +140,7 @@ suite("CI run presentation", () => {
     const running = new CIRunItem(
       run({ status: "running", conclusion: "" }),
       repoInfo,
+      "CI",
     );
     assert.strictEqual(running.contextValue, "ciRun_active");
     assert.strictEqual((running.iconPath as vscode.ThemeIcon).id, "circle-filled");
@@ -144,6 +152,7 @@ suite("CI run presentation", () => {
     const queued = new CIRunItem(
       run({ status: "pending", conclusion: "" }),
       repoInfo,
+      "CI",
     );
     assert.strictEqual(
       ((queued.iconPath as vscode.ThemeIcon).color as vscode.ThemeColor).id,
