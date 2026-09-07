@@ -92,6 +92,39 @@ suite("CI run presentation", () => {
     ]);
   });
 
+  test("strips run ref suffixes before matching workflow paths", () => {
+    const names = new Map<string, string>([
+      [".gitea/workflows/ci.yml", "CI"],
+      ["ci.yml", "CI"],
+    ]);
+
+    assert.deepStrictEqual(
+      workflowLookupKeys(".gitea/workflows/ci.yml@main"),
+      [".gitea/workflows/ci.yml@main", ".gitea/workflows/ci.yml", "ci.yml"],
+    );
+    assert.deepStrictEqual(
+      workflowLookupKeys(".gitea/workflows/ci.yml@refs/pull/70/head"),
+      [
+        ".gitea/workflows/ci.yml@refs/pull/70/head",
+        ".gitea/workflows/ci.yml",
+        "ci.yml",
+      ],
+    );
+    assert.strictEqual(
+      resolveWorkflowName(
+        run({ workflow_id: "", path: ".gitea/workflows/ci.yml@refs/pull/70/head" }),
+        names,
+      ),
+      "CI",
+    );
+    assert.strictEqual(
+      displayNameForRun(
+        run({ name: "", workflow_id: "", path: ".gitea/workflows/ci.yml@main" }),
+      ),
+      "ci (main)",
+    );
+  });
+
   test("falls back through run name path workflow id and run number", () => {
     assert.strictEqual(
       displayNameForRun(run({ name: "CI payment dummy" })),
