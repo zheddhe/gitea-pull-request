@@ -26,6 +26,28 @@ Some remote states are intentionally exempt from unchanged backoff while work is
 
 Once the remote state becomes stable, normal adaptive cadence/backoff resumes.
 
+## Actions presentation and compatibility
+
+Phase 9.2 keeps Actions presentation capability-driven rather than tied to one Gitea/runner version.
+
+For workflow-run identity, the preferred presentation is:
+
+```text
+CI (main)    #94 · success · push
+```
+
+The resolver uses the richest metadata available from the server:
+
+1. repository workflow metadata (`GET /actions/workflows`) matched by workflow id, full workflow path, or workflow filename;
+2. the workflow name embedded in the run payload;
+3. the workflow path embedded in recent run payloads;
+4. the workflow id / filename;
+5. `Run #<number>` only as a final legacy fallback.
+
+This intentionally tolerates older or partially populated Actions payloads. Missing workflow metadata must degrade presentation only; it must not disable polling, jobs, logs, rerun/cancel, or other existing CI behavior.
+
+Job/step presentation follows the same rule: data already returned by the server is rendered, but Phase 9.2 does not assume runner-specific capabilities that are not present. Exploration of newer Gitea runner capabilities, including richer step/job behavior available on recent runners, is deferred to the later Phase 9 capability story and must retain a fallback path when the connected server/runner cannot provide them.
+
 ## Expected debug resources
 
 ```text
@@ -46,8 +68,9 @@ For a visible live resource, the expected attempt includes `delayMs=5000 reason=
 4. Keep a check pending and confirm `pull-request-readiness` continues at 5s even during review editing.
 5. Rerun a completed workflow/job and confirm `ci-runs` stays on a 5s live cadence until the new run appears and while it remains active.
 6. Open a running job's logs and confirm a `ci-logs` registration appears and unregisters after completion.
-7. Hide/show relevant views and move VS Code in/out of focus to validate adaptive context changes.
-8. Temporarily make Gitea unavailable and verify warnings appear without scheduler death or toast spam.
+7. Confirm a recent Gitea server exposing workflow metadata renders workflow identity (for example `CI (main)`) rather than only `Run #N`; verify the legacy fallback remains usable when metadata is absent.
+8. Hide/show relevant views and move VS Code in/out of focus to validate adaptive context changes.
+9. Temporarily make Gitea unavailable and verify warnings appear without scheduler death or toast spam.
 
 ## Invariants
 
@@ -57,3 +80,4 @@ For a visible live resource, the expected attempt includes `delayMs=5000 reason=
 - User editing/pending review state is not lost or interrupted by refresh.
 - Resource-specific lifecycle remains distinct from global PR lifecycle.
 - Polling failures do not terminate future scheduling.
+- Optional Actions metadata enriches presentation but never becomes a hard dependency for core CI behavior.
