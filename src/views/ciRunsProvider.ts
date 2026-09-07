@@ -181,6 +181,13 @@ export function ciRunsFingerprint(runs: readonly GiteaWorkflowRun[]): string {
     .join("|");
 }
 
+export function ciJobCacheKey(
+  repoInfo: Pick<RepoInfo, "key">,
+  runId: number,
+): string {
+  return `${repoInfo.key}:${runId}`;
+}
+
 export function formatArtifactSize(sizeInBytes?: number): string | undefined {
   if (sizeInBytes === undefined) return undefined;
   if (sizeInBytes < 1024) return `${sizeInBytes} B`;
@@ -224,8 +231,11 @@ export class CIRunItem extends vscode.TreeItem {
     this.id = `run:${repoInfo.key}:${run.id}`;
 
     const presentation = runPresentation(run.status, run.conclusion, run.html_url);
-    const isActive = presentation.state === "running" || presentation.state === "queued";
-    this.contextValue = isActive ? "ciRun_active" : "ciRun_complete";
+    this.contextValue = presentation.actions.cancel
+      ? "ciRun_active"
+      : presentation.actions.rerun
+        ? "ciRun_terminal"
+        : "ciRun_readonly";
     const secondaryMetadata = runSecondaryMetadata(run);
     this.description = [
       `#${run.run_number}`,
@@ -279,8 +289,11 @@ export class CIJobItem extends vscode.TreeItem {
         : vscode.TreeItemCollapsibleState.None,
     );
     this.id = `job:${repoInfo.key}:${runId}:${job.id}`;
-    const isActive = presentation.state === "running" || presentation.state === "queued";
-    this.contextValue = isActive ? "ciJob_active" : "ciJob_complete";
+    this.contextValue = presentation.actions.rerun
+      ? "ciJob_terminal"
+      : presentation.state === "running" || presentation.state === "queued"
+        ? "ciJob_active"
+        : "ciJob_readonly";
     this.description = presentation.statusLabel;
     this.iconPath = iconForSemanticState(presentation.state);
     const stepHint = hasSteps
@@ -393,7 +406,7 @@ export class CIRunsProvider
   readonly onDidChangePollingState = this.pollingStateEmitter.event;
 
   private stateMap = new Map<string, RepoCIState>();
-  private jobCache = new Map<number, GiteaWorkflowJob[]>();
+  private jobCache = new Map<string, GiteaWorkflowJob[]>();
   private workflowNameCache = new Map<string, Map<string, string>>();
   private readonly executionDetail: CIExecutionDetailService;
   private readonly actionsDetailApi: GiteaActionsDetailApi;
@@ -462,7 +475,7 @@ export class CIRunsProvider
       if (repoInfo) {
         this.executionDetail.invalidateRepo(repoInfo);
         this.artifactDetail.invalidateRepo(repoInfo);
-        this.jobCache.clear();
+        this.jobCache.delete(ciJobCacheKey(repoInfo, state.runs[0]?.id ?? -1));
         await this.fetchForRepo(repoInfo, state, true);
       }
       state.loading = wasLoading;
@@ -748,14 +761,15 @@ export class CIRunsProvider
     runId: number,
     repoInfo: RepoInfo,
   ): Promise<vscode.TreeItem[]> {
-    if (this.jobCache.has(runId)) {
-      return (this.jobCache.get(runId) ?? []).map(
+    const cacheKey = ciJobCacheKey(repoInfo, runId);
+    if (this.jobCache.has(cacheKey)) {
+      return (this.jobCache.get(cacheKey) ?? []).map(
         (j) => new CIJobItem(j, runId, repoInfo),
       );
     }
     try {
       const jobs = await this.api.listWorkflowJobs(repoInfo, runId);
-      this.jobCache.set(runId, jobs);
+      this.jobCache.set(cacheKey, jobs);
       return jobs.map((j) => new CIJobItem(j, runId, repoInfo));
     } catch (err) {
       vscode.window.showErrorMessage(
