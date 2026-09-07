@@ -9,7 +9,9 @@ import {
   ciRunsFingerprint,
   displayNameForRun,
   displayStatusForRun,
+  resolveWorkflowName,
   runSecondaryMetadata,
+  workflowLookupKeys,
 } from "../../views/ciRunsProvider";
 
 suite("CI run presentation", () => {
@@ -30,6 +32,7 @@ suite("CI run presentation", () => {
       status: "completed",
       conclusion: "failure",
       workflow_id: "ci.yml",
+      path: ".gitea/workflows/ci.yml",
       run_number: 12,
       event: "push",
       run_started_at: "2026-08-22T16:30:00Z",
@@ -68,15 +71,44 @@ suite("CI run presentation", () => {
     assert.strictEqual(item.description?.toString().startsWith("#12 · failure · push"), true);
     assert.ok(item.tooltip instanceof vscode.MarkdownString);
     assert.match(item.tooltip.value, /Run: `#12`/);
+    assert.match(item.tooltip.value, /Workflow: `.gitea\/workflows\/ci.yml`/);
     assert.match(item.tooltip.value, /Commit title: Fix payment validation/);
   });
 
-  test("falls back through run name and workflow id without losing branch identity", () => {
+  test("resolves workflow metadata by id path or basename", () => {
+    const names = new Map<string, string>([
+      [".gitea/workflows/ci.yml", "CI"],
+      ["ci.yml", "CI"],
+    ]);
+    assert.strictEqual(resolveWorkflowName(run(), names), "CI");
+    assert.strictEqual(
+      resolveWorkflowName(run({ workflow_id: "", path: ".gitea/workflows/ci.yml" }), names),
+      "CI",
+    );
+    assert.deepStrictEqual(workflowLookupKeys("./.gitea/workflows/ci.yml"), [
+      "./.gitea/workflows/ci.yml",
+      ".gitea/workflows/ci.yml",
+      "ci.yml",
+    ]);
+  });
+
+  test("falls back through run name path workflow id and run number", () => {
     assert.strictEqual(
       displayNameForRun(run({ name: "CI payment dummy" })),
       "CI payment dummy (main)",
     );
-    assert.strictEqual(displayNameForRun(run()), "ci.yml (main)");
+    assert.strictEqual(
+      displayNameForRun(run({ name: "", workflow_id: "", path: ".gitea/workflows/ci.yml" })),
+      "ci (main)",
+    );
+    assert.strictEqual(
+      displayNameForRun(run({ name: "", workflow_id: "build.yml", path: "" })),
+      "build (main)",
+    );
+    assert.strictEqual(
+      displayNameForRun(run({ name: "", workflow_id: "", path: "" })),
+      "Run #12 (main)",
+    );
   });
 
   test("uses conclusion as the primary status once a run is completed", () => {
