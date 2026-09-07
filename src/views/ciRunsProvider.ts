@@ -5,7 +5,6 @@ import { RepoManager, RepoInfo } from "../context/repoManager";
 import type {
   GiteaWorkflowRun,
   GiteaWorkflowJob,
-  GiteaJobStep,
 } from "../api/types";
 import { warn } from "../debug/outputChannel";
 import {
@@ -16,6 +15,9 @@ import {
   runPresentation,
   type CISemanticState,
 } from "../features/ci/domain/ciPresentation";
+import type { CIStepDetail } from "../features/ci/domain/ciExecutionDetail";
+import { normalizeStepDetails } from "../features/ci/domain/ciExecutionDetail";
+import { CIExecutionDetailService } from "../features/ci/services/ciExecutionDetailService";
 
 interface RepoCIState {
   runs: GiteaWorkflowRun[];
@@ -251,11 +253,14 @@ export class CIJobItem extends vscode.TreeItem {
     public readonly repoInfo: RepoInfo,
   ) {
     const presentation = jobPresentation(job.status, job.conclusion, job.html_url);
-    const hasSteps = (job.steps?.length ?? 0) > 0;
+    const embeddedSteps = normalizeStepDetails(job.steps);
+    const hasSteps =
+      embeddedSteps.availability === "available" && embeddedSteps.steps.length > 0;
+    const detailUnknown = embeddedSteps.availability === "unavailable";
 
     super(
       job.name,
-      hasSteps
+      hasSteps || detailUnknown
         ? vscode.TreeItemCollapsibleState.Collapsed
         : vscode.TreeItemCollapsibleState.None,
     );
@@ -264,13 +269,18 @@ export class CIJobItem extends vscode.TreeItem {
     this.contextValue = isActive ? "ciJob_active" : "ciJob_complete";
     this.description = presentation.statusLabel;
     this.iconPath = iconForSemanticState(presentation.state);
-    this.tooltip = `${job.name} — ${presentation.statusLabel}${hasSteps ? `\n\n${job.steps?.length ?? 0} step(s)` : ""}`;
+    const stepHint = hasSteps
+      ? `\n\n${embeddedSteps.steps.length} step(s)`
+      : detailUnknown
+        ? "\n\nStructured step detail loads on expand when available."
+        : "";
+    this.tooltip = `${job.name} — ${presentation.statusLabel}${stepHint}`;
   }
 }
 
 export class CIStepItem extends vscode.TreeItem {
   constructor(
-    public readonly step: GiteaJobStep,
+    public readonly step: CIStepDetail,
     public readonly job: GiteaWorkflowJob,
     public readonly runId: number,
     public readonly repoInfo: RepoInfo,
@@ -279,8 +289,21 @@ export class CIStepItem extends vscode.TreeItem {
     this.id = `step:${repoInfo.key}:${runId}:${job.id}:${step.number}`;
     this.contextValue = "ciStep";
     this.description = ciStatusLabel(step.status, step.conclusion);
-    this.iconPath = iconForStatus(step.status, step.conclusion);
+    this.iconPath = iconForStatus(step.status ?? "", step.conclusion);
     this.tooltip = `${step.name} — ${this.description}`;
+  }
+}
+
+export class CIUnavailableStepDetailItem extends vscode.TreeItem {
+  constructor() {
+    super(
+      "Structured step detail unavailable — open Job Logs for full output",
+      vscode.TreeItemCollapsibleState.None,
+    );
+    this.contextValue = "ciStepDetailUnavailable";
+    this.iconPath = new vscode.ThemeIcon("info");
+    this.tooltip =
+      "This Gitea server/job did not expose authoritative structured steps. Text logs remain the canonical execution detail.";
   }
 }
 
@@ -310,12 +333,14 @@ export class CIRunsProvider
   private stateMap = new Map<string, RepoCIState>();
   private jobCache = new Map<number, GiteaWorkflowJob[]>();
   private workflowNameCache = new Map<string, Map<string, string>>();
+  private readonly executionDetail: CIExecutionDetailService;
 
   constructor(
     private readonly api: GiteaApiClient,
     private readonly repoManager: RepoManager,
     private readonly auth: AuthManager,
   ) {
+    this.executionDetail = new CIExecutionDetailService(api);
     repoManager.onDidChange(() => this.refresh());
     auth.onDidChangeSession(() => this.refresh());
   }
@@ -324,6 +349,7 @@ export class CIRunsProvider
     this.stateMap.clear();
     this.jobCache.clear();
     this.workflowNameCache.clear();
+    this.executionDetail.clear();
     this._onDidChangeTreeData.fire();
     this.pollingStateEmitter.fire();
   }
@@ -344,7 +370,9 @@ export class CIRunsProvider
     for (const [repoKey, state] of this.stateMap) {
       const repoInfo = this.repoManager.getRepos().find((repo) => repo.key === repoKey);
       if (!repoInfo || state.loading) continue;
-      changed = (await this.pollRepoFirstPage(repoInfo, state)) || changed;
+      const repoChanged = await this.pollRepoFirstPage(repoInfo, state);
+      if (repoChanged) this.executionDetail.invalidateRepo(repoInfo);
+      changed = repoChanged || changed;
     }
     if (changed) {
       this.jobCache.clear();
@@ -362,6 +390,8 @@ export class CIRunsProvider
       state.page = 1;
       const repoInfo = this.repoManager.getRepos().find((r) => r.key === repoKey);
       if (repoInfo) {
+        this.executionDetail.invalidateRepo(repoInfo);
+        this.jobCache.clear();
         await this.fetchForRepo(repoInfo, state, true);
       }
       state.loading = wasLoading;
@@ -420,9 +450,7 @@ export class CIRunsProvider
     }
 
     if (element instanceof CIJobItem) {
-      return (element.job.steps ?? []).map(
-        (step) => new CIStepItem(step, element.job, element.runId, element.repoInfo),
-      );
+      return this.getStepsForJob(element);
     }
 
     return [];
@@ -588,7 +616,28 @@ export class CIRunsProvider
     }
   }
 
+  private async getStepsForJob(element: CIJobItem): Promise<vscode.TreeItem[]> {
+    try {
+      const result = await this.executionDetail.resolveJobSteps(
+        element.repoInfo,
+        element.job,
+      );
+      if (result.availability === "unavailable") {
+        return [new CIUnavailableStepDetailItem()];
+      }
+      return result.steps.map(
+        (step) => new CIStepItem(step, element.job, element.runId, element.repoInfo),
+      );
+    } catch (error) {
+      warn(
+        `[ci] structured step detail unavailable repo=${element.repoInfo.label} run=${element.runId} job=${element.job.id}: ${(error as Error).message}`,
+      );
+      return [new CIUnavailableStepDetailItem()];
+    }
+  }
+
   dispose(): void {
+    this.executionDetail.clear();
     this.pollingStateEmitter.dispose();
     this._onDidChangeTreeData.dispose();
   }
