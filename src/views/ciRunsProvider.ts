@@ -15,9 +15,14 @@ import {
   runPresentation,
   type CISemanticState,
 } from "../features/ci/domain/ciPresentation";
-import type { CIStepDetail } from "../features/ci/domain/ciExecutionDetail";
+import type {
+  CIArtifactDetail,
+  CIStepDetail,
+} from "../features/ci/domain/ciExecutionDetail";
 import { normalizeStepDetails } from "../features/ci/domain/ciExecutionDetail";
 import { CIExecutionDetailService } from "../features/ci/services/ciExecutionDetailService";
+import { CIArtifactDetailService } from "../features/ci/services/ciArtifactDetailService";
+import { GiteaActionsDetailApi } from "../features/ci/services/giteaActionsDetailApi";
 
 interface RepoCIState {
   runs: GiteaWorkflowRun[];
@@ -83,12 +88,6 @@ function cleanMetadata(value: string | undefined | null): string | undefined {
   return cleaned ? cleaned : undefined;
 }
 
-/**
- * Gitea/GitHub-compatible workflow run paths may append the source ref after
- * an @ separator, for example `.gitea/workflows/ci.yml@main` or
- * `.gitea/workflows/ci.yml@refs/pull/70/head`.  The ref is not part of the
- * workflow identity and must be removed before basename/path matching.
- */
 function normalizeWorkflowKey(value: string): string {
   const normalized = value.trim().replace(/\\/g, "/").replace(/^\.\//, "");
   const refSeparator = normalized.indexOf("@");
@@ -180,6 +179,21 @@ export function ciRunsFingerprint(runs: readonly GiteaWorkflowRun[]): string {
       ].join(":"),
     )
     .join("|");
+}
+
+export function formatArtifactSize(sizeInBytes?: number): string | undefined {
+  if (sizeInBytes === undefined) return undefined;
+  if (sizeInBytes < 1024) return `${sizeInBytes} B`;
+  if (sizeInBytes < 1024 * 1024) return `${(sizeInBytes / 1024).toFixed(1)} KiB`;
+  if (sizeInBytes < 1024 * 1024 * 1024) {
+    return `${(sizeInBytes / (1024 * 1024)).toFixed(1)} MiB`;
+  }
+  return `${(sizeInBytes / (1024 * 1024 * 1024)).toFixed(1)} GiB`;
+}
+
+function artifactFileName(name: string): string {
+  const safe = name.trim().replace(/[\\/:*?"<>|]+/g, "-") || "artifact";
+  return safe.toLowerCase().endsWith(".zip") ? safe : `${safe}.zip`;
 }
 
 export class RepoGroupItem extends vscode.TreeItem {
@@ -307,6 +321,54 @@ export class CIUnavailableStepDetailItem extends vscode.TreeItem {
   }
 }
 
+export class CIArtifactsGroupItem extends vscode.TreeItem {
+  constructor(
+    public readonly artifacts: readonly CIArtifactDetail[],
+    public readonly runId: number,
+    public readonly repoInfo: RepoInfo,
+  ) {
+    super(
+      `Artifacts (${artifacts.length})`,
+      vscode.TreeItemCollapsibleState.Collapsed,
+    );
+    this.id = `artifacts:${repoInfo.key}:${runId}`;
+    this.contextValue = "ciArtifactsGroup";
+    this.iconPath = new vscode.ThemeIcon("archive");
+    this.tooltip = `${artifacts.length} workflow artifact(s). Downloads are explicit and never run in the background.`;
+  }
+}
+
+export class CIArtifactItem extends vscode.TreeItem {
+  constructor(
+    public readonly artifact: CIArtifactDetail,
+    public readonly runId: number,
+    public readonly repoInfo: RepoInfo,
+  ) {
+    super(artifact.name, vscode.TreeItemCollapsibleState.None);
+    this.id = `artifact:${repoInfo.key}:${runId}:${artifact.id}`;
+    this.contextValue = artifact.expired ? "ciArtifact_expired" : "ciArtifact_available";
+    const size = formatArtifactSize(artifact.sizeInBytes);
+    this.description = [size, artifact.expired ? "expired" : undefined]
+      .filter((value): value is string => !!value)
+      .join(" · ");
+    this.iconPath = new vscode.ThemeIcon(artifact.expired ? "circle-slash" : "package");
+    const tooltip = [
+      `Artifact: ${artifact.name}`,
+      size ? `Size: ${size}` : undefined,
+      artifact.expiresAt ? `Expires: ${artifact.expiresAt}` : undefined,
+      artifact.expired ? "Status: expired/unavailable" : "Click to download explicitly.",
+    ].filter((value): value is string => !!value);
+    this.tooltip = tooltip.join("\n");
+    if (!artifact.expired) {
+      this.command = {
+        command: "gitea.downloadArtifact",
+        title: "Download Artifact",
+        arguments: [this],
+      };
+    }
+  }
+}
+
 export class CILoadMoreItem extends vscode.TreeItem {
   constructor(public readonly repoKey: string) {
     super("Load more...", vscode.TreeItemCollapsibleState.None);
@@ -334,6 +396,8 @@ export class CIRunsProvider
   private jobCache = new Map<number, GiteaWorkflowJob[]>();
   private workflowNameCache = new Map<string, Map<string, string>>();
   private readonly executionDetail: CIExecutionDetailService;
+  private readonly actionsDetailApi: GiteaActionsDetailApi;
+  private readonly artifactDetail: CIArtifactDetailService;
 
   constructor(
     private readonly api: GiteaApiClient,
@@ -341,6 +405,8 @@ export class CIRunsProvider
     private readonly auth: AuthManager,
   ) {
     this.executionDetail = new CIExecutionDetailService(api);
+    this.actionsDetailApi = new GiteaActionsDetailApi(auth);
+    this.artifactDetail = new CIArtifactDetailService(this.actionsDetailApi);
     repoManager.onDidChange(() => this.refresh());
     auth.onDidChangeSession(() => this.refresh());
   }
@@ -350,6 +416,7 @@ export class CIRunsProvider
     this.jobCache.clear();
     this.workflowNameCache.clear();
     this.executionDetail.clear();
+    this.artifactDetail.clear();
     this._onDidChangeTreeData.fire();
     this.pollingStateEmitter.fire();
   }
@@ -371,7 +438,10 @@ export class CIRunsProvider
       const repoInfo = this.repoManager.getRepos().find((repo) => repo.key === repoKey);
       if (!repoInfo || state.loading) continue;
       const repoChanged = await this.pollRepoFirstPage(repoInfo, state);
-      if (repoChanged) this.executionDetail.invalidateRepo(repoInfo);
+      if (repoChanged) {
+        this.executionDetail.invalidateRepo(repoInfo);
+        this.artifactDetail.invalidateRepo(repoInfo);
+      }
       changed = repoChanged || changed;
     }
     if (changed) {
@@ -391,6 +461,7 @@ export class CIRunsProvider
       const repoInfo = this.repoManager.getRepos().find((r) => r.key === repoKey);
       if (repoInfo) {
         this.executionDetail.invalidateRepo(repoInfo);
+        this.artifactDetail.invalidateRepo(repoInfo);
         this.jobCache.clear();
         await this.fetchForRepo(repoInfo, state, true);
       }
@@ -404,6 +475,53 @@ export class CIRunsProvider
     state.page += 1;
     const repoInfo = this.repoManager.getRepos().find((r) => r.key === repoKey);
     if (repoInfo) await this.fetchForRepo(repoInfo, state);
+  }
+
+  async downloadArtifact(item: CIArtifactItem): Promise<void> {
+    if (item.artifact.expired) {
+      vscode.window.showWarningMessage(
+        `Artifact is expired or unavailable: ${item.artifact.name}`,
+      );
+      return;
+    }
+
+    const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri;
+    const defaultUri = workspaceFolder
+      ? vscode.Uri.joinPath(workspaceFolder, artifactFileName(item.artifact.name))
+      : undefined;
+    const destination = await vscode.window.showSaveDialog({
+      defaultUri,
+      saveLabel: "Download Artifact",
+      filters: { "ZIP archive": ["zip"] },
+    });
+    if (!destination) return;
+
+    await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: `Downloading artifact ${item.artifact.name}...`,
+      },
+      async () => {
+        try {
+          const bytes = await this.actionsDetailApi.downloadWorkflowArtifact(
+            item.repoInfo,
+            item.artifact.id,
+          );
+          await vscode.workspace.fs.writeFile(destination, bytes);
+          const action = await vscode.window.showInformationMessage(
+            `Artifact downloaded: ${item.artifact.name}`,
+            "Reveal",
+          );
+          if (action === "Reveal") {
+            await vscode.commands.executeCommand("revealFileInOS", destination);
+          }
+        } catch (error) {
+          vscode.window.showErrorMessage(
+            `Artifact download failed: ${(error as Error).message}`,
+          );
+        }
+      },
+    );
   }
 
   getTreeItem(element: vscode.TreeItem): vscode.TreeItem {
@@ -446,7 +564,13 @@ export class CIRunsProvider
     }
 
     if (element instanceof CIRunItem) {
-      return this.getJobsForRun(element.run.id, element.repoInfo);
+      return this.getRunChildren(element);
+    }
+
+    if (element instanceof CIArtifactsGroupItem) {
+      return element.artifacts.map(
+        (artifact) => new CIArtifactItem(artifact, element.runId, element.repoInfo),
+      );
     }
 
     if (element instanceof CIJobItem) {
@@ -454,6 +578,31 @@ export class CIRunsProvider
     }
 
     return [];
+  }
+
+  private async getRunChildren(element: CIRunItem): Promise<vscode.TreeItem[]> {
+    const jobs = await this.getJobsForRun(element.run.id, element.repoInfo);
+    try {
+      const artifacts = await this.artifactDetail.resolveRunArtifacts(
+        element.repoInfo,
+        element.run.id,
+      );
+      if (artifacts.availability === "available" && artifacts.artifacts.length > 0) {
+        return [
+          ...jobs,
+          new CIArtifactsGroupItem(
+            artifacts.artifacts,
+            element.run.id,
+            element.repoInfo,
+          ),
+        ];
+      }
+    } catch (error) {
+      warn(
+        `[ci] artifact metadata unavailable repo=${element.repoInfo.label} run=${element.run.id}: ${(error as Error).message}`,
+      );
+    }
+    return jobs;
   }
 
   private async getRepoChildren(
@@ -638,6 +787,7 @@ export class CIRunsProvider
 
   dispose(): void {
     this.executionDetail.clear();
+    this.artifactDetail.clear();
     this.pollingStateEmitter.dispose();
     this._onDidChangeTreeData.dispose();
   }
