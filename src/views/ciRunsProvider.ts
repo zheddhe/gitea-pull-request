@@ -89,8 +89,17 @@ export function displayStatusForRun(run: GiteaWorkflowRun): string {
   return ciStatusLabel(run.status, run.conclusion);
 }
 
-export function displayNameForRun(run: GiteaWorkflowRun): string {
-  return cleanMetadata(run.name) ?? `Run #${run.run_number}`;
+export function displayNameForRun(
+  run: GiteaWorkflowRun,
+  workflowName?: string,
+): string {
+  const name =
+    cleanMetadata(workflowName) ??
+    cleanMetadata(run.name) ??
+    cleanMetadata(run.workflow_id) ??
+    `Run #${run.run_number}`;
+  const defaultBranch = cleanMetadata(run.repository?.default_branch);
+  return defaultBranch ? `${name} (${defaultBranch})` : name;
 }
 
 export function formatRunDateTime(run: GiteaWorkflowRun): string | undefined {
@@ -147,8 +156,9 @@ export class CIRunItem extends vscode.TreeItem {
   constructor(
     public readonly run: GiteaWorkflowRun,
     public readonly repoInfo: RepoInfo,
+    workflowName?: string,
   ) {
-    const displayName = displayNameForRun(run);
+    const displayName = displayNameForRun(run, workflowName);
     super(displayName, vscode.TreeItemCollapsibleState.Collapsed);
     this.id = `run:${repoInfo.key}:${run.id}`;
 
@@ -156,11 +166,16 @@ export class CIRunItem extends vscode.TreeItem {
     const isActive = presentation.state === "running" || presentation.state === "queued";
     this.contextValue = isActive ? "ciRun_active" : "ciRun_complete";
     const secondaryMetadata = runSecondaryMetadata(run);
-    this.description = [presentation.statusLabel, ...secondaryMetadata].join(" · ");
+    this.description = [
+      `#${run.run_number}`,
+      presentation.statusLabel,
+      ...secondaryMetadata,
+    ].join(" · ");
 
     const tooltipLines = [
       `**${displayName}**`,
       "",
+      `Run: \`#${run.run_number}\``,
       `Status: \`${presentation.statusLabel}\``,
     ];
     const commitTitle = cleanMetadata(run.display_title);
@@ -247,6 +262,7 @@ export class CIRunsProvider
 
   private stateMap = new Map<string, RepoCIState>();
   private jobCache = new Map<number, GiteaWorkflowJob[]>();
+  private workflowNameCache = new Map<string, Map<string, string>>();
 
   constructor(
     private readonly api: GiteaApiClient,
@@ -260,6 +276,7 @@ export class CIRunsProvider
   refresh(): void {
     this.stateMap.clear();
     this.jobCache.clear();
+    this.workflowNameCache.clear();
     this._onDidChangeTreeData.fire();
     this.pollingStateEmitter.fire();
   }
@@ -391,11 +408,38 @@ export class CIRunsProvider
       empty.iconPath = new vscode.ThemeIcon("info");
       return [empty];
     }
+    const workflowNames = await this.getWorkflowNames(repoInfo);
     const items: vscode.TreeItem[] = state.runs.map(
-      (r) => new CIRunItem(r, repoInfo),
+      (run) =>
+        new CIRunItem(
+          run,
+          repoInfo,
+          workflowNames.get(String(run.workflow_id)),
+        ),
     );
     if (state.hasMore) items.push(new CILoadMoreItem(repoInfo.key));
     return items;
+  }
+
+  private async getWorkflowNames(repoInfo: RepoInfo): Promise<Map<string, string>> {
+    const cached = this.workflowNameCache.get(repoInfo.key);
+    if (cached) return cached;
+
+    try {
+      const workflows = await this.api.listWorkflows(repoInfo);
+      const names = new Map(
+        workflows.map((workflow) => [String(workflow.id), workflow.name] as const),
+      );
+      this.workflowNameCache.set(repoInfo.key, names);
+      return names;
+    } catch (error) {
+      warn(
+        `[ci] workflow metadata unavailable repo=${repoInfo.label}: ${(error as Error).message}`,
+      );
+      const empty = new Map<string, string>();
+      this.workflowNameCache.set(repoInfo.key, empty);
+      return empty;
+    }
   }
 
   private async fetchForRepo(
