@@ -1,19 +1,11 @@
-import type { GiteaJobStep } from "../../../api/types";
+import type {
+  GiteaActionArtifact,
+  GiteaJobStep,
+} from "../../../api/types";
 
 export type CIExecutionDetailAvailability =
   | "available"
   | "unavailable";
-
-export interface CIArtifactSource {
-  id?: number;
-  name?: string;
-  size_in_bytes?: number;
-  expired?: boolean;
-  expires_at?: string;
-  created_at?: string;
-  updated_at?: string;
-  archive_download_url?: string;
-}
 
 export interface CIArtifactDetail {
   id: number;
@@ -52,7 +44,7 @@ export interface CIStepDetailResult {
  * Invalid entries are rejected rather than projected as synthetic artifacts.
  */
 export function normalizeArtifactDetail(
-  source: CIArtifactSource,
+  source: Partial<GiteaActionArtifact>,
 ): CIArtifactDetail | undefined {
   const id = positiveInteger(source.id);
   const name = nonEmpty(source.name);
@@ -71,7 +63,7 @@ export function normalizeArtifactDetail(
 }
 
 export function normalizeArtifactDetails(
-  sources: readonly CIArtifactSource[] | undefined | null,
+  sources: readonly Partial<GiteaActionArtifact>[] | undefined | null,
 ): CIArtifactDetailResult {
   if (!Array.isArray(sources)) {
     return { availability: "unavailable", artifacts: [], rejectedCount: 0 };
