@@ -81,6 +81,41 @@ function cleanMetadata(value: string | undefined | null): string | undefined {
   return cleaned ? cleaned : undefined;
 }
 
+function normalizeWorkflowKey(value: string): string {
+  return value.trim().replace(/\\/g, "/").replace(/^\.\//, "");
+}
+
+export function workflowLookupKeys(value?: string | null): string[] {
+  const cleaned = cleanMetadata(value);
+  if (!cleaned) return [];
+  const normalized = normalizeWorkflowKey(cleaned);
+  const basename = normalized.split("/").pop() ?? normalized;
+  return [...new Set([cleaned, normalized, basename])].filter(Boolean);
+}
+
+function workflowFileDisplayName(value?: string | null): string | undefined {
+  const keys = workflowLookupKeys(value);
+  if (keys.length === 0) return undefined;
+  const basename = keys[keys.length - 1];
+  const stem = basename.replace(/\.(?:ya?ml)$/i, "").trim();
+  return stem || undefined;
+}
+
+export function resolveWorkflowName(
+  run: GiteaWorkflowRun,
+  workflowNames: ReadonlyMap<string, string>,
+): string | undefined {
+  const candidates = [
+    ...workflowLookupKeys(run.workflow_id),
+    ...workflowLookupKeys(run.path),
+  ];
+  for (const candidate of candidates) {
+    const resolved = cleanMetadata(workflowNames.get(candidate));
+    if (resolved) return resolved;
+  }
+  return undefined;
+}
+
 export function isActiveRunStatus(status: string): boolean {
   return isCIActiveState(status);
 }
@@ -96,6 +131,8 @@ export function displayNameForRun(
   const name =
     cleanMetadata(workflowName) ??
     cleanMetadata(run.name) ??
+    workflowFileDisplayName(run.path) ??
+    workflowFileDisplayName(run.workflow_id) ??
     cleanMetadata(run.workflow_id) ??
     `Run #${run.run_number}`;
   const defaultBranch = cleanMetadata(run.repository?.default_branch);
@@ -178,6 +215,8 @@ export class CIRunItem extends vscode.TreeItem {
       `Run: \`#${run.run_number}\``,
       `Status: \`${presentation.statusLabel}\``,
     ];
+    const workflowPath = cleanMetadata(run.path) ?? cleanMetadata(run.workflow_id);
+    if (workflowPath) tooltipLines.push(`Workflow: \`${workflowPath}\``);
     const commitTitle = cleanMetadata(run.display_title);
     if (commitTitle && commitTitle !== displayName) {
       tooltipLines.push(`Commit title: ${commitTitle}`);
@@ -414,7 +453,7 @@ export class CIRunsProvider
         new CIRunItem(
           run,
           repoInfo,
-          workflowNames.get(String(run.workflow_id)),
+          resolveWorkflowName(run, workflowNames),
         ),
     );
     if (state.hasMore) items.push(new CILoadMoreItem(repoInfo.key));
@@ -427,9 +466,17 @@ export class CIRunsProvider
 
     try {
       const workflows = await this.api.listWorkflows(repoInfo);
-      const names = new Map(
-        workflows.map((workflow) => [String(workflow.id), workflow.name] as const),
-      );
+      const names = new Map<string, string>();
+      for (const workflow of workflows) {
+        const name = cleanMetadata(workflow.name);
+        if (!name) continue;
+        for (const key of [
+          ...workflowLookupKeys(workflow.id),
+          ...workflowLookupKeys(workflow.path),
+        ]) {
+          names.set(key, name);
+        }
+      }
       this.workflowNameCache.set(repoInfo.key, names);
       return names;
     } catch (error) {
