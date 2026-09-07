@@ -81,8 +81,16 @@ function cleanMetadata(value: string | undefined | null): string | undefined {
   return cleaned ? cleaned : undefined;
 }
 
+/**
+ * Gitea/GitHub-compatible workflow run paths may append the source ref after
+ * an @ separator, for example `.gitea/workflows/ci.yml@main` or
+ * `.gitea/workflows/ci.yml@refs/pull/70/head`.  The ref is not part of the
+ * workflow identity and must be removed before basename/path matching.
+ */
 function normalizeWorkflowKey(value: string): string {
-  return value.trim().replace(/\\/g, "/").replace(/^\.\//, "");
+  const normalized = value.trim().replace(/\\/g, "/").replace(/^\.\//, "");
+  const refSeparator = normalized.indexOf("@");
+  return refSeparator >= 0 ? normalized.slice(0, refSeparator) : normalized;
 }
 
 export function workflowLookupKeys(value?: string | null): string[] {
