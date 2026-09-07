@@ -234,7 +234,7 @@ export class CIRunItem extends vscode.TreeItem {
     this.contextValue = presentation.actions.cancel
       ? "ciRun_active"
       : presentation.actions.rerun
-        ? "ciRun_terminal"
+        ? "ciRun_complete"
         : "ciRun_readonly";
     const secondaryMetadata = runSecondaryMetadata(run);
     this.description = [
@@ -290,7 +290,7 @@ export class CIJobItem extends vscode.TreeItem {
     );
     this.id = `job:${repoInfo.key}:${runId}:${job.id}`;
     this.contextValue = presentation.actions.rerun
-      ? "ciJob_terminal"
+      ? "ciJob_complete"
       : presentation.state === "running" || presentation.state === "queued"
         ? "ciJob_active"
         : "ciJob_readonly";
@@ -475,7 +475,9 @@ export class CIRunsProvider
       if (repoInfo) {
         this.executionDetail.invalidateRepo(repoInfo);
         this.artifactDetail.invalidateRepo(repoInfo);
-        this.jobCache.delete(ciJobCacheKey(repoInfo, state.runs[0]?.id ?? -1));
+        for (const key of this.jobCache.keys()) {
+          if (key.startsWith(`${repoInfo.key}:`)) this.jobCache.delete(key);
+        }
         await this.fetchForRepo(repoInfo, state, true);
       }
       state.loading = wasLoading;
