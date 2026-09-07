@@ -195,6 +195,7 @@ export interface GiteaWorkflowJob {
   started_at: string;
   completed_at: string;
   html_url: string;
+  /** Authoritative structured execution steps when exposed by Gitea. */
   steps?: GiteaJobStep[];
   runner_name: string;
 }
@@ -206,6 +207,22 @@ export interface GiteaJobStep {
   number: number;
   started_at: string;
   completed_at: string;
+}
+
+export interface GiteaActionArtifact {
+  id: number;
+  name: string;
+  size_in_bytes?: number;
+  expired?: boolean;
+  expires_at?: string;
+  created_at?: string;
+  updated_at?: string;
+  archive_download_url?: string;
+}
+
+export interface GiteaActionArtifactsResponse {
+  total_count?: number;
+  artifacts?: GiteaActionArtifact[];
 }
 
 export interface GiteaWorkflow {
