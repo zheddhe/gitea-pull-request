@@ -10,6 +10,10 @@ import {
 import { LiveLogPanel } from "../views/liveLogPanel";
 import type { GiteaWorkflowRun } from "../api/types";
 import type { RepoInfo } from "../context/repoManager";
+import {
+  jobPresentation,
+  runPresentation,
+} from "../features/ci/domain/ciPresentation";
 import type { CIRunsPollingService } from "../features/polling/services/ciRunsPollingService";
 import type { PollingLifecycleSignalService } from "../features/polling/services/pollingLifecycleSignalService";
 import type { PollingScheduler } from "../features/polling/services/pollingScheduler";
@@ -111,12 +115,35 @@ export function registerCICommands(
   );
 }
 
+export function canRerunWorkflow(run: GiteaWorkflowRun): boolean {
+  return runPresentation(run.status, run.conclusion, run.html_url).actions.rerun;
+}
+
+export function canCancelWorkflow(run: GiteaWorkflowRun): boolean {
+  return runPresentation(run.status, run.conclusion, run.html_url).actions.cancel;
+}
+
+export function canRerunJob(item: Pick<CIJobItem, "job">): boolean {
+  return jobPresentation(
+    item.job.status,
+    item.job.conclusion,
+    item.job.html_url,
+  ).actions.rerun;
+}
+
 async function rerunWorkflow(
   api: GiteaApiClient,
   repoInfo: RepoInfo,
   run: GiteaWorkflowRun,
   ciPolling: CIRunsPollingService,
 ): Promise<void> {
+  if (!canRerunWorkflow(run)) {
+    vscode.window.showWarningMessage(
+      `Run #${run.run_number} cannot be re-run in its current state (${run.status || "unknown"}).`,
+    );
+    return;
+  }
+
   const confirm = await vscode.window.showWarningMessage(
     `Re-run workflow run #${run.run_number}?`,
     { modal: true },
@@ -146,6 +173,13 @@ async function rerunJob(
   item: CIJobItem,
   ciPolling: CIRunsPollingService,
 ): Promise<void> {
+  if (!canRerunJob(item)) {
+    vscode.window.showWarningMessage(
+      `Job ${item.job.name} cannot be re-run in its current state (${item.job.status || "unknown"}).`,
+    );
+    return;
+  }
+
   const confirm = await vscode.window.showWarningMessage(
     `Re-run job ${item.job.name}?`,
     { modal: true },
@@ -176,6 +210,13 @@ async function cancelRun(
   run: GiteaWorkflowRun,
   ciPolling: CIRunsPollingService,
 ): Promise<void> {
+  if (!canCancelWorkflow(run)) {
+    vscode.window.showWarningMessage(
+      `Run #${run.run_number} cannot be cancelled in its current state (${run.status || "unknown"}).`,
+    );
+    return;
+  }
+
   const confirm = await vscode.window.showWarningMessage(
     `Cancel run #${run.run_number}?`,
     { modal: true },
