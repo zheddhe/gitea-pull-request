@@ -227,8 +227,8 @@ function repositoryPath(pathname: string): { owner: string; repo: string } | und
     .map((segment) => segment.trim())
     .filter(Boolean);
   if (segments.length < 2) return undefined;
-  const repo = stripGitSuffix(segments.at(-1) ?? "");
-  const owner = segments.at(-2) ?? "";
+  const repo = stripGitSuffix(segments[segments.length - 1] ?? "");
+  const owner = segments[segments.length - 2] ?? "";
   return owner && repo ? { owner, repo } : undefined;
 }
 
