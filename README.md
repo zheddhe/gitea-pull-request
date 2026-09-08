@@ -169,6 +169,8 @@ PR-specific checks are also shown directly in the contextual Review view.
 
 Repository discovery is scoped to configured/authenticated Gitea endpoints. Public GitHub, GitLab, Bitbucket and Azure DevOps remotes are excluded from implicit Gitea detection, allowing their own VS Code integrations to coexist in the same workspace.
 
+Git remotes are resolved through Git and OpenSSH configuration, including HTTPS, SSH URI, SCP-like syntax, SSH aliases and custom ports. When a Git transport endpoint and a Gitea web/API endpoint genuinely differ and cannot be associated safely through those standard mechanisms, `gitea.servers[].transports` provides an explicit mapping fallback.
+
 The extension uses two Gitea-specific Activity Bar identities so the general forge browser and active PR lifecycle remain visually distinct from the official GitHub Pull Requests extension.
 
 ## Getting started
@@ -182,33 +184,37 @@ The extension uses two Gitea-specific Activity Bar identities so the general for
 
 ### Sign in
 
-Run **`Gitea: Sign In`** from the Command Palette, then provide your Gitea server URL and API token.
+Run **`Gitea: Sign In`** from the Command Palette, then provide your Gitea server URL and Personal Access Token.
 
-Recommended permissions for the full workflow:
+Recommended PAT scopes for the full workflow:
 
-| Permission | Level | Purpose |
-| --- | --- | --- |
-| **Repository** | Read & Write | Browse, review and merge pull requests |
-| **Issue** | Read & Write | Browse and manage issues |
-| **Misc** | Read | Transversal API operations |
-| **User** | Read | Identity/profile lookup |
+- `read:user`
+- `write:repository`
+- `write:issue`
 
-Read-only usage can use narrower permissions. Write operations naturally require the corresponding Gitea permission.
+For read-only usage, use `read:user`, `read:repository` and `read:issue`. The extension does not require `read:misc`, and `all` is not recommended.
+
+PAT scopes select API route families; they do not elevate the repository permissions of the Gitea account that owns the token. The extension therefore records capabilities from real API outcomes rather than assuming effective authorization from token scopes alone.
+
+Use **Authentication diagnostics** from the Gitea account menu to inspect runtime-observed capabilities. A denied capability does not disable unrelated features. See [Authentication and least privilege](docs/AUTHENTICATION.md) for the complete model, including 401/403 behavior and multi-instance credential isolation.
 
 ## Configuration
 
 | Setting | Default | Description |
 | --- | --- | --- |
-| `gitea.serverUrl` | `""` | Override the detected Gitea web/API hostname |
+| `gitea.servers` | `[]` | Configured Gitea instances; optional transport mappings cover split Git/API endpoints |
+| `gitea.defaultServer` | `""` | Optional default Gitea instance |
+| `gitea.serverUrl` | `""` | Legacy global override kept for compatibility; deterministic per-repository mapping is preferred |
 | `gitea.itemsPerPage` | `20` | Pull request / CI items per page |
 | `gitea.reviewsPerPage` | `20` | Reviews per page |
 
-`gitea.serverUrl` is useful when the Git remote hostname differs from the Gitea web/API hostname, for example an SSH alias pointing at an HTTPS Gitea instance.
+SSH aliases and custom ports are normally resolved through Git and OpenSSH configuration automatically. Use `gitea.servers[].transports` only when the effective Git transport endpoint and the Gitea web/API endpoint cannot otherwise be associated safely. See [Authentication and least privilege](docs/AUTHENTICATION.md#git-and-ssh-transport-resolution).
 
 ## Project documentation
 
 The README is intentionally focused on using the extension. Maintainer and project-process documentation lives separately:
 
+- [Authentication and least privilege](docs/AUTHENTICATION.md) — PAT scopes, capability diagnostics, multi-instance isolation and transport mapping
 - [Contributing](CONTRIBUTING.md) — development setup, validation, logging and contribution conventions
 - [Testing](docs/TESTING.md) — test layers and informational coverage baseline
 - [Releasing](docs/RELEASING.md) — packaging and release workflow
