@@ -70,8 +70,8 @@ export function sanitizeGiteaErrorDetail(value: string): string | undefined {
   // if a reverse proxy or custom Gitea error page unexpectedly echoed them.
   detail = detail
     .replace(/authorization\s*:\s*[^\r\n]+/gi, "Authorization: [redacted]")
-    .replace(/\btoken\s+[A-Za-z0-9._~+\/-]+/gi, "token [redacted]")
-    .replace(/\bbearer\s+[A-Za-z0-9._~+\/-]+/gi, "Bearer [redacted]");
+    .replace(/\btoken\s+[A-Za-z0-9._~+/-]+/gi, "token [redacted]")
+    .replace(/\bbearer\s+[A-Za-z0-9._~+/-]+/gi, "Bearer [redacted]");
 
   const MAX_DETAIL_LENGTH = 500;
   if (detail.length > MAX_DETAIL_LENGTH) {
