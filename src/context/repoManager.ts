@@ -1,4 +1,18 @@
 import * as vscode from "vscode";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import {
+  normalizeGiteaInstanceUrl,
+  parseGitRemote,
+  parseSshGOutput,
+  resolveRemoteToGiteaInstance,
+  type EffectiveSshIdentity,
+  type GiteaServerConfiguration,
+  type GiteaTransportMapping,
+  type GitRemoteTransport,
+} from "./giteaInstanceResolver";
+
+const execFileAsync = promisify(execFile);
 
 export interface RepoInfo {
   serverUrl: string;
@@ -12,65 +26,8 @@ export interface RepoInfo {
 
 interface ConfiguredServer {
   url?: string;
-}
-
-interface ParsedRemote {
-  detectedServerUrl: string;
-  owner: string;
-  repo: string;
-}
-
-const KNOWN_NON_GITEA_FORGE_HOSTS = new Set([
-  "github.com",
-  "www.github.com",
-  "gitlab.com",
-  "www.gitlab.com",
-  "bitbucket.org",
-  "www.bitbucket.org",
-  "dev.azure.com",
-  "ssh.dev.azure.com",
-]);
-
-function normalizeServerUrl(value: string): string {
-  return value.trim().replace(/\/$/, "");
-}
-
-function serverHost(value: string): string | undefined {
-  try {
-    return new URL(normalizeServerUrl(value)).host.toLowerCase();
-  } catch {
-    return undefined;
-  }
-}
-
-function parseRemote(url: string): ParsedRemote | undefined {
-  const trimmed = url.trim();
-
-  // https://[user[:pass]@]forge.example.com[:port]/owner/repo[.git]
-  const httpsMatch = trimmed.match(
-    /^https?:\/\/(?:[^@/]+@)?([^/]+)\/([^/]+)\/([^/]+?)(?:\.git)?$/,
-  );
-  if (httpsMatch) {
-    const [, hostport, owner, repo] = httpsMatch;
-    return {
-      detectedServerUrl: `https://${hostport}`,
-      owner,
-      repo,
-    };
-  }
-
-  // git@host:owner/repo[.git]
-  const sshMatch = trimmed.match(/^git@([^:]+):([^/]+)\/([^/]+?)(?:\.git)?$/);
-  if (sshMatch) {
-    const [, host, owner, repo] = sshMatch;
-    return {
-      detectedServerUrl: `https://${host}`,
-      owner,
-      repo,
-    };
-  }
-
-  return undefined;
+  label?: string;
+  transports?: GiteaTransportMapping[];
 }
 
 export function parseRemoteUrl(
@@ -79,57 +36,24 @@ export function parseRemoteUrl(
   options: {
     serverUrlOverride?: string;
     knownServerUrls?: string[];
+    configuredServers?: GiteaServerConfiguration[];
+    effectiveSsh?: EffectiveSshIdentity;
   } = {},
 ): RepoInfo | undefined {
-  const parsed = parseRemote(url);
-  if (!parsed) {
-    return undefined;
-  }
+  const remote = parseGitRemote(url);
+  if (!remote) return undefined;
 
-  const detectedHost = serverHost(parsed.detectedServerUrl);
-  if (!detectedHost) {
-    return undefined;
-  }
+  const servers = mergeServerConfigurations([
+    ...(options.configuredServers ?? []),
+    ...(options.knownServerUrls ?? []).map((serverUrl) => ({ url: serverUrl })),
+  ]);
+  const serverUrl = resolveRemoteToGiteaInstance(remote, servers, {
+    effectiveSsh: options.effectiveSsh,
+    legacyServerUrlOverride: options.serverUrlOverride,
+  });
+  if (!serverUrl) return undefined;
 
-  const knownServerUrls = (options.knownServerUrls ?? [])
-    .map(normalizeServerUrl)
-    .filter(Boolean);
-  const knownHosts = new Set(
-    knownServerUrls
-      .map(serverHost)
-      .filter((host): host is string => !!host),
-  );
-
-  // A mixed workspace may contain GitHub/GitLab/Bitbucket/Azure repositories.
-  // Never reinterpret a well-known non-Gitea forge as Gitea merely because a
-  // global Gitea server override exists. This is the key coexistence guard.
-  if (
-    KNOWN_NON_GITEA_FORGE_HOSTS.has(detectedHost) &&
-    !knownHosts.has(detectedHost)
-  ) {
-    return undefined;
-  }
-
-  const override = options.serverUrlOverride
-    ? normalizeServerUrl(options.serverUrlOverride)
-    : undefined;
-
-  // Once at least one Gitea server is known, only auto-detect remotes for those
-  // hosts. The explicit override remains a compatibility escape hatch for SSH
-  // aliases whose git hostname differs from the Gitea web/API hostname.
-  if (knownHosts.size > 0 && !knownHosts.has(detectedHost) && !override) {
-    return undefined;
-  }
-
-  const serverUrl = override ?? normalizeServerUrl(parsed.detectedServerUrl);
-  return {
-    serverUrl,
-    owner: parsed.owner,
-    repo: parsed.repo,
-    rootPath,
-    label: `${parsed.owner}/${parsed.repo}`,
-    key: `${serverUrl}|${parsed.owner}/${parsed.repo}`,
-  };
+  return repositoryInfo(serverUrl, remote, rootPath);
 }
 
 /**
@@ -221,19 +145,26 @@ export class RepoManager implements vscode.Disposable {
       config.get<string>("serverUrl")?.trim() || undefined;
     const configuredServers = config.get<ConfiguredServer[]>("servers") ?? [];
     const defaultServer = config.get<string>("defaultServer")?.trim();
-    const knownServerUrls = [
-      ...this.authenticatedServerUrls(),
-      ...configuredServers.map((server) => server.url ?? ""),
-      defaultServer ?? "",
-      serverUrlOverride ?? "",
-    ].filter(Boolean);
+    const servers = mergeServerConfigurations([
+      ...configuredServers
+        .filter((server): server is ConfiguredServer & { url: string } =>
+          !!server.url?.trim(),
+        )
+        .map((server) => ({
+          url: server.url,
+          label: server.label,
+          transports: server.transports,
+        })),
+      ...this.authenticatedServerUrls().map((url) => ({ url })),
+      ...(defaultServer ? [{ url: defaultServer }] : []),
+    ]);
 
     const gitExt = vscode.extensions.getExtension("vscode.git");
     if (gitExt && gitExt.isActive) {
       try {
         const gitApi = gitExt.exports.getAPI(1);
         // git.repositories includes every repository in a multi-root workspace.
-        // Only remotes classified as Gitea candidates are retained here.
+        // Only remotes deterministically mapped to a Gitea instance are kept.
         for (const gitRepo of gitApi.repositories) {
           const remotes: Array<{
             name: string;
@@ -241,22 +172,39 @@ export class RepoManager implements vscode.Disposable {
             pushUrl?: string;
           }> = gitRepo.state.remotes;
           const remote =
-            remotes.find((r: { name: string }) => r.name === "origin") ??
+            remotes.find((candidate: { name: string }) => candidate.name === "origin") ??
             remotes[0];
-          if (!remote) {
-            continue;
-          }
-          const url = (remote.fetchUrl ?? remote.pushUrl ?? "").trim();
-          if (!url) {
-            continue;
-          }
-          const info = parseRemoteUrl(url, gitRepo.rootUri.fsPath, {
-            serverUrlOverride,
-            knownServerUrls,
+          if (!remote) continue;
+
+          const fallbackUrl = (remote.fetchUrl ?? remote.pushUrl ?? "").trim();
+          if (!fallbackUrl) continue;
+
+          const effectiveUrl = await resolveEffectiveGitRemoteUrl(
+            gitRepo.rootUri.fsPath,
+            remote.name,
+            fallbackUrl,
+            !remote.fetchUrl && !!remote.pushUrl,
+          );
+          const parsed = parseGitRemote(effectiveUrl);
+          if (!parsed) continue;
+
+          const effectiveSsh =
+            parsed.kind === "ssh"
+              ? await resolveEffectiveSshIdentity(parsed)
+              : undefined;
+          const serverUrl = resolveRemoteToGiteaInstance(parsed, servers, {
+            effectiveSsh,
+            legacyServerUrlOverride: serverUrlOverride,
           });
-          if (!info || seen.has(info.key)) {
-            continue;
-          }
+          if (!serverUrl) continue;
+
+          const info = repositoryInfo(
+            serverUrl,
+            parsed,
+            gitRepo.rootUri.fsPath,
+          );
+          if (seen.has(info.key)) continue;
+
           info.currentBranch = gitRepo.state.HEAD?.name;
           seen.add(info.key);
           found.push(info);
@@ -266,9 +214,7 @@ export class RepoManager implements vscode.Disposable {
       }
     }
 
-    if (repositoryListsEqual(this._repos, found)) {
-      return;
-    }
+    if (repositoryListsEqual(this._repos, found)) return;
 
     this._repos = found;
     this._onDidChange.fire(found);
@@ -284,10 +230,103 @@ export class RepoManager implements vscode.Disposable {
   }
 
   dispose(): void {
-    for (const d of this.disposables) {
-      d.dispose();
-    }
+    for (const d of this.disposables) d.dispose();
     this.disposables = [];
     this._onDidChange.dispose();
   }
+}
+
+export async function resolveEffectiveGitRemoteUrl(
+  rootPath: string,
+  remoteName: string,
+  fallbackUrl: string,
+  pushOnly = false,
+): Promise<string> {
+  try {
+    const args = ["-C", rootPath, "remote", "get-url"];
+    if (pushOnly) args.push("--push");
+    args.push(remoteName);
+    const { stdout } = await execFileAsync("git", args, {
+      windowsHide: true,
+      timeout: 3_000,
+      maxBuffer: 64 * 1024,
+    });
+    return stdout.trim() || fallbackUrl;
+  } catch {
+    return fallbackUrl;
+  }
+}
+
+export async function resolveEffectiveSshIdentity(
+  remote: Extract<GitRemoteTransport, { kind: "ssh" }>,
+): Promise<EffectiveSshIdentity> {
+  const fallback: EffectiveSshIdentity = {
+    host: remote.host,
+    port: remote.port,
+    user: remote.user,
+  };
+
+  try {
+    const args = ["-G"];
+    if (remote.port !== undefined) args.push("-p", String(remote.port));
+    const target = remote.user ? `${remote.user}@${remote.host}` : remote.host;
+    args.push(target);
+    const { stdout } = await execFileAsync("ssh", args, {
+      windowsHide: true,
+      timeout: 3_000,
+      maxBuffer: 256 * 1024,
+    });
+    return parseSshGOutput(stdout) ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+export function mergeServerConfigurations(
+  servers: readonly GiteaServerConfiguration[],
+): GiteaServerConfiguration[] {
+  const merged = new Map<string, GiteaServerConfiguration>();
+  for (const server of servers) {
+    const url = normalizeGiteaInstanceUrl(server.url);
+    if (!url) continue;
+    const existing = merged.get(url);
+    if (!existing) {
+      merged.set(url, {
+        url,
+        label: server.label,
+        transports: [...(server.transports ?? [])],
+      });
+      continue;
+    }
+    if (!existing.label && server.label) existing.label = server.label;
+    const transportKeys = new Set(
+      (existing.transports ?? []).map(transportKey),
+    );
+    for (const transport of server.transports ?? []) {
+      if (!transportKeys.has(transportKey(transport))) {
+        (existing.transports ??= []).push(transport);
+        transportKeys.add(transportKey(transport));
+      }
+    }
+  }
+  return [...merged.values()];
+}
+
+function repositoryInfo(
+  serverUrl: string,
+  remote: GitRemoteTransport,
+  rootPath: string,
+): RepoInfo {
+  return {
+    serverUrl,
+    owner: remote.owner,
+    repo: remote.repo,
+    rootPath,
+    label: `${remote.owner}/${remote.repo}`,
+    key: `${serverUrl}|${remote.owner}/${remote.repo}`,
+  };
+}
+
+function transportKey(transport: GiteaTransportMapping): string {
+  return `${transport.host.trim().toLowerCase()}:${transport.port ?? "*"}`;
 }

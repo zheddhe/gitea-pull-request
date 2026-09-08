@@ -1,5 +1,11 @@
 import { AuthManager } from "../auth/authManager";
+import { capabilityRegistry } from "../auth/capabilityRegistry";
 import type { RepoInfo } from "../context/repoManager";
+import {
+  classifyHttpFailure,
+  GiteaApiError,
+  sanitizeGiteaErrorDetail,
+} from "./giteaApiError";
 import type { GiteaLabel, GiteaMilestone, GiteaUser } from "./types";
 
 /** Repository-scoped metadata shared by issue and pull-request authoring. */
@@ -21,18 +27,40 @@ export class RepositoryMetadataApi {
   private async get<T>(repoInfo: RepoInfo, suffix: string): Promise<T> {
     const { serverUrl, owner, repo } = repoInfo;
     const session = await this.auth.getSession(serverUrl);
-    if (!session) throw new Error(`Not authenticated to ${serverUrl}.`);
-
-    const response = await fetch(
-      `${serverUrl}/api/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}${suffix}`,
-      { headers: { Authorization: `token ${session.token}` } },
-    );
-    if (!response.ok) {
-      const message = await response.text();
-      throw new Error(
-        `Gitea metadata request failed: ${response.status} ${response.statusText}${message ? ` — ${message}` : ""}`,
-      );
+    const path = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}${suffix}`;
+    if (!session) {
+      throw new GiteaApiError({ kind: "unauthenticated", serverUrl, path });
     }
+
+    let response: Response;
+    try {
+      response = await fetch(`${serverUrl}/api/v1${path}`, {
+        headers: { Authorization: `token ${session.token}` },
+      });
+    } catch (cause) {
+      throw new GiteaApiError({
+        kind: "transient",
+        serverUrl,
+        path,
+        detail: "Network request failed",
+        cause,
+      });
+    }
+    if (!response.ok) {
+      const kind = classifyHttpFailure(response.status);
+      if (kind === "authorization") {
+        capabilityRegistry.markDenied(serverUrl, "repository.read");
+      }
+      throw new GiteaApiError({
+        kind,
+        serverUrl,
+        path,
+        status: response.status,
+        statusText: response.statusText,
+        detail: sanitizeGiteaErrorDetail(await response.text()),
+      });
+    }
+    capabilityRegistry.markVerified(serverUrl, "repository.read");
     return (await response.json()) as T;
   }
 }

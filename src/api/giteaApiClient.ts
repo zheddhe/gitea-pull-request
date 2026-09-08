@@ -1,6 +1,11 @@
 import { AuthManager } from "../auth/authManager";
 import type { RepoInfo } from "../context/repoManager";
 import { debug, trace, warn } from "../debug/outputChannel";
+import {
+  classifyHttpFailure,
+  GiteaApiError,
+  sanitizeGiteaErrorDetail,
+} from "./giteaApiError";
 import type {
   GiteaUser,
   GiteaPullRequest,
@@ -25,32 +30,7 @@ export class GiteaApiClient {
     path: string,
     options: RequestInit = {},
   ): Promise<T> {
-    const session = await this.auth.getSession(serverUrl);
-    if (!session) {
-      throw new Error(
-        `Not authenticated to ${serverUrl}. Use "Gitea: Sign In" to authenticate.`,
-      );
-    }
-    const url = `${serverUrl}/api/v1${path}`;
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-      Authorization: `token ${session.token}`,
-      ...((options.headers as Record<string, string>) ?? {}),
-    };
-    const response = await fetch(url, { ...options, headers });
-    if (!response.ok) {
-      const text = await response.text();
-      let details = "";
-      try {
-        const body = text ? JSON.parse(text) : undefined;
-        details = body?.message ? ` — ${body.message}` : "";
-      } catch {
-        details = text ? ` — ${text}` : "";
-      }
-      throw new Error(
-        `Gitea API error: ${response.status} ${response.statusText}${details}`,
-      );
-    }
+    const response = await this.authenticatedFetch(serverUrl, path, options);
     if (response.status === 204) return undefined as T;
     const body = await response.text();
     if (!body.trim()) return undefined as T;
@@ -58,22 +38,52 @@ export class GiteaApiClient {
   }
 
   private async requestText(serverUrl: string, path: string): Promise<string> {
+    const response = await this.authenticatedFetch(serverUrl, path);
+    return response.text();
+  }
+
+  private async authenticatedFetch(
+    serverUrl: string,
+    path: string,
+    options: RequestInit = {},
+  ): Promise<Response> {
     const session = await this.auth.getSession(serverUrl);
     if (!session) {
-      throw new Error(
-        `Not authenticated to ${serverUrl}. Use "Gitea: Sign In" to authenticate.`,
-      );
+      throw new GiteaApiError({ kind: "unauthenticated", serverUrl, path });
     }
+
     const url = `${serverUrl}/api/v1${path}`;
-    const response = await fetch(url, {
-      headers: { Authorization: `token ${session.token}` },
-    });
-    if (!response.ok) {
-      throw new Error(
-        `Gitea API error: ${response.status} ${response.statusText}`,
-      );
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      Authorization: `token ${session.token}`,
+      ...((options.headers as Record<string, string>) ?? {}),
+    };
+
+    let response: Response;
+    try {
+      response = await fetch(url, { ...options, headers });
+    } catch (cause) {
+      throw new GiteaApiError({
+        kind: "transient",
+        serverUrl,
+        path,
+        detail: "Network request failed",
+        cause,
+      });
     }
-    return response.text();
+
+    if (!response.ok) {
+      const detail = sanitizeGiteaErrorDetail(await response.text());
+      throw new GiteaApiError({
+        kind: classifyHttpFailure(response.status),
+        serverUrl,
+        path,
+        status: response.status,
+        statusText: response.statusText,
+        detail,
+      });
+    }
+    return response;
   }
 
   async getCurrentUser(serverUrl: string): Promise<GiteaUser> {
