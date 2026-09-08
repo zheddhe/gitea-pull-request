@@ -22,7 +22,19 @@ Browse pull requests by repository, activate one into a dedicated **Gitea Pull R
 - guided merge-conflict preparation using native Git and VS Code Source Control / Merge Editor;
 - explicit post-merge branch cleanup.
 
-![Pull request review with diff, checks and merge readiness](resources/screenshots/pull-request-review.png)
+The PR workspace deliberately exposes two complementary review surfaces. The **overview** keeps the complete pull-request state visible — files, checks, review state and merge readiness — while **inline review** moves the discussion directly into the native VS Code diff for precise file-level feedback.
+
+#### Pull request overview
+
+Use the overview to understand the PR as a whole, navigate changed files, follow review progress and decide whether it is ready to merge.
+
+![Pull request overview with files, checks, review state and merge readiness](resources/screenshots/pull-request-review-overview.png)
+
+#### Inline review
+
+Open a changed file in the authoritative PR snapshot to review the diff and manage inline conversations without leaving VS Code. Comments can be prepared as part of the current review transaction, and existing conversations support Reply, Resolve and Reopen when the connected Gitea version exposes those capabilities.
+
+![Inline pull request review in the native VS Code diff](resources/screenshots/pull-request-review-inline.png)
 
 Review and local editing remain deliberately separate:
 
@@ -37,6 +49,10 @@ editable and authoritative for modifications/tests
 ```
 
 When a PR source branch maps safely to the current workspace, the extension can explicitly open the working file, checkout the source branch, or open an editable local diff. It never silently changes branches just because a review file was opened.
+
+After merge, the contextual workspace keeps the final repository cleanup explicit: return to the base branch and either keep or delete the merged source branch.
+
+![Post-merge workflow with base checkout and source branch cleanup](resources/screenshots/post-merge-workflow.png)
 
 ### Issues
 
