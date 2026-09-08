@@ -42,7 +42,7 @@ export class StatusBarManager implements vscode.Disposable {
       this.authItem.text = `$(account) ${username} @ ${host}`;
       this.authItem.tooltip = `Gitea: ${username} @ ${serverUrl} (PAT) — click to manage`;
     } else {
-      this.authItem.text = `$(accounts-view-bar-icon) Gitea: ${servers.length} accounts`;
+      this.authItem.text = `$(account) Gitea: ${servers.length} accounts`;
       this.authItem.tooltip = `Gitea: ${servers.length} authenticated instances — click to manage`;
     }
     this.authItem.command = "gitea.manageAccounts";
