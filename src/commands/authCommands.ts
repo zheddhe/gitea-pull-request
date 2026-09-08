@@ -1,6 +1,11 @@
 import * as vscode from "vscode";
 import { AuthManager } from "../auth/authManager";
+import {
+  capabilityRegistry,
+  type GiteaCapability,
+} from "../auth/capabilityRegistry";
 import { GiteaApiClient } from "../api/giteaApiClient";
+import { isGiteaApiError } from "../api/giteaApiError";
 import { RepoManager } from "../context/repoManager";
 import { PullRequestProvider } from "../views/pullRequestProvider";
 import { CIRunsProvider } from "../views/ciRunsProvider";
@@ -14,7 +19,7 @@ interface AccountQuickPickItem extends vscode.QuickPickItem {
 export function registerAuthCommands(
   context: vscode.ExtensionContext,
   auth: AuthManager,
-  _api: GiteaApiClient,
+  api: GiteaApiClient,
   repoManager: RepoManager,
   prProvider: PullRequestProvider,
   ciProvider: CIRunsProvider,
@@ -33,6 +38,7 @@ export function registerAuthCommands(
     vscode.commands.registerCommand("gitea.manageAccounts", async () => {
       await cmdManageAccounts(
         auth,
+        api,
         repoManager,
         prProvider,
         ciProvider,
@@ -95,6 +101,8 @@ async function cmdSignIn(
     async () => {
       try {
         const account = await auth.signIn(serverUrl, token);
+        capabilityRegistry.reset(account.serverUrl);
+        capabilityRegistry.markVerified(account.serverUrl, "identity.read");
         await vscode.commands.executeCommand(
           "setContext",
           "gitea.authenticated",
@@ -140,6 +148,7 @@ async function cmdSignOut(
 
   const username = accounts[serverUrl]?.username;
   await auth.signOut(serverUrl);
+  capabilityRegistry.reset(serverUrl);
   await repoManager.detect();
   const remaining = auth.getServerUrls();
   await vscode.commands.executeCommand(
@@ -155,6 +164,7 @@ async function cmdSignOut(
 
 async function cmdManageAccounts(
   auth: AuthManager,
+  api: GiteaApiClient,
   repoManager: RepoManager,
   prProvider: PullRequestProvider,
   ciProvider: CIRunsProvider,
@@ -204,6 +214,11 @@ async function cmdManageAccounts(
   const accountAction = await vscode.window.showQuickPick(
     [
       {
+        label: "$(pulse) Authentication diagnostics",
+        detail: "Probe safe read capabilities and show observed permissions",
+        action: "diagnostics" as const,
+      },
+      {
         label: "$(key) Replace Personal Access Token",
         action: "replace" as const,
       },
@@ -216,7 +231,14 @@ async function cmdManageAccounts(
   );
   if (!accountAction) return;
 
-  if (accountAction.action === "replace") {
+  if (accountAction.action === "diagnostics") {
+    await showAuthenticationDiagnostics(
+      api,
+      repoManager,
+      choice.serverUrl,
+      accounts[choice.serverUrl]?.username,
+    );
+  } else if (accountAction.action === "replace") {
     await cmdSignIn(
       auth,
       repoManager,
@@ -235,6 +257,116 @@ async function cmdManageAccounts(
       choice.serverUrl,
     );
   }
+}
+
+async function showAuthenticationDiagnostics(
+  api: GiteaApiClient,
+  repoManager: RepoManager,
+  serverUrl: string,
+  username?: string,
+): Promise<void> {
+  await vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      title: `Checking Gitea capabilities for ${serverUrl}`,
+    },
+    async () => {
+      await observeReadCapability(
+        serverUrl,
+        "identity.read",
+        () => api.getCurrentUser(serverUrl),
+      );
+
+      const repo = repoManager
+        .getRepos()
+        .find((candidate) => candidate.serverUrl === serverUrl);
+      if (repo) {
+        await observeReadCapability(
+          serverUrl,
+          "repository.read",
+          () => api.listPullRequests(repo, "open", 1, 1),
+        );
+        await observeReadCapability(
+          serverUrl,
+          "issues.read",
+          () => api.listIssues(repo, "open", 1, 1),
+        );
+        await observeReadCapability(
+          serverUrl,
+          "actions.read",
+          () => api.listWorkflowRuns(repo, undefined, 1, 1),
+          true,
+        );
+      }
+    },
+  );
+
+  const items: vscode.QuickPickItem[] = [
+    {
+      label: `$(account) ${username ?? "Gitea account"}`,
+      description: serverUrl,
+      detail: "Authentication method: PAT",
+    },
+    ...capabilityRegistry.snapshot(serverUrl).map(({ capability, state }) => ({
+      label: `${stateIcon(state)} ${capability}`,
+      description: state,
+      detail: capabilityDetail(capability, state),
+    })),
+  ];
+
+  await vscode.window.showQuickPick(items, {
+    placeHolder: "Gitea authentication diagnostics — observed runtime state",
+    canPickMany: false,
+  });
+}
+
+async function observeReadCapability(
+  serverUrl: string,
+  capability: GiteaCapability,
+  operation: () => Promise<unknown>,
+  unsupportedOnMissingEndpoint = false,
+): Promise<void> {
+  try {
+    await operation();
+    capabilityRegistry.markVerified(serverUrl, capability);
+  } catch (error) {
+    if (!isGiteaApiError(error)) return;
+    if (error.kind === "authorization") {
+      capabilityRegistry.markDenied(serverUrl, capability);
+      return;
+    }
+    if (
+      unsupportedOnMissingEndpoint &&
+      error.kind === "api" &&
+      (error.status === 404 || error.status === 405)
+    ) {
+      capabilityRegistry.markUnsupported(serverUrl, capability);
+    }
+  }
+}
+
+function stateIcon(state: string): string {
+  switch (state) {
+    case "verified":
+      return "$(pass-filled)";
+    case "denied":
+      return "$(error)";
+    case "unsupported":
+      return "$(circle-slash)";
+    default:
+      return "$(question)";
+  }
+}
+
+function capabilityDetail(capability: GiteaCapability, state: string): string {
+  if (state === "unknown") {
+    return capability.endsWith(".write")
+      ? "Not observed yet; no write action is performed by diagnostics"
+      : "No conclusive runtime observation yet";
+  }
+  if (state === "verified") return "Verified by a successful Gitea API call";
+  if (state === "denied") return "Denied by Gitea (403) for the active account";
+  return "Endpoint is not available on this Gitea instance";
 }
 
 async function cmdRescanRepositories(
