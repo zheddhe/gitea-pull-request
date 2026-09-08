@@ -20,7 +20,7 @@ export function getOutputChannel(): vscode.LogOutputChannel | undefined {
 export function sanitizeLogMessage(message: string): string {
   return message
     .replace(/(authorization\s*[:=]\s*)(?:token|bearer)\s+[^\s,;]+/gi, "$1[REDACTED]")
-    .replace(/\b(?:token|bearer)\s+[A-Za-z0-9._~+\/-]+/gi, "token [REDACTED]")
+    .replace(/\b(?:token|bearer)\s+[A-Za-z0-9._~+/-]+/gi, "token [REDACTED]")
     .replace(/([?&](?:access_token|token)=)[^&\s]+/gi, "$1[REDACTED]");
 }
 
