@@ -50,17 +50,40 @@
         "gitea.servers": {
           "type": "array",
           "default": [],
-          "description": "List of Gitea server configurations",
+          "description": "Configured Gitea instances and optional explicit Git transport mappings",
           "items": {
             "type": "object",
             "properties": {
               "url": {
                 "type": "string",
-                "description": "Gitea server base URL"
+                "description": "Canonical Gitea web/API base URL"
               },
               "label": {
                 "type": "string",
                 "description": "Display label for this server"
+              },
+              "transports": {
+                "type": "array",
+                "default": [],
+                "description": "Optional transport endpoints that map to this Gitea instance when Git/OpenSSH resolution cannot associate them automatically",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "host": {
+                      "type": "string",
+                      "description": "Effective Git transport hostname or IP address"
+                    },
+                    "port": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 65535,
+                      "description": "Optional transport port, for example 2222 for SSH"
+                    }
+                  },
+                  "required": [
+                    "host"
+                  ]
+                }
               }
             },
             "required": [
@@ -71,7 +94,7 @@
         "gitea.defaultServer": {
           "type": "string",
           "default": "",
-          "description": "Default Gitea server URL"
+          "description": "Optional default Gitea server URL used during repository resolution"
         },
         "gitea.reviewsPerPage": {
           "type": "number",
@@ -81,7 +104,8 @@
         "gitea.serverUrl": {
           "type": "string",
           "default": "",
-          "description": "Override the Gitea server URL for all detected repositories. Use this when your git remote uses a different hostname than the web UI (e.g. SSH host vs HTTPS host). Example: https://code.example.com"
+          "description": "Legacy global Gitea server override. Prefer per-instance repository resolution through gitea.servers.",
+          "deprecationMessage": "Legacy global override. Prefer gitea.servers and optional per-instance transports mappings."
         },
         "gitea.itemsPerPage": {
           "type": "number",
@@ -230,6 +254,14 @@
         "title": "Gitea: Add Server"
       },
       {
+        "command": "gitea.manageAccounts",
+        "title": "Gitea: Manage Accounts"
+      },
+      {
+        "command": "gitea.rescanRepositories",
+        "title": "Gitea: Re-scan Repositories"
+      },
+      {
         "command": "gitea.refreshPRs",
         "title": "Gitea: Refresh Pull Requests",
         "icon": "$(refresh)"
@@ -362,10 +394,6 @@
         "command": "gitea.rerunJob",
         "title": "Gitea: Re-run Job",
         "icon": "$(debug-rerun)"
-      },
-      {
-        "command": "gitea.switchRepo",
-        "title": "Gitea: Switch Repository"
       },
       {
         "command": "gitea.openIssue",
