@@ -11,50 +11,54 @@ export function getOutputChannel(): vscode.LogOutputChannel | undefined {
   return channel;
 }
 
+/**
+ * Defense-in-depth sanitization for every diagnostic surface.
+ * Phase 9.3 already sanitizes typed API failures before they escape the API
+ * boundary; this additionally prevents accidental credential leakage from
+ * future or legacy call sites.
+ */
+export function sanitizeLogMessage(message: string): string {
+  return message
+    .replace(/(authorization\s*[:=]\s*)(?:token|bearer)\s+[^\s,;]+/gi, "$1[REDACTED]")
+    .replace(/\b(?:token|bearer)\s+[A-Za-z0-9._~+\/-]+/gi, "token [REDACTED]")
+    .replace(/([?&](?:access_token|token)=)[^&\s]+/gi, "$1[REDACTED]");
+}
+
+function sanitized(message: string): string {
+  return sanitizeLogMessage(message);
+}
+
 export function trace(message: string): void {
-  channel?.trace(message);
+  channel?.trace(sanitized(message));
 }
 
 export function debug(message: string): void {
-  channel?.debug(message);
+  channel?.debug(sanitized(message));
 }
 
 export function info(message: string): void {
-  channel?.info(message);
+  channel?.info(sanitized(message));
 }
 
 export function warn(message: string): void {
-  channel?.warn(message);
+  channel?.warn(sanitized(message));
 }
 
 export function error(message: string | Error): void {
-  channel?.error(message);
+  if (message instanceof Error) {
+    channel?.error(new Error(sanitized(message.message)));
+    return;
+  }
+  channel?.error(sanitized(message));
 }
 
 /**
- * Compatibility adapter for remaining legacy call sites. New code must use an
- * explicit level helper above. Keep every emitted line component-prefixed so
- * VS Code LogOutputChannel output remains searchable and consistent.
+ * Temporary compatibility boundary for remaining legacy call sites.
+ *
+ * It deliberately performs no text-based level inference: legacy diagnostics
+ * are debug-only until their call sites are migrated to an explicit level.
+ * No production code should add new calls to this helper.
  */
 export function log(message: string): void {
-  const prUpdate = /^PR update: #(\d+)$/.exec(message);
-  if (prUpdate) {
-    debug(`[pr-detail] update pr=#${prUpdate[1]}`);
-    return;
-  }
-
-  if (message.startsWith("PR unknown message:")) {
-    warn(`[pr-detail] ${message}`);
-    return;
-  }
-  if (message.startsWith("PR link rejected:")) {
-    warn(`[pr-detail] ${message}`);
-    return;
-  }
-  if (message.startsWith("PR Markdown renderer fallback:")) {
-    warn(`[pr-detail] ${message}`);
-    return;
-  }
-
-  info(message.startsWith("[") ? message : `[legacy] ${message}`);
+  debug(message.startsWith("[") ? message : `[legacy] ${message}`);
 }
