@@ -16,7 +16,7 @@ import type {
   GiteaReviewComment,
 } from "../../../api/types";
 import type { RepoInfo } from "../../../context/repoManager";
-import { log } from "../../../debug/outputChannel";
+import { debug, trace, warn } from "../../../debug/outputChannel";
 import {
   evaluateGiteaServerCapabilities,
   type GiteaServerCapabilities,
@@ -48,9 +48,7 @@ export class PullRequestReviewApi {
 
   constructor(private readonly auth: AuthManager) {}
 
-  async getServerCapabilities(
-    repoInfo: RepoInfo,
-  ): Promise<GiteaServerCapabilities> {
+  async getServerCapabilities(repoInfo: RepoInfo): Promise<GiteaServerCapabilities> {
     const cached = this.capabilitiesByServer.get(repoInfo.serverUrl);
     if (cached) return cached;
 
@@ -58,16 +56,13 @@ export class PullRequestReviewApi {
     const version = typeof result?.version === "string" ? result.version : "";
     const capabilities = evaluateGiteaServerCapabilities(version);
     this.capabilitiesByServer.set(repoInfo.serverUrl, capabilities);
-    log(
-      `[review-api] server capabilities version=${version || "unknown"} inlineReviewResolution=${capabilities.inlineReviewResolution} inlineReviewReplies=${capabilities.inlineReviewReplies}`,
+    debug(
+      `[review-api] capabilities server=${repoInfo.serverUrl} version=${version || "unknown"} inlineReviewResolution=${capabilities.inlineReviewResolution} inlineReviewReplies=${capabilities.inlineReviewReplies}`,
     );
     return capabilities;
   }
 
-  async getCombinedStatus(
-    repoInfo: RepoInfo,
-    ref: string,
-  ): Promise<GiteaCombinedStatus> {
+  async getCombinedStatus(repoInfo: RepoInfo, ref: string): Promise<GiteaCombinedStatus> {
     const status = await this.request<GiteaCombinedStatus & RawStatusLike>(
       repoInfo,
       `/repos/${repoInfo.owner}/${repoInfo.repo}/commits/${encodeURIComponent(ref)}/status`,
@@ -81,11 +76,10 @@ export class PullRequestReviewApi {
       const item = rawItem as RawStatusLike;
       const normalizedState = normalizeStatusState(item.state, item.status);
       const context = typeof item.context === "string" ? item.context : "";
-      const description =
-        typeof item.description === "string" ? item.description : "";
+      const description = typeof item.description === "string" ? item.description : "";
 
-      log(
-        `[review-api] check[${index}] context=${JSON.stringify(context)} rawState=${formatLogValue(item.state)} rawStatus=${formatLogValue(item.status)} normalized=${normalizedState} description=${JSON.stringify(description)}`,
+      trace(
+        `[review-api] check index=${index} context=${JSON.stringify(context)} rawState=${formatLogValue(item.state)} rawStatus=${formatLogValue(item.status)} normalized=${normalizedState} description=${JSON.stringify(description)}`,
       );
 
       return {
@@ -104,35 +98,24 @@ export class PullRequestReviewApi {
       total_count:
         typeof status?.total_count === "number" ? status.total_count : statuses.length,
     };
-    log(
-      `[review-api] normalized combined status ref=${ref} rawState=${formatLogValue(status?.state)} rawStatus=${formatLogValue(status?.status)} state=${normalized.state} checks=${statuses.length}`,
+    debug(
+      `[review-api] combined-status repo=${repoInfo.label} ref=${ref} state=${normalized.state} checks=${statuses.length}`,
     );
     return normalized;
   }
 
-  async getRepositoryMergeSettings(
-    repoInfo: RepoInfo,
-  ): Promise<RepositoryMergeSettings> {
-    return this.request<RepositoryMergeSettings>(
-      repoInfo,
-      `/repos/${repoInfo.owner}/${repoInfo.repo}`,
-    );
+  async getRepositoryMergeSettings(repoInfo: RepoInfo): Promise<RepositoryMergeSettings> {
+    return this.request<RepositoryMergeSettings>(repoInfo, `/repos/${repoInfo.owner}/${repoInfo.repo}`);
   }
 
-  async getBranchMergePolicy(
-    repoInfo: RepoInfo,
-    branch: string,
-  ): Promise<BranchMergePolicy> {
+  async getBranchMergePolicy(repoInfo: RepoInfo, branch: string): Promise<BranchMergePolicy> {
     return this.request<BranchMergePolicy>(
       repoInfo,
       `/repos/${repoInfo.owner}/${repoInfo.repo}/branches/${encodeURIComponent(branch)}`,
     );
   }
 
-  async listReviews(
-    repoInfo: RepoInfo,
-    number: number,
-  ): Promise<GiteaReview[]> {
+  async listReviews(repoInfo: RepoInfo, number: number): Promise<GiteaReview[]> {
     const reviews = await this.request<GiteaReview[]>(
       repoInfo,
       `/repos/${repoInfo.owner}/${repoInfo.repo}/pulls/${number}/reviews`,
@@ -141,34 +124,25 @@ export class PullRequestReviewApi {
       ? reviews.filter(Boolean).map((review) => ({
           ...review,
           body: typeof review.body === "string" ? review.body : "",
-          submitted_at:
-            typeof review.submitted_at === "string" ? review.submitted_at : "",
+          submitted_at: typeof review.submitted_at === "string" ? review.submitted_at : "",
           stale: review.stale === true,
           user: review.user
             ? {
                 ...review.user,
-                login:
-                  typeof review.user.login === "string" ? review.user.login : "",
+                login: typeof review.user.login === "string" ? review.user.login : "",
               }
             : ({ login: "", id: 0, full_name: "", email: "", avatar_url: "" } as GiteaReview["user"]),
         }))
       : [];
-    log(`[review-api] normalized reviews count=${normalized.length}`);
+    trace(`[review-api] reviews repo=${repoInfo.label} pr=#${number} count=${normalized.length}`);
     return normalized;
   }
 
-  async addComment(
-    repoInfo: RepoInfo,
-    number: number,
-    body: string,
-  ): Promise<GiteaComment> {
+  async addComment(repoInfo: RepoInfo, number: number, body: string): Promise<GiteaComment> {
     return this.request<GiteaComment>(
       repoInfo,
       `/repos/${repoInfo.owner}/${repoInfo.repo}/issues/${number}/comments`,
-      {
-        method: "POST",
-        body: JSON.stringify({ body }),
-      },
+      { method: "POST", body: JSON.stringify({ body }) },
     );
   }
 
@@ -181,10 +155,7 @@ export class PullRequestReviewApi {
     return this.request<GiteaReview>(
       repoInfo,
       `/repos/${repoInfo.owner}/${repoInfo.repo}/pulls/${number}/reviews`,
-      {
-        method: "POST",
-        body: JSON.stringify({ event, body, comments: [] }),
-      },
+      { method: "POST", body: JSON.stringify({ event, body, comments: [] }) },
     );
   }
 
@@ -200,28 +171,18 @@ export class PullRequestReviewApi {
         `Inline review replies require Gitea 1.27.0 or newer (server: ${capabilities.version || "unknown"}).`,
       );
     }
-
     return this.request<GiteaReviewComment>(
       repoInfo,
       `/repos/${repoInfo.owner}/${repoInfo.repo}/pulls/${number}/comments/${commentId}/replies`,
-      {
-        method: "POST",
-        body: JSON.stringify({ body }),
-      },
+      { method: "POST", body: JSON.stringify({ body }) },
     );
   }
 
-  async resolveReviewComment(
-    repoInfo: RepoInfo,
-    commentId: number,
-  ): Promise<void> {
+  async resolveReviewComment(repoInfo: RepoInfo, commentId: number): Promise<void> {
     await this.updateReviewCommentResolution(repoInfo, commentId, true);
   }
 
-  async reopenReviewComment(
-    repoInfo: RepoInfo,
-    commentId: number,
-  ): Promise<void> {
+  async reopenReviewComment(repoInfo: RepoInfo, commentId: number): Promise<void> {
     await this.updateReviewCommentResolution(repoInfo, commentId, false);
   }
 
@@ -236,7 +197,6 @@ export class PullRequestReviewApi {
         `Inline review resolve/reopen requires Gitea 1.26.0 or newer (server: ${capabilities.version || "unknown"}).`,
       );
     }
-
     await this.request<void>(
       repoInfo,
       `/repos/${repoInfo.owner}/${repoInfo.repo}/pulls/comments/${commentId}/${resolved ? "resolve" : "unresolve"}`,
@@ -253,20 +213,13 @@ export class PullRequestReviewApi {
     const capability = capabilityForRequest(path, method);
     const session = await this.auth.getSession(repoInfo.serverUrl);
     if (!session) {
-      throw new GiteaApiError({
-        kind: "unauthenticated",
-        serverUrl: repoInfo.serverUrl,
-        path,
-      });
+      throw new GiteaApiError({ kind: "unauthenticated", serverUrl: repoInfo.serverUrl, path });
     }
 
     const controller = new AbortController();
-    const timeout = setTimeout(
-      () => controller.abort(),
-      REVIEW_REQUEST_TIMEOUT_MS,
-    );
+    const timeout = setTimeout(() => controller.abort(), REVIEW_REQUEST_TIMEOUT_MS);
     const startedAt = Date.now();
-    log(`[review-api] ${method} ${repoInfo.label} ${path}`);
+    debug(`[review-api] request method=${method} repo=${repoInfo.label} path=${path}`);
 
     try {
       const response = await fetch(`${repoInfo.serverUrl}/api/v1${path}`, {
@@ -295,16 +248,12 @@ export class PullRequestReviewApi {
         });
       }
 
-      if (capability) {
-        capabilityRegistry.markVerified(repoInfo.serverUrl, capability);
-      }
-      log(
-        `[review-api] ${method} ${path} -> ${response.status} in ${Date.now() - startedAt}ms`,
+      if (capability) capabilityRegistry.markVerified(repoInfo.serverUrl, capability);
+      debug(
+        `[review-api] response method=${method} path=${path} status=${response.status} durationMs=${Date.now() - startedAt}`,
       );
 
-      if (response.status === 204) {
-        return undefined as T;
-      }
+      if (response.status === 204) return undefined as T;
       const text = await response.text();
       return (text ? JSON.parse(text) : undefined) as T;
     } catch (error) {
@@ -328,7 +277,7 @@ export class PullRequestReviewApi {
           cause: error,
         });
       }
-      log(`[review-api] ${method} ${path} failed: ${failure.message}`);
+      warn(`[review-api] request failed method=${method} path=${path}: ${failure.message}`);
       throw failure;
     } finally {
       clearTimeout(timeout);
@@ -336,12 +285,8 @@ export class PullRequestReviewApi {
   }
 }
 
-function normalizeStatusState(
-  stateValue: unknown,
-  statusValue?: unknown,
-): CommitStatusState {
-  const candidates = [stateValue, statusValue];
-  for (const candidate of candidates) {
+function normalizeStatusState(stateValue: unknown, statusValue?: unknown): CommitStatusState {
+  for (const candidate of [stateValue, statusValue]) {
     if (typeof candidate !== "string") continue;
     const normalized = candidate.trim().toLowerCase();
     switch (normalized) {
@@ -367,14 +312,11 @@ function formatLogValue(value: unknown): string {
 }
 
 function normalizeTargetUrl(serverUrl: string, value: unknown): string {
-  if (typeof value !== "string" || !value.trim()) {
-    return "";
-  }
-
+  if (typeof value !== "string" || !value.trim()) return "";
   try {
     return new URL(value, `${serverUrl.replace(/\/$/, "")}/`).toString();
   } catch {
-    log(`[review-api] ignored invalid check target_url=${value}`);
+    trace(`[review-api] ignored invalid check target_url=${value}`);
     return "";
   }
 }
