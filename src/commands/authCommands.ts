@@ -85,8 +85,9 @@ async function cmdSignIn(
   if (!serverUrl) return;
 
   const token = await vscode.window.showInputBox({
-    prompt: `Enter your Personal Access Token for ${serverUrl}`,
-    placeHolder: "Gitea Personal Access Token",
+    prompt:
+      "PAT scopes — full workflow: read:user + write:repository + write:issue. Read-only: read:user + read:repository + read:issue. Scopes never elevate the Gitea account's own permissions.",
+    placeHolder: `Personal Access Token for ${serverUrl}`,
     password: true,
     ignoreFocusOut: true,
     validateInput: (value) => (value ? null : "Token is required"),
