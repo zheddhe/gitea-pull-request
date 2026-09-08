@@ -1,4 +1,14 @@
 import type { AuthManager } from "../../../auth/authManager";
+import {
+  capabilityForRequest,
+  capabilityRegistry,
+} from "../../../auth/capabilityRegistry";
+import {
+  classifyHttpFailure,
+  GiteaApiError,
+  isGiteaApiError,
+  sanitizeGiteaErrorDetail,
+} from "../../../api/giteaApiError";
 import type {
   GiteaCombinedStatus,
   GiteaComment,
@@ -239,9 +249,15 @@ export class PullRequestReviewApi {
     path: string,
     options: RequestInit = {},
   ): Promise<T> {
+    const method = options.method ?? "GET";
+    const capability = capabilityForRequest(path, method);
     const session = await this.auth.getSession(repoInfo.serverUrl);
     if (!session) {
-      throw new Error(`Not authenticated to ${repoInfo.serverUrl}.`);
+      throw new GiteaApiError({
+        kind: "unauthenticated",
+        serverUrl: repoInfo.serverUrl,
+        path,
+      });
     }
 
     const controller = new AbortController();
@@ -250,7 +266,6 @@ export class PullRequestReviewApi {
       REVIEW_REQUEST_TIMEOUT_MS,
     );
     const startedAt = Date.now();
-    const method = options.method ?? "GET";
     log(`[review-api] ${method} ${repoInfo.label} ${path}`);
 
     try {
@@ -265,12 +280,24 @@ export class PullRequestReviewApi {
       });
 
       if (!response.ok) {
-        const text = await response.text();
-        throw new Error(
-          `Gitea API error: ${response.status} ${response.statusText}${text ? ` — ${text}` : ""}`,
-        );
+        const detail = sanitizeGiteaErrorDetail(await response.text());
+        const kind = classifyHttpFailure(response.status);
+        if (capability && kind === "authorization") {
+          capabilityRegistry.markDenied(repoInfo.serverUrl, capability);
+        }
+        throw new GiteaApiError({
+          kind,
+          serverUrl: repoInfo.serverUrl,
+          path,
+          status: response.status,
+          statusText: response.statusText,
+          detail,
+        });
       }
 
+      if (capability) {
+        capabilityRegistry.markVerified(repoInfo.serverUrl, capability);
+      }
       log(
         `[review-api] ${method} ${path} -> ${response.status} in ${Date.now() - startedAt}ms`,
       );
@@ -281,12 +308,28 @@ export class PullRequestReviewApi {
       const text = await response.text();
       return (text ? JSON.parse(text) : undefined) as T;
     } catch (error) {
-      const reason =
-        error instanceof Error && error.name === "AbortError"
-          ? `request timed out after ${REVIEW_REQUEST_TIMEOUT_MS}ms`
-          : (error as Error).message;
-      log(`[review-api] ${method} ${path} failed: ${reason}`);
-      throw new Error(reason);
+      let failure: Error;
+      if (isGiteaApiError(error)) {
+        failure = error;
+      } else if (error instanceof Error && error.name === "AbortError") {
+        failure = new GiteaApiError({
+          kind: "transient",
+          serverUrl: repoInfo.serverUrl,
+          path,
+          detail: `Request timed out after ${REVIEW_REQUEST_TIMEOUT_MS}ms`,
+          cause: error,
+        });
+      } else {
+        failure = new GiteaApiError({
+          kind: "transient",
+          serverUrl: repoInfo.serverUrl,
+          path,
+          detail: "Network request failed",
+          cause: error,
+        });
+      }
+      log(`[review-api] ${method} ${path} failed: ${failure.message}`);
+      throw failure;
     } finally {
       clearTimeout(timeout);
     }
