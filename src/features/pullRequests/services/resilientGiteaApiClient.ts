@@ -1,7 +1,7 @@
 import { GiteaApiClient } from "../../../api/giteaApiClient";
 import { isGiteaApiError } from "../../../api/giteaApiError";
 import type { RepoInfo } from "../../../context/repoManager";
-import { log } from "../../../debug/outputChannel";
+import { debug, trace, warn } from "../../../debug/outputChannel";
 
 const RETRY_DELAYS_MS = [1000, 2000, 4000, 8000, 12000];
 
@@ -30,12 +30,12 @@ export class ResilientGiteaApiClient extends GiteaApiClient {
 
     for (;;) {
       try {
-        log(
-          `[merge-api] merge attempt=${attempt + 1} repo=${repoInfo.label} pr=#${number} method=${method}`,
+        debug(
+          `[merge-api] attempt=${attempt + 1} repo=${repoInfo.label} pr=#${number} method=${method}`,
         );
         await super.mergePullRequest(repoInfo, number, method, message);
-        log(
-          `[merge-api] merge accepted repo=${repoInfo.label} pr=#${number} method=${method} attempt=${attempt + 1}`,
+        debug(
+          `[merge-api] accepted repo=${repoInfo.label} pr=#${number} method=${method} attempt=${attempt + 1}`,
         );
         return;
       } catch (error) {
@@ -46,26 +46,26 @@ export class ResilientGiteaApiClient extends GiteaApiClient {
           /please try again later/i.test(error.detail ?? "");
 
         if (!transient || attempt >= RETRY_DELAYS_MS.length) {
-          log(
-            `[merge-api] merge failed repo=${repoInfo.label} pr=#${number} attempt=${attempt + 1}: ${messageText}`,
+          warn(
+            `[merge-api] failed repo=${repoInfo.label} pr=#${number} attempt=${attempt + 1}: ${messageText}`,
           );
           throw error;
         }
 
         const delay = RETRY_DELAYS_MS[attempt];
-        log(
-          `[merge-api] Gitea mergeability check still running for pr=#${number}; waiting ${delay}ms before recheck`,
+        debug(
+          `[merge-api] mergeability pending repo=${repoInfo.label} pr=#${number} retryInMs=${delay}`,
         );
         await sleep(delay);
 
         try {
           const refreshed = await super.getPullRequest(repoInfo, number);
-          log(
-            `[merge-api] mergeability recheck pr=#${number} state=${refreshed.state} merged=${Boolean(refreshed.merged)} mergeable=${String(refreshed.mergeable)}`,
+          trace(
+            `[merge-api] recheck repo=${repoInfo.label} pr=#${number} state=${refreshed.state} merged=${Boolean(refreshed.merged)} mergeable=${String(refreshed.mergeable)}`,
           );
         } catch (refreshError) {
-          log(
-            `[merge-api] mergeability recheck failed pr=#${number}: ${(refreshError as Error).message}`,
+          debug(
+            `[merge-api] recheck failed repo=${repoInfo.label} pr=#${number}: ${(refreshError as Error).message}`,
           );
         }
 
