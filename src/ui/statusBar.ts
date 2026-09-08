@@ -1,11 +1,13 @@
 import * as vscode from "vscode";
 import { AuthManager } from "../auth/authManager";
+import type { RepoManager } from "../context/repoManager";
 
 export class StatusBarManager implements vscode.Disposable {
   private readonly authItem: vscode.StatusBarItem;
+  private readonly auth: AuthManager;
   private disposables: vscode.Disposable[] = [];
 
-  constructor(auth: AuthManager) {
+  constructor(_repoManager: RepoManager, auth: AuthManager) {
     this.auth = auth;
     this.authItem = vscode.window.createStatusBarItem(
       vscode.StatusBarAlignment.Left,
@@ -20,8 +22,6 @@ export class StatusBarManager implements vscode.Disposable {
 
     this.refresh();
   }
-
-  private readonly auth: AuthManager;
 
   refresh(): void {
     const servers = this.auth.getServerUrls();
