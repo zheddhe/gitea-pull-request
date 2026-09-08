@@ -1,4 +1,5 @@
 import { GiteaApiClient } from "../../../api/giteaApiClient";
+import { isGiteaApiError } from "../../../api/giteaApiError";
 import type { RepoInfo } from "../../../context/repoManager";
 import { log } from "../../../debug/outputChannel";
 
@@ -40,8 +41,9 @@ export class ResilientGiteaApiClient extends GiteaApiClient {
       } catch (error) {
         const messageText = (error as Error).message;
         const transient =
-          /405\s+Method Not Allowed/i.test(messageText) &&
-          /please try again later/i.test(messageText);
+          isGiteaApiError(error) &&
+          error.status === 405 &&
+          /please try again later/i.test(error.detail ?? "");
 
         if (!transient || attempt >= RETRY_DELAYS_MS.length) {
           log(
