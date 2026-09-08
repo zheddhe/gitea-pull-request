@@ -1,15 +1,17 @@
 import * as assert from "assert";
 import {
+  mergeServerConfigurations,
   parseRemoteUrl,
   repositoryListsEqual,
   type RepoInfo,
 } from "../../context/repoManager";
 
 suite("RepoManager remote classification", () => {
-  test("accepts self-hosted Gitea HTTPS remotes", () => {
+  test("accepts self-hosted Gitea HTTPS remotes when instance is known", () => {
     const info = parseRemoteUrl(
       "https://gitea.example.com/alice/project.git",
       "/workspace/project",
+      { knownServerUrls: ["https://gitea.example.com"] },
     );
 
     assert.strictEqual(info?.serverUrl, "https://gitea.example.com");
@@ -17,16 +19,27 @@ suite("RepoManager remote classification", () => {
     assert.strictEqual(info?.repo, "project");
   });
 
-  test("rejects GitHub HTTPS remotes in mixed workspaces", () => {
+  test("keeps unknown self-hosted remotes unmapped", () => {
     const info = parseRemoteUrl(
-      "https://github.com/alice/project.git",
-      "/workspace/github-project",
+      "https://unknown.internal/alice/project.git",
+      "/workspace/project",
+      { knownServerUrls: ["https://gitea.example.com"] },
     );
 
     assert.strictEqual(info, undefined);
   });
 
-  test("rejects GitHub SSH remotes even when a Gitea server override exists", () => {
+  test("rejects GitHub HTTPS remotes in mixed workspaces", () => {
+    const info = parseRemoteUrl(
+      "https://github.com/alice/project.git",
+      "/workspace/github-project",
+      { knownServerUrls: ["https://gitea.example.com"] },
+    );
+
+    assert.strictEqual(info, undefined);
+  });
+
+  test("rejects GitHub SSH remotes even when a legacy Gitea override exists", () => {
     const info = parseRemoteUrl(
       "git@github.com:alice/project.git",
       "/workspace/github-project",
@@ -36,13 +49,17 @@ suite("RepoManager remote classification", () => {
     assert.strictEqual(info, undefined);
   });
 
-  test("uses an explicit Gitea server override for an SSH alias", () => {
+  test("uses resolved OpenSSH identity for an SSH alias", () => {
     const info = parseRemoteUrl(
       "git@git-internal:alice/project.git",
       "/workspace/project",
       {
-        serverUrlOverride: "https://gitea.example.com",
         knownServerUrls: ["https://gitea.example.com"],
+        effectiveSsh: {
+          host: "gitea.example.com",
+          port: 2222,
+          user: "git",
+        },
       },
     );
 
@@ -51,24 +68,50 @@ suite("RepoManager remote classification", () => {
     assert.strictEqual(info?.repo, "project");
   });
 
-  test("filters unrelated hosts once Gitea servers are known", () => {
+  test("uses explicit transport mapping for split SSH and API hosts", () => {
     const info = parseRemoteUrl(
-      "https://git.other.example/alice/project.git",
-      "/workspace/other-project",
-      { knownServerUrls: ["https://gitea.example.com"] },
-    );
-
-    assert.strictEqual(info, undefined);
-  });
-
-  test("accepts a remote matching an authenticated Gitea server", () => {
-    const info = parseRemoteUrl(
-      "git@gitea.example.com:alice/project.git",
+      "ssh://git@git.internal:2222/alice/project.git",
       "/workspace/project",
-      { knownServerUrls: ["https://gitea.example.com"] },
+      {
+        configuredServers: [
+          {
+            url: "https://gitea.example.com",
+            transports: [{ host: "git.internal", port: 2222 }],
+          },
+        ],
+      },
     );
 
     assert.strictEqual(info?.serverUrl, "https://gitea.example.com");
+  });
+
+  test("preserves legacy override only as a private-host compatibility fallback", () => {
+    const info = parseRemoteUrl(
+      "git@git-internal:alice/project.git",
+      "/workspace/project",
+      { serverUrlOverride: "https://gitea.example.com" },
+    );
+
+    assert.strictEqual(info?.serverUrl, "https://gitea.example.com");
+  });
+
+  test("merges duplicate configured/authenticated instance identities", () => {
+    const servers = mergeServerConfigurations([
+      {
+        url: "https://GITEA.EXAMPLE.COM/",
+        label: "Company",
+        transports: [{ host: "git.internal", port: 2222 }],
+      },
+      { url: "https://gitea.example.com" },
+    ]);
+
+    assert.deepStrictEqual(servers, [
+      {
+        url: "https://gitea.example.com",
+        label: "Company",
+        transports: [{ host: "git.internal", port: 2222 }],
+      },
+    ]);
   });
 
   test("treats repeated detection of the same repository as unchanged", () => {
