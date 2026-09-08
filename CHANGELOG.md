@@ -47,9 +47,12 @@ Token scopes allow access to API families; they do not elevate the underlying Gi
 ### Compatibility
 
 - VS Code 1.133.0 or later
-- Gitea 1.26.4 or later
-- Gitea 1.27+ for inline review Reply support
+- Gitea 1.26.4 minimum supported compatibility floor, with capability-gated fallbacks where newer APIs are unavailable
+- Gitea 1.27.x or later recommended for the complete review experience, including inline Reply and the newest review capabilities
+- Gitea Runner 3.x.x or later recommended for the current Actions / CI experience
 - Node.js 24.x build / CI baseline
+
+Gitea 1.26.4 remains supported, but 1.27.x+ is the preferred server baseline for the full 1.0 UX. Unsupported operations degrade independently so unrelated PR, Issue and Actions capabilities remain available where the server exposes them.
 
 OAuth2 Authorization Code + PKCE is intentionally deferred beyond the 1.0 acceptance gate; PAT remains first-class for arbitrary self-hosted Gitea deployments.
 
