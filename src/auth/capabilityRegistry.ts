@@ -74,11 +74,18 @@ export class CapabilityRegistry {
   }
 }
 
+/**
+ * Extension-lifetime registry shared by API/diagnostic surfaces.
+ * It contains no credential material and is intentionally not persisted.
+ */
+export const capabilityRegistry = new CapabilityRegistry();
+
 export function capabilityForRequest(
   path: string,
   method = "GET",
 ): GiteaCapability | undefined {
-  const write = method.toUpperCase() !== "GET" && method.toUpperCase() !== "HEAD";
+  const normalizedMethod = method.toUpperCase();
+  const write = normalizedMethod !== "GET" && normalizedMethod !== "HEAD";
   const pathOnly = path.split("?", 1)[0];
 
   if (pathOnly === "/user" || pathOnly.startsWith("/user/")) {
