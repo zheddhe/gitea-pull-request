@@ -193,10 +193,11 @@ Most users only need to sign in. Explicit configuration is available for more co
 ## Compatibility
 
 - **VS Code:** 1.133.0 or later
-- **Gitea:** 1.26.4 or later
-- **Gitea 1.27+:** required for inline review Reply support
+- **Gitea minimum supported:** 1.26.4, with capability-gated fallbacks for features not exposed by that server line
+- **Gitea recommended:** 1.27.x or later for the complete review experience, including inline Reply and the newest review capabilities
+- **Gitea Runner recommended:** 3.x.x or later for the current Actions / CI experience
 
-Full Reply + Resolve/Reopen interaction has been validated against Gitea 1.27.2. Unsupported newer-server operations are capability-gated so the rest of the extension remains usable on supported older Gitea versions.
+Gitea 1.26.4 remains a supported compatibility floor rather than the preferred deployment target. The extension degrades unavailable operations independently so PR, Issue or Actions capabilities that remain supported continue to work. Full Reply + Resolve/Reopen interaction has been validated against Gitea 1.27.2.
 
 ## Documentation
 
