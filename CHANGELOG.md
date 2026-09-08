@@ -2,7 +2,7 @@
 
 All notable changes to **Gitea Pull Request** are documented here from the standalone product line onward.
 
-## 1.0.0 - Unreleased
+## 1.0.0 - 2026-09-08
 
 `1.0.0` is the first full user-experience baseline: native review interaction, adaptive refresh, reliable Actions detail and multi-instance authentication designed for least privilege.
 
