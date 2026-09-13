@@ -76,6 +76,7 @@ type ReviewViewMessage =
   | { type: "checkoutBase" }
   | { type: "updateBase"; base: string }
   | { type: "openCheck"; url: string }
+  | { type: "inspectCheckJobs"; runId: number }
   | { type: "rerunCheck"; runId: number }
   | { type: "cancelCheck"; runId: number };
 
@@ -267,6 +268,20 @@ export class ReviewPullRequestViewProvider
     if (!active) {
       vscode.window.showWarningMessage(
         "No active Gitea pull request is available for review.",
+      );
+      return;
+    }
+
+    if (message.type === "inspectCheckJobs") {
+      const runId = Number(message.runId);
+      if (!Number.isSafeInteger(runId) || runId <= 0) {
+        vscode.window.showWarningMessage("Invalid Gitea Actions run identifier.");
+        return;
+      }
+      await vscode.commands.executeCommand(
+        "gitea.inspectCheckJobs",
+        active.repoInfo,
+        runId,
       );
       return;
     }
@@ -779,6 +794,9 @@ export class ReviewPullRequestViewProvider
 
     const actionIcon = (path: string) =>
       `<svg class="ci-action-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="${path}"/></svg>`;
+    const logsIcon = actionIcon(
+      "M2 2h12v12H2V2zm1 1v10h10V3H3zm1 2h8v1H4V5zm0 3h8v1H4V8zm0 3h5v1H4v-1z",
+    );
     const openIcon = actionIcon(
       "M9 2h5v5h-1V3.7L7.35 9.35l-.7-.7L12.3 3H9V2zM3 4h4v1H4v7h7V8h1v5H3V4z",
     );
@@ -795,6 +813,9 @@ export class ReviewPullRequestViewProvider
           ? `<div class="check-description">${escapeHtml(status.description)}</div>`
           : "";
         const actions = [
+          runId
+            ? `<button class="ci-check-action" data-check-jobs="${runId}" title="Inspect jobs and logs" aria-label="Inspect jobs and logs for ${label}">${logsIcon}</button>`
+            : "",
           presentation.actions.openInBrowser && status.target_url
             ? `<button class="ci-check-action" data-check-open="${escapeHtml(status.target_url)}" title="Open in browser" aria-label="Open ${label} in browser">${openIcon}</button>`
             : "",
@@ -913,6 +934,7 @@ export class ReviewPullRequestViewProvider
   document.getElementById('approve')?.addEventListener('click',()=>vscode.postMessage({type:'approve',body:body.value}));
   document.getElementById('requestChanges')?.addEventListener('click',()=>vscode.postMessage({type:'requestChanges',body:body.value}));
   document.getElementById('readyForReview')?.addEventListener('click',()=>vscode.postMessage({type:'readyForReview'}));
+  document.querySelectorAll('[data-check-jobs]').forEach((button)=>button.addEventListener('click',()=>vscode.postMessage({type:'inspectCheckJobs',runId:Number(button.dataset.checkJobs)})));
   document.querySelectorAll('[data-check-open]').forEach((button)=>button.addEventListener('click',()=>vscode.postMessage({type:'openCheck',url:button.dataset.checkOpen})));
   document.querySelectorAll('[data-check-rerun]').forEach((button)=>button.addEventListener('click',()=>vscode.postMessage({type:'rerunCheck',runId:Number(button.dataset.checkRerun)})));
   document.querySelectorAll('[data-check-cancel]').forEach((button)=>button.addEventListener('click',()=>vscode.postMessage({type:'cancelCheck',runId:Number(button.dataset.checkCancel)})));

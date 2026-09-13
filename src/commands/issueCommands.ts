@@ -17,8 +17,8 @@ interface IssueFilterQuickPickItem extends vscode.QuickPickItem {
 export function registerIssueCommands(
   context: vscode.ExtensionContext,
   api: GiteaApiClient,
-  repoManager: RepoManager,
-  auth: AuthManager,
+  _repoManager: RepoManager,
+  _auth: AuthManager,
   issuesProvider: IssuesProvider,
 ): void {
   context.subscriptions.push(
@@ -109,53 +109,7 @@ export function registerIssueCommands(
         );
       },
     ),
-
-    vscode.commands.registerCommand(
-      "gitea.addIssueComment",
-      async (arg?: IssueItem) => {
-        if (arg instanceof IssueItem) {
-          await addComment(api, arg.repoInfo, arg.issue.number, issuesProvider);
-        } else {
-          const repoInfo = await pickRepo(repoManager, auth);
-          if (!repoInfo) {
-            return;
-          }
-          const numStr = await vscode.window.showInputBox({
-            prompt: "Issue number",
-            ignoreFocusOut: true,
-            validateInput: (v) => (/^\d+$/.test(v) ? null : "Enter a number"),
-          });
-          if (!numStr) {
-            return;
-          }
-          await addComment(api, repoInfo, parseInt(numStr, 10), issuesProvider);
-        }
-      },
-    ),
   );
-}
-
-async function pickRepo(
-  repoManager: RepoManager,
-  _auth: AuthManager,
-): Promise<RepoInfo | undefined> {
-  const repos = repoManager.getRepos();
-  if (repos.length === 0) {
-    vscode.window.showErrorMessage("No Gitea repositories detected.");
-    return undefined;
-  }
-  if (repos.length === 1) {
-    return repos[0];
-  }
-  const choice = await vscode.window.showQuickPick(
-    repos.map((r) => ({
-      label: r.label,
-      description: r.serverUrl,
-      repoInfo: r,
-    })),
-    { placeHolder: "Select a repository" },
-  );
-  return choice?.repoInfo;
 }
 
 async function changeIssueState(
@@ -177,35 +131,4 @@ async function changeIssueState(
   } catch (err) {
     vscode.window.showErrorMessage(`Failed: ${(err as Error).message}`);
   }
-}
-
-async function addComment(
-  api: GiteaApiClient,
-  repoInfo: RepoInfo,
-  issueNumber: number,
-  issuesProvider: IssuesProvider,
-): Promise<void> {
-  const body = await vscode.window.showInputBox({
-    prompt: `Comment on Issue #${issueNumber}`,
-    ignoreFocusOut: true,
-    validateInput: (v) => (v?.trim() ? null : "Comment cannot be empty"),
-  });
-  if (!body) {
-    return;
-  }
-  await vscode.window.withProgress(
-    {
-      location: vscode.ProgressLocation.Notification,
-      title: "Posting comment...",
-    },
-    async () => {
-      try {
-        await api.addIssueComment(repoInfo, issueNumber, body);
-        vscode.window.showInformationMessage("Comment posted.");
-        issuesProvider.refresh();
-      } catch (err) {
-        vscode.window.showErrorMessage(`Failed: ${(err as Error).message}`);
-      }
-    },
-  );
 }

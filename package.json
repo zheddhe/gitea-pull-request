@@ -421,11 +421,6 @@
         "icon": "$(history)"
       },
       {
-        "command": "gitea.addIssueComment",
-        "title": "Gitea: Add Issue Comment",
-        "icon": "$(comment-add)"
-      },
-      {
         "command": "gitea.nativeReviewCreate",
         "title": "Add Review Comment",
         "enablement": "!commentIsEmpty",
@@ -649,19 +644,14 @@
           "group": "inline@2"
         },
         {
-          "command": "gitea.addIssueComment",
-          "when": "viewItem == issue_open || viewItem == issue_closed",
-          "group": "inline@3"
-        },
-        {
           "command": "gitea.closeIssue",
           "when": "viewItem == issue_open",
-          "group": "inline@4"
+          "group": "inline@3"
         },
         {
           "command": "gitea.reopenIssue",
           "when": "viewItem == issue_closed",
-          "group": "inline@4"
+          "group": "inline@3"
         }
       ],
       "editor/title": [
