@@ -668,22 +668,22 @@
         {
           "command": "gitea.previousUnresolvedReviewConversation",
           "when": "resourceScheme == gitea-pr && gitea.prSession.active && gitea.unresolvedReviewNavigationMultipleAvailable",
-          "group": "navigation@20.1"
+          "group": "navigation@2.1"
         },
         {
           "command": "gitea.nextUnresolvedReviewConversation",
           "when": "resourceScheme == gitea-pr && gitea.prSession.active && gitea.unresolvedReviewNavigationMultipleAvailable",
-          "group": "navigation@20.2"
+          "group": "navigation@2.2"
         },
         {
           "command": "gitea.previousPendingReviewOperation",
           "when": "resourceScheme == gitea-pr && gitea.prSession.active && gitea.pendingReviewNavigationMultipleAvailable",
-          "group": "navigation@20.3"
+          "group": "navigation@2.3"
         },
         {
           "command": "gitea.nextPendingReviewOperation",
           "when": "resourceScheme == gitea-pr && gitea.prSession.active && gitea.pendingReviewNavigationMultipleAvailable",
-          "group": "navigation@20.4"
+          "group": "navigation@2.4"
         }
       ],
       "comments/commentThread/context": [
