@@ -65,6 +65,8 @@ interface ActiveNativeAnchor {
   path: string;
   side: "base" | "head";
   line: number;
+  oldPosition: number;
+  newPosition: number;
 }
 
 const NO_CAPABILITIES: GiteaServerCapabilities = {
@@ -175,8 +177,8 @@ export class NativeReviewProjectionService implements vscode.Disposable {
     const operation: PendingInlineComment = {
       id: this.pendingId("inline", anchor.line),
       path: anchor.path,
-      new_position: anchor.side === "head" ? anchor.line : 0,
-      old_position: anchor.side === "base" ? anchor.line : 0,
+      new_position: anchor.newPosition,
+      old_position: anchor.oldPosition,
       body,
     };
     this.pendingInlineThreads.set(operation.id, reply.thread);
@@ -274,11 +276,19 @@ export class NativeReviewProjectionService implements vscode.Disposable {
     if (thread.range.start.line !== thread.range.end.line) return undefined;
     const line = thread.range.start.line + 1;
     const index = await this.loadAnchorIndex(context.repoInfo, context.pullRequest);
-    if (!index.has(context.path, context.side, line)) return undefined;
-    return { ...context, line };
+    const canonical = index.anchor(context.path, context.side, line);
+    if (!canonical) return undefined;
+    return {
+      ...context,
+      line,
+      oldPosition: canonical.oldPosition,
+      newPosition: canonical.newPosition,
+    };
   }
 
-  private activeSnapshotContext(uri: vscode.Uri): Omit<ActiveNativeAnchor, "line"> | undefined {
+  private activeSnapshotContext(
+    uri: vscode.Uri,
+  ): Omit<ActiveNativeAnchor, "line" | "oldPosition" | "newPosition"> | undefined {
     const identity = parsePullRequestSnapshotUri(uri);
     const state = this.session.current;
     if (!identity || state.kind !== "active") return undefined;
