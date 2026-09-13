@@ -466,16 +466,16 @@
         "command": "gitea.previousPendingReviewOperation",
         "title": "Previous Pending Review Operation",
         "icon": {
-          "light": "resources/icons/review-comment-up-light.svg",
-          "dark": "resources/icons/review-comment-up-dark.svg"
+          "light": "resources/icons/review-pending-up-light.svg",
+          "dark": "resources/icons/review-pending-up-dark.svg"
         }
       },
       {
         "command": "gitea.nextPendingReviewOperation",
         "title": "Next Pending Review Operation",
         "icon": {
-          "light": "resources/icons/review-comment-down-light.svg",
-          "dark": "resources/icons/review-comment-down-dark.svg"
+          "light": "resources/icons/review-pending-down-light.svg",
+          "dark": "resources/icons/review-pending-down-dark.svg"
         }
       }
     ],
@@ -667,23 +667,23 @@
       "editor/title": [
         {
           "command": "gitea.previousUnresolvedReviewConversation",
-          "when": "resourceScheme == gitea-pr && gitea.prSession.active && gitea.reviewNavigationAvailable",
-          "group": "navigation@20"
+          "when": "resourceScheme == gitea-pr && gitea.prSession.active && gitea.unresolvedReviewNavigationMultipleAvailable",
+          "group": "navigation@20.1"
         },
         {
           "command": "gitea.nextUnresolvedReviewConversation",
-          "when": "resourceScheme == gitea-pr && gitea.prSession.active && gitea.reviewNavigationAvailable",
-          "group": "navigation@21"
+          "when": "resourceScheme == gitea-pr && gitea.prSession.active && gitea.unresolvedReviewNavigationMultipleAvailable",
+          "group": "navigation@20.2"
         },
         {
           "command": "gitea.previousPendingReviewOperation",
-          "when": "resourceScheme == gitea-pr && gitea.prSession.active && gitea.pendingReviewNavigationAvailable",
-          "group": "navigation@22"
+          "when": "resourceScheme == gitea-pr && gitea.prSession.active && gitea.pendingReviewNavigationMultipleAvailable",
+          "group": "navigation@20.3"
         },
         {
           "command": "gitea.nextPendingReviewOperation",
-          "when": "resourceScheme == gitea-pr && gitea.prSession.active && gitea.pendingReviewNavigationAvailable",
-          "group": "navigation@23"
+          "when": "resourceScheme == gitea-pr && gitea.prSession.active && gitea.pendingReviewNavigationMultipleAvailable",
+          "group": "navigation@20.4"
         }
       ],
       "comments/commentThread/context": [
