@@ -15,12 +15,19 @@ export interface ReviewNavigationCandidate {
   placeable: boolean;
 }
 
+export interface PlacedReviewNavigationCandidate extends ReviewNavigationCandidate {
+  path: string;
+  side: "base" | "head";
+  line: number;
+  placeable: true;
+}
+
 export interface ReviewNavigationModel {
   unresolvedByPath: Map<string, number>;
   unresolved: ReviewNavigationCandidate[];
   pending: ReviewNavigationCandidate[];
-  placedUnresolved: ReviewNavigationCandidate[];
-  placedPending: ReviewNavigationCandidate[];
+  placedUnresolved: PlacedReviewNavigationCandidate[];
+  placedPending: PlacedReviewNavigationCandidate[];
 }
 
 export function buildReviewNavigationModel(
@@ -100,8 +107,8 @@ export function buildReviewNavigationModel(
     unresolvedByPath,
     unresolved,
     pending: pendingTargets,
-    placedUnresolved: unresolved.filter((item) => item.placeable),
-    placedPending: pendingTargets.filter((item) => item.placeable),
+    placedUnresolved: unresolved.filter(isPlacedNavigationCandidate),
+    placedPending: pendingTargets.filter(isPlacedNavigationCandidate),
   };
 }
 
@@ -147,6 +154,18 @@ function pendingConversationTarget(
         }
       : { placeable: false as const }),
   };
+}
+
+function isPlacedNavigationCandidate(
+  candidate: ReviewNavigationCandidate,
+): candidate is PlacedReviewNavigationCandidate {
+  return (
+    candidate.placeable &&
+    !!candidate.path &&
+    candidate.side !== undefined &&
+    candidate.line !== undefined &&
+    candidate.line > 0
+  );
 }
 
 function compareNavigationCandidates(
