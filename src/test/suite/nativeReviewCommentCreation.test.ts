@@ -66,15 +66,18 @@ function fakeController(captured: FakeThread[]): vscode.CommentController {
       range: vscode.Range,
       comments: readonly vscode.Comment[],
     ) => {
+      let disposed = false;
       const thread = {
         uri,
         range,
         comments: [...comments],
         canReply: false,
         collapsibleState: vscode.CommentThreadCollapsibleState.Collapsed,
-        disposed: false,
-        dispose() {
-          this.disposed = true;
+        get disposed() {
+          return disposed;
+        },
+        dispose: () => {
+          disposed = true;
         },
       } as unknown as FakeThread;
       captured.push(thread);
@@ -133,9 +136,15 @@ suite("Native review comment creation", () => {
     );
     const provider = controller.commentingRangeProvider;
     assert.ok(provider);
-    const ranges = await provider.provideCommentingRanges(fakeDocument(uri), {} as vscode.CancellationToken);
+    const provided = await provider.provideCommentingRanges(
+      fakeDocument(uri),
+      {} as vscode.CancellationToken,
+    );
+    const ranges: vscode.Range[] = Array.isArray(provided)
+      ? provided
+      : provided?.ranges ?? [];
     assert.deepStrictEqual(
-      (ranges ?? []).map((range) => range.start.line + 1),
+      ranges.map((range: vscode.Range) => range.start.line + 1),
       [2, 3, 4, 5],
     );
 
@@ -222,9 +231,11 @@ suite("Native review comment creation", () => {
     });
     await waitFor(() => captured.length === 1, "pending inline native projection");
 
-    assert.strictEqual(captured[0].range.start.line, 3);
-    assert.strictEqual(captured[0].contextValue, "giteaPendingInlineReview");
-    assert.strictEqual(captured[0].comments.length, 1);
+    const thread = captured[0];
+    assert.ok(thread);
+    assert.strictEqual(thread.range?.start.line, 3);
+    assert.strictEqual(thread.contextValue, "giteaPendingInlineReview");
+    assert.strictEqual(thread.comments.length, 1);
 
     projection.dispose();
     pending.dispose();
