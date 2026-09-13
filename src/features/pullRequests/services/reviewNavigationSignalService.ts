@@ -3,8 +3,10 @@ import type { RepoInfo, RepoManager } from "../../../context/repoManager";
 import { debug } from "../../../debug/outputChannel";
 import {
   buildReviewNavigationModel,
-  nextReviewNavigationIndex,
+  type PlacedReviewNavigationCandidate,
+  type ReviewNavigationMode,
 } from "../domain/reviewNavigationModel";
+import { nextReviewNavigationItem } from "../domain/reviewNavigationSelection";
 import type { PullRequestWorkspaceState } from "../domain/pullRequestState";
 import { PRDetailReviewSyncBridge } from "./prDetailReviewSyncBridge";
 import type {
@@ -25,7 +27,6 @@ interface NavigationTarget {
   pullRequest: Extract<PullRequestWorkspaceState, { kind: "active" }>[
     "pullRequest"
   ];
-  rootCommentId: number;
   path: string;
   side: "base" | "head";
   line: number;
@@ -57,7 +58,8 @@ export class ReviewNavigationSignalService
   private readonly prDetailSync = new PRDetailReviewSyncBridge();
   private snapshot: PullRequestConversationSnapshot | undefined;
   private unresolvedByPath = new Map<string, number>();
-  private targets: NavigationTarget[] = [];
+  private unresolvedTargets: NavigationTarget[] = [];
+  private pendingTargets: NavigationTarget[] = [];
   private rebuildEpoch = 0;
 
   constructor(
@@ -77,11 +79,19 @@ export class ReviewNavigationSignalService
       vscode.window.registerFileDecorationProvider(this),
       vscode.commands.registerCommand(
         "gitea.previousUnresolvedReviewConversation",
-        () => this.navigate(-1),
+        () => this.navigate("unresolved", -1),
       ),
       vscode.commands.registerCommand(
         "gitea.nextUnresolvedReviewConversation",
-        () => this.navigate(1),
+        () => this.navigate("unresolved", 1),
+      ),
+      vscode.commands.registerCommand(
+        "gitea.previousPendingReviewOperation",
+        () => this.navigate("pending", -1),
+      ),
+      vscode.commands.registerCommand(
+        "gitea.nextPendingReviewOperation",
+        () => this.navigate("pending", 1),
       ),
       this.session.onDidChangeState((state) => {
         void this.applySessionState(state);
@@ -128,11 +138,13 @@ export class ReviewNavigationSignalService
 
   dispose(): void {
     this.rebuildEpoch += 1;
-    this.targets = [];
+    this.unresolvedTargets = [];
+    this.pendingTargets = [];
     this.unresolvedByPath.clear();
     this.snapshot = undefined;
     this.navigationState.clear();
-    void this.setNavigationAvailable(false);
+    void this.setNavigationAvailable("unresolved", false);
+    void this.setNavigationAvailable("pending", false);
     for (const disposable of this.disposables) disposable.dispose();
   }
 
@@ -140,10 +152,14 @@ export class ReviewNavigationSignalService
     state: PullRequestWorkspaceState,
   ): Promise<void> {
     this.snapshot = undefined;
-    this.targets = [];
+    this.unresolvedTargets = [];
+    this.pendingTargets = [];
     this.unresolvedByPath.clear();
     this.decorationEmitter.fire(undefined);
-    await this.setNavigationAvailable(false);
+    await Promise.all([
+      this.setNavigationAvailable("unresolved", false),
+      this.setNavigationAvailable("pending", false),
+    ]);
 
     if (state.kind !== "active") {
       this.navigationState.clear();
@@ -198,80 +214,112 @@ export class ReviewNavigationSignalService
     this.unresolvedByPath = new Map(model.unresolvedByPath);
     this.decorationEmitter.fire(undefined);
 
-    if (this.navigationState.current.mode === "unresolved") {
-      this.navigationState.reconcile(model.unresolved.map((item) => item.id));
-    }
+    const logicalItems =
+      this.navigationState.current.mode === "pending"
+        ? model.pending
+        : model.unresolved;
+    this.navigationState.reconcile(logicalItems.map((item) => item.id));
 
+    const [unresolvedTargets, pendingTargets] = await Promise.all([
+      this.buildTargets(
+        repoInfo,
+        state.pullRequest,
+        model.placedUnresolved,
+        epoch,
+      ),
+      this.buildTargets(
+        repoInfo,
+        state.pullRequest,
+        model.placedPending,
+        epoch,
+      ),
+    ]);
+    if (epoch !== this.rebuildEpoch) return;
+
+    this.unresolvedTargets = unresolvedTargets;
+    this.pendingTargets = pendingTargets;
+    await Promise.all([
+      this.setNavigationAvailable("unresolved", unresolvedTargets.length > 0),
+      this.setNavigationAvailable("pending", pendingTargets.length > 0),
+    ]);
+    debug(
+      `[review-navigation] repo=${repoInfo.key} pr=#${state.pullRequest.number} unresolvedFiles=${this.unresolvedByPath.size} unresolvedLogical=${model.unresolved.length} unresolvedPlaced=${unresolvedTargets.length} pendingLogical=${model.pending.length} pendingPlaced=${pendingTargets.length}`,
+    );
+  }
+
+  private async buildTargets(
+    repoInfo: RepoInfo,
+    pullRequest: Extract<PullRequestWorkspaceState, { kind: "active" }>[
+      "pullRequest"
+    ],
+    candidates: readonly PlacedReviewNavigationCandidate[],
+    epoch: number,
+  ): Promise<NavigationTarget[]> {
     const targets: NavigationTarget[] = [];
-    for (const candidate of model.placedUnresolved) {
-      const rootCommentId = candidate.rootCommentId;
-      if (rootCommentId === undefined) continue;
+    for (const candidate of candidates) {
       const uri = createPullRequestSnapshotUri(
         createPullRequestSnapshotDocumentIdentity(
           repoInfo,
-          state.pullRequest,
+          pullRequest,
           candidate.side,
           candidate.path,
         ),
       );
       try {
         const document = await this.openTextDocument(uri);
-        if (epoch !== this.rebuildEpoch) return;
-        if (candidate.line <= 0 || candidate.line > document.lineCount) {
-          continue;
-        }
+        if (epoch !== this.rebuildEpoch) return [];
+        if (candidate.line <= 0 || candidate.line > document.lineCount) continue;
         targets.push({
           id: candidate.id,
-          rootCommentId,
           repoInfo,
-          pullRequest: state.pullRequest,
+          pullRequest,
           path: candidate.path,
           side: candidate.side,
           line: candidate.line,
           uri,
         });
       } catch {
-        if (epoch !== this.rebuildEpoch) return;
+        if (epoch !== this.rebuildEpoch) return [];
       }
     }
-
-    if (epoch !== this.rebuildEpoch) return;
-    this.targets = targets;
-    await this.setNavigationAvailable(targets.length > 0);
-    debug(
-      `[review-navigation] repo=${repoInfo.key} pr=#${state.pullRequest.number} unresolvedFiles=${this.unresolvedByPath.size} logical=${model.unresolved.length} placed=${targets.length} pending=${model.pending.length}`,
-    );
+    return targets;
   }
 
-  private async setNavigationAvailable(available: boolean): Promise<void> {
-    await Promise.resolve(
-      this.executeCommand(
-        "setContext",
-        "gitea.reviewNavigationAvailable",
-        available,
-      ),
-    );
+  private async setNavigationAvailable(
+    mode: ReviewNavigationMode,
+    available: boolean,
+  ): Promise<void> {
+    const contextKey =
+      mode === "pending"
+        ? "gitea.pendingReviewNavigationAvailable"
+        : "gitea.reviewNavigationAvailable";
+    await Promise.resolve(this.executeCommand("setContext", contextKey, available));
   }
 
-  private async navigate(direction: -1 | 1): Promise<void> {
-    if (this.targets.length === 0) return;
+  private async navigate(
+    mode: ReviewNavigationMode,
+    direction: -1 | 1,
+  ): Promise<void> {
+    const targets = mode === "pending" ? this.pendingTargets : this.unresolvedTargets;
+    if (targets.length === 0) return;
 
-    this.navigationState.setMode("unresolved");
+    this.navigationState.setMode(mode);
     const activeItemId = this.navigationState.current.activeItemId;
-    const cursorIndex = activeItemId
-      ? this.targets.findIndex((target) => target.id === activeItemId)
-      : -1;
-    const current =
-      cursorIndex >= 0
-        ? cursorIndex
-        : currentTargetIndex(this.targets, vscode.window.activeTextEditor);
-    const nextIndex = nextReviewNavigationIndex(
-      current,
-      this.targets.length,
+    const logicalTarget = nextReviewNavigationItem(
+      targets.map((target) => ({
+        id: target.id,
+        kind: "conversation" as const,
+        placeable: true as const,
+        path: target.path,
+        side: target.side,
+        line: target.line,
+      })),
+      activeItemId,
       direction,
     );
-    if (nextIndex < 0) return;
-    const target = this.targets[nextIndex];
+    if (!logicalTarget) return;
+    const target = targets.find((item) => item.id === logicalTarget.id);
+    if (!target) return;
 
     await this.executeCommand(
       "gitea.openFileDiff",
@@ -301,27 +349,6 @@ export class ReviewNavigationSignalService
     });
     this.navigationState.select(target.id);
   }
-}
-
-function currentTargetIndex(
-  targets: NavigationTarget[],
-  editor: vscode.TextEditor | undefined,
-): number {
-  if (!editor) return -1;
-  const uri = editor.document.uri.toString();
-  const line = editor.selection.active.line + 1;
-  let bestIndex = -1;
-  let bestDistance = Number.POSITIVE_INFINITY;
-  for (let index = 0; index < targets.length; index += 1) {
-    const target = targets[index];
-    if (target.uri.toString() !== uri) continue;
-    const distance = Math.abs(target.line - line);
-    if (distance < bestDistance) {
-      bestIndex = index;
-      bestDistance = distance;
-    }
-  }
-  return bestIndex;
 }
 
 function normalizeResourcePath(uri: vscode.Uri): string {
