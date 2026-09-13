@@ -43,6 +43,28 @@ export function classifyBranchSync(
   return "unknown";
 }
 
+function commitLabel(count: number): string {
+  return `${count} local commit${count === 1 ? "" : "s"}`;
+}
+
+export function preMergeBranchSyncWarning(
+  diagnostic: BranchSyncDiagnostic,
+): string | undefined {
+  switch (diagnostic.state) {
+    case "in-sync":
+    case "local-behind":
+      return undefined;
+    case "local-ahead":
+      return `${commitLabel(diagnostic.localOnly)} ${diagnostic.localOnly === 1 ? "is" : "are"} not part of this pull request. Merging now will merge only the remote PR head.`;
+    case "diverged":
+      return `Source branches have diverged: ${diagnostic.localOnly} local-only / ${diagnostic.remoteOnly} remote-only commit${diagnostic.remoteOnly === 1 ? "" : "s"}. Local-only work is not part of this pull request.`;
+    case "unknown": {
+      const detail = diagnostic.reason ? ` ${diagnostic.reason}` : "";
+      return `Local source branch synchronization could not be verified.${detail}`;
+    }
+  }
+}
+
 export function parseLeftRightCount(output: string): {
   localOnly: number;
   remoteOnly: number;
