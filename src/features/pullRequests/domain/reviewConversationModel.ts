@@ -9,7 +9,7 @@ export interface ReviewConversation {
   resolved: boolean;
   resolver?: GiteaUser;
   orphaned: boolean;
-  outdated: boolean;
+  outdated?: boolean;
 }
 
 export function buildReviewConversations(
