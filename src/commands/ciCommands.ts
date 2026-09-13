@@ -8,7 +8,7 @@ import {
   RepoGroupItem,
 } from "../views/ciRunsProvider";
 import { LiveLogPanel } from "../views/liveLogPanel";
-import type { GiteaWorkflowRun } from "../api/types";
+import type { GiteaWorkflowJob, GiteaWorkflowRun } from "../api/types";
 import type { RepoInfo } from "../context/repoManager";
 import {
   jobPresentation,
@@ -17,6 +17,11 @@ import {
 import type { CIRunsPollingService } from "../features/polling/services/ciRunsPollingService";
 import type { PollingLifecycleSignalService } from "../features/polling/services/pollingLifecycleSignalService";
 import type { PollingScheduler } from "../features/polling/services/pollingScheduler";
+
+export interface CIJobLogTarget {
+  repoInfo: RepoInfo;
+  job: GiteaWorkflowJob;
+}
 
 export function registerCICommands(
   context: vscode.ExtensionContext,
@@ -81,10 +86,9 @@ export function registerCICommands(
           vscode.window.showWarningMessage("Select a job to view its logs.");
           return;
         }
-        await LiveLogPanel.show(
+        await openJobLogs(
           api,
-          arg.repoInfo,
-          arg.job,
+          { repoInfo: arg.repoInfo, job: arg.job },
           pollingScheduler,
           pollingSignals,
         );
@@ -112,6 +116,21 @@ export function registerCICommands(
         await ciProvider.downloadArtifact(arg);
       },
     ),
+  );
+}
+
+export async function openJobLogs(
+  api: GiteaApiClient,
+  target: CIJobLogTarget,
+  pollingScheduler: PollingScheduler,
+  pollingSignals: PollingLifecycleSignalService,
+): Promise<void> {
+  await LiveLogPanel.show(
+    api,
+    target.repoInfo,
+    target.job,
+    pollingScheduler,
+    pollingSignals,
   );
 }
 
