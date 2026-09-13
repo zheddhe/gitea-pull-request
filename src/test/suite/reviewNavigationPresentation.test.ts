@@ -62,10 +62,10 @@ suite("Review navigation presentation", () => {
     assert.deepStrictEqual(
       navigationItems.map((item) => [item.command, item.group]),
       [
-        ["gitea.previousUnresolvedReviewConversation", "navigation@20.1"],
-        ["gitea.nextUnresolvedReviewConversation", "navigation@20.2"],
-        ["gitea.previousPendingReviewOperation", "navigation@20.3"],
-        ["gitea.nextPendingReviewOperation", "navigation@20.4"],
+        ["gitea.previousUnresolvedReviewConversation", "navigation@2.1"],
+        ["gitea.nextUnresolvedReviewConversation", "navigation@2.2"],
+        ["gitea.previousPendingReviewOperation", "navigation@2.3"],
+        ["gitea.nextPendingReviewOperation", "navigation@2.4"],
       ],
     );
     for (const item of navigationItems.filter((item) =>
