@@ -310,8 +310,8 @@ export class ReviewNavigationSignalService
     this.unresolvedTargets = unresolvedTargets;
     this.pendingTargets = pendingTargets;
     await Promise.all([
-      this.setNavigationAvailable("unresolved", unresolvedTargets.length > 0),
-      this.setNavigationAvailable("pending", pendingTargets.length > 0),
+      this.setNavigationAvailable("unresolved", unresolvedTargets.length > 1),
+      this.setNavigationAvailable("pending", pendingTargets.length > 1),
     ]);
     debug(
       `[review-navigation] repo=${repoInfo.key} pr=#${state.pullRequest.number} unresolvedFiles=${this.unresolvedByPath.size} unresolvedLogical=${model.unresolved.length} unresolvedPlaced=${unresolvedTargets.length} pendingLogical=${model.pending.length} pendingPlaced=${pendingTargets.length}`,
