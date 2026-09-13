@@ -12,8 +12,10 @@ import type {
 import {
   buildReviewConversations,
   conversationCommentIds,
+  projectReviewConversationsForHead,
   type ReviewConversation,
 } from "../features/pullRequests/domain/reviewConversationModel";
+import { groupUnplacedReviewConversations } from "../features/pullRequests/domain/reviewConversationDisplay";
 import { pullRequestDetailFingerprint } from "../features/pullRequests/domain/pullRequestDetailPolling";
 import type {
   PendingConversationAction,
@@ -701,6 +703,9 @@ export class PRDetailPanel {
     const resolvedEventHtml = conversation.resolved
       ? `<div class="conversation-event resolved-event">${RESOLVED_EVENT_ICON}<span><strong>${escHtml(resolver?.login || "Someone")}</strong> resolved this conversation</span>${resolvedControls}</div>`
       : "";
+    const outdatedHtml = conversation.outdated
+      ? '<span class="conversation-state conversation-outdated-badge">Outdated</span>'
+      : "";
     const orphanHtml = conversation.orphaned
       ? '<span class="conversation-state muted">Reply parent unavailable</span>'
       : "";
@@ -729,8 +734,8 @@ export class PRDetailPanel {
     const replyForm = !conversation.orphaned && capabilities.inlineReviewReplies
       ? `<div class="reply-form" id="reply-form-${root.id}" hidden><textarea aria-label="Reply to inline review comment" placeholder="Reply to this review conversation..."></textarea><div class="inline-actions"><button class="btn submit-reply" data-comment-id="${root.id}">Add pending reply</button><button class="btn sec cancel-reply" data-comment-id="${root.id}">Cancel</button></div></div>`
       : "";
-    const contentHtml = `<div class="conversation-content"><div class="review-comment-card conversation-root"><div class="review-comment-header"><strong>${escHtml(root.user.login)}</strong><span class="muted">${escHtml(new Date(root.created_at).toLocaleString())}</span>${actionHtml}${orphanHtml}</div><div class="review-comment-body markdown-body">${reviewCommentBodies.get(root.id) ?? escHtml(root.body)}</div></div>${repliesHtml}${replyForm}</div>`;
-    return `<div class="review-conversation${conversation.resolved ? " conversation-resolved conversation-collapsed" : ""}${standalone ? " standalone" : ""}" data-root-comment-id="${root.id}" data-persisted-resolved="${conversation.resolved ? "true" : "false"}">${resolvedEventHtml}${contentHtml}</div>`;
+    const contentHtml = `<div class="conversation-content"><div class="review-comment-card conversation-root"><div class="review-comment-header"><strong>${escHtml(root.user.login)}</strong><span class="muted">${escHtml(new Date(root.created_at).toLocaleString())}</span>${actionHtml}${outdatedHtml}${orphanHtml}</div><div class="review-comment-body markdown-body">${reviewCommentBodies.get(root.id) ?? escHtml(root.body)}</div></div>${repliesHtml}${replyForm}</div>`;
+    return `<div class="review-conversation${conversation.resolved ? " conversation-resolved conversation-collapsed" : ""}${conversation.outdated ? " conversation-outdated" : ""}${standalone ? " standalone" : ""}" data-root-comment-id="${root.id}" data-persisted-resolved="${conversation.resolved ? "true" : "false"}">${resolvedEventHtml}${contentHtml}</div>`;
   }
 
   private buildDiffRows(
@@ -753,7 +758,7 @@ export class PRDetailPanel {
     const byNewLine = new Map<number, ReviewConversation[]>();
     const byOldLine = new Map<number, ReviewConversation[]>();
     for (const conversation of reviewConversations.filter(
-      (item) => !item.orphaned && item.root.path === filename,
+      (item) => !item.orphaned && !item.outdated && item.root.path === filename,
     )) {
       const root = conversation.root;
       if ((root.new_position ?? 0) > 0) {
@@ -950,7 +955,10 @@ export class PRDetailPanel {
     reviewComments.forEach((comment, index) => {
       reviewCommentBodyById.set(comment.id, reviewCommentBodies[index] ?? "");
     });
-    const reviewConversations = buildReviewConversations(reviewComments);
+    const reviewConversations = projectReviewConversationsForHead(
+      buildReviewConversations(reviewComments),
+      pr.head.sha,
+    );
     const matchedReviewCommentIds = new Set<number>();
     const filesHtml = files
       .map((file, fileIndex) => {
@@ -968,13 +976,17 @@ export class PRDetailPanel {
       })
       .join("");
 
-    const unplacedConversations = reviewConversations.filter((conversation) =>
-      conversationCommentIds(conversation).every(
-        (id) => !matchedReviewCommentIds.has(id),
-      ),
+    const groupedUnplaced = groupUnplacedReviewConversations(
+      reviewConversations,
+      matchedReviewCommentIds,
     );
-    const unplacedInlineHtml = unplacedConversations.length
-      ? `<section class="unplaced-inline"><h2 class="section-heading">Unplaced inline conversations (${unplacedConversations.length})</h2><p class="muted">These conversations cannot be safely attached to a line in the current diff.</p>${unplacedConversations
+    const outdatedInlineHtml = groupedUnplaced.outdated.length
+      ? `<section class="unplaced-inline outdated-inline"><h2 class="section-heading">Outdated conversations (${groupedUnplaced.outdated.length})</h2><p class="muted">These conversations belong to an earlier revision and cannot be safely attached to the current diff. Their resolved state is preserved independently.</p>${groupedUnplaced.outdated
+          .map((conversation) => this.renderReviewConversation(conversation, reviewCommentBodyById, capabilities, true))
+          .join("")}</section>`
+      : "";
+    const unplacedInlineHtml = groupedUnplaced.unplaced.length
+      ? `<section class="unplaced-inline"><h2 class="section-heading">Unplaced inline conversations (${groupedUnplaced.unplaced.length})</h2><p class="muted">These conversations cannot be safely attached to a line in the current diff.</p>${groupedUnplaced.unplaced
           .map((conversation) => this.renderReviewConversation(conversation, reviewCommentBodyById, capabilities, true))
           .join("")}</section>`
       : "";
@@ -1005,7 +1017,7 @@ export class PRDetailPanel {
 textarea,input[type="text"],select{background:var(--input-bg);color:var(--input-fg);border:1px solid var(--input-border);border-radius:2px;padding:6px 8px}textarea,input[type="text"]{width:100%;resize:vertical}.markdown-body{line-height:1.5;overflow-wrap:anywhere}.markdown-body h1{font-size:1.28em}.markdown-body h2{font-size:1.16em}.markdown-body h3{font-size:1.06em}.markdown-body code,.sha,.file-path,.diff-table{font-family:var(--mono)}.markdown-body pre{overflow:auto}.avatar{width:20px;height:20px;border-radius:50%}.time{margin-left:auto;color:var(--muted);font-size:.92em}.comment-time,.review-time{color:var(--muted);font-size:.92em}.empty,.muted{color:var(--muted)}
 .submitted-review{border-left-width:3px}.submitted-review-approved{border-left-color:var(--success)}.submitted-review-request_changes{border-left-color:var(--danger)}.submitted-review-comment,.submitted-review-commented{border-left-color:var(--info)}.review-badge{font-size:.78em;border:1px solid currentColor;border-radius:999px;padding:1px 6px}.review-badge-approved{color:var(--success)}.review-badge-request_changes{color:var(--danger)}.review-badge-comment,.submitted-review-commented{color:var(--info)}.section-heading{font-size:1em;font-weight:600;margin:14px 0 8px}.review-inline-summary{border-top:1px solid var(--border);padding:8px 10px}.review-inline-summary>strong{display:block;margin-bottom:6px}.review-inline-message{padding:7px 0;border-top:1px solid var(--border)}.review-inline-message:first-of-type{border-top:0}.review-inline-location{display:flex;align-items:center;gap:8px;color:var(--muted);margin-bottom:4px}.review-inline-location code{color:var(--fg)}
 .commit-entry{display:flex;align-items:center;gap:10px;padding:7px 4px;border-bottom:1px solid var(--border);min-width:0}.commit-message{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.commit-author{color:var(--muted);flex:0 0 auto}.file-header{width:100%;display:flex;align-items:center;gap:8px;border:0;background:var(--subtle);color:var(--fg);padding:7px 10px;cursor:pointer;text-align:left}.file-status{display:inline-flex;width:17px;height:17px;align-items:center;justify-content:center;border:1px solid currentColor;border-radius:2px;font-size:.72em;font-weight:600}.file-status-added{color:var(--success)}.file-status-deleted{color:var(--danger)}.file-status-modified,.file-status-changed{color:var(--warning)}.file-status-renamed{color:var(--info)}.file-path{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--fg)}.file-stats{flex:0 0 auto}.additions{color:var(--success)}.deletions{color:var(--danger)}.file-toggle-icon{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;color:var(--muted);flex:0 0 20px}.file-toggle-icon svg{width:14px;height:14px}.file-toggle-icon .collapse-icon{display:none}.file-header[aria-expanded="true"] .file-toggle-icon .expand-icon{display:none}.file-header[aria-expanded="true"] .file-toggle-icon .collapse-icon{display:inline-flex}.file-diff{overflow:auto;border-top:1px solid var(--border)}.diff-table{width:100%;border-collapse:collapse;font-size:.9em;table-layout:fixed}.ln{width:44px;text-align:right;padding:0 6px;color:var(--muted);background:var(--subtle);border-right:1px solid var(--border)}.lc{padding:0 8px;white-space:pre}.lc pre{margin:0;font:inherit}.diff-add .lc{background:color-mix(in srgb,var(--success) 12%,transparent)}.diff-del .lc{background:color-mix(in srgb,var(--danger) 12%,transparent)}.diff-hunk td{background:color-mix(in srgb,var(--info) 10%,transparent);color:var(--info)}.clickable-line{cursor:pointer}.review-comment-card,.pending-review-comment{padding:8px 12px;background:var(--subtle)}.review-comment-card{border-left:3px solid var(--info)}.review-comment-header{display:flex;align-items:center;gap:8px}.review-comment-body{margin-top:6px}.pending-review-comment{border-left:3px dashed var(--warning);display:flex;gap:8px}.pending-body{flex:1}.remove-pending{background:none;border:0;color:var(--muted);cursor:pointer}
-.review-conversation{position:relative;margin:8px 0;border:1px solid var(--border);border-left:3px solid var(--info);border-radius:3px;background:transparent;overflow:hidden}.review-conversation.standalone{margin:8px 0}.review-conversation.conversation-resolved{border-left-color:var(--success);opacity:.86}.conversation-event{display:flex;align-items:center;gap:7px;padding:5px 10px;border-bottom:1px solid var(--border);background:color-mix(in srgb,var(--success) 7%,var(--subtle));color:var(--muted);font-size:.86em}.conversation-event>svg{width:14px;height:14px;flex:0 0 14px;color:var(--success)}.conversation-event strong{color:var(--fg)}.conversation-event-actions{display:inline-flex;align-items:center;gap:2px;margin-left:2px}.conversation-event-actions .icon-btn{width:24px;height:24px}.conversation-collapse-toggle .collapse-icon{display:none}.conversation-resolved:not(.conversation-collapsed) .conversation-collapse-toggle .expand-icon{display:none}.conversation-resolved:not(.conversation-collapsed) .conversation-collapse-toggle .collapse-icon{display:inline-flex}.conversation-resolved.conversation-collapsed .conversation-content{display:none}.conversation-resolved.conversation-collapsed .conversation-event{border-bottom:0}.conversation-root{border-left:0;background:var(--subtle);padding:10px 12px}.review-reply{position:relative;margin-left:22px;padding:9px 12px 9px 16px;border-top:1px solid var(--border);border-left:1px solid var(--border);background:color-mix(in srgb,var(--subtle) 55%,transparent)}.review-reply::before{content:"";position:absolute;left:-1px;top:17px;width:10px;border-top:1px solid var(--border)}.conversation-actions{display:inline-flex;justify-content:flex-start;align-items:center;gap:2px;margin-left:2px}.conversation-actions .icon-btn{width:24px;height:24px}.conversation-state{margin-left:4px;font-size:.82em}.reply-form{margin-left:22px;padding:9px 12px 11px 16px;border-top:1px solid var(--border);border-left:1px solid var(--border);background:color-mix(in srgb,var(--subtle) 45%,transparent)}.reply-form textarea{min-height:70px}.reply-form .inline-actions{justify-content:flex-start}.pending-review-operation{border-left-color:var(--warning)!important;background:color-mix(in srgb,var(--warning) 7%,var(--subtle))!important}.pending-review-operation .pending-operation-label{color:var(--warning);font-size:.82em}.pending-conversation-action{display:inline-flex;align-items:center;gap:5px;margin-left:4px;padding:2px 6px;border:1px dashed var(--warning);border-radius:3px;color:var(--warning);font-size:.82em}.pending-conversation-action button{border:0;background:transparent;color:inherit;cursor:pointer;padding:0 2px}.pending-review-warning{color:var(--warning);font-size:.82em}
+.review-conversation{position:relative;margin:8px 0;border:1px solid var(--border);border-left:3px solid var(--info);border-radius:3px;background:transparent;overflow:hidden}.review-conversation.standalone{margin:8px 0}.review-conversation.conversation-resolved{border-left-color:var(--success);opacity:.86}.review-conversation.conversation-outdated{border-left-color:var(--warning)}.conversation-outdated-badge{color:var(--warning);border:1px solid currentColor;border-radius:999px;padding:1px 6px;font-size:.78em;font-weight:600}.conversation-event{display:flex;align-items:center;gap:7px;padding:5px 10px;border-bottom:1px solid var(--border);background:color-mix(in srgb,var(--success) 7%,var(--subtle));color:var(--muted);font-size:.86em}.conversation-event>svg{width:14px;height:14px;flex:0 0 14px;color:var(--success)}.conversation-event strong{color:var(--fg)}.conversation-event-actions{display:inline-flex;align-items:center;gap:2px;margin-left:2px}.conversation-event-actions .icon-btn{width:24px;height:24px}.conversation-collapse-toggle .collapse-icon{display:none}.conversation-resolved:not(.conversation-collapsed) .conversation-collapse-toggle .expand-icon{display:none}.conversation-resolved:not(.conversation-collapsed) .conversation-collapse-toggle .collapse-icon{display:inline-flex}.conversation-resolved.conversation-collapsed .conversation-content{display:none}.conversation-resolved.conversation-collapsed .conversation-event{border-bottom:0}.conversation-root{border-left:0;background:var(--subtle);padding:10px 12px}.review-reply{position:relative;margin-left:22px;padding:9px 12px 9px 16px;border-top:1px solid var(--border);border-left:1px solid var(--border);background:color-mix(in srgb,var(--subtle) 55%,transparent)}.review-reply::before{content:"";position:absolute;left:-1px;top:17px;width:10px;border-top:1px solid var(--border)}.conversation-actions{display:inline-flex;justify-content:flex-start;align-items:center;gap:2px;margin-left:2px}.conversation-actions .icon-btn{width:24px;height:24px}.conversation-state{margin-left:4px;font-size:.82em}.reply-form{margin-left:22px;padding:9px 12px 11px 16px;border-top:1px solid var(--border);border-left:1px solid var(--border);background:color-mix(in srgb,var(--subtle) 45%,transparent)}.reply-form textarea{min-height:70px}.reply-form .inline-actions{justify-content:flex-start}.pending-review-operation{border-left-color:var(--warning)!important;background:color-mix(in srgb,var(--warning) 7%,var(--subtle))!important}.pending-review-operation .pending-operation-label{color:var(--warning);font-size:.82em}.pending-conversation-action{display:inline-flex;align-items:center;gap:5px;margin-left:4px;padding:2px 6px;border:1px dashed var(--warning);border-radius:3px;color:var(--warning);font-size:.82em}.pending-conversation-action button{border:0;background:transparent;color:inherit;cursor:pointer;padding:0 2px}.pending-review-warning{color:var(--warning);font-size:.82em}
 </style>
 </head>
 <body>
@@ -1030,6 +1042,7 @@ textarea,input[type="text"],select{background:var(--input-bg);color:var(--input-
   </div>
   ${replyCapabilityHtml}
   ${filesHtml}
+  ${outdatedInlineHtml}
   ${unplacedInlineHtml}
 </section>
 <section id="tab-review-history" class="tab-content" role="tabpanel" aria-labelledby="review-history-tab"><div id="review-history-list">${reviewsHtml}</div></section>
