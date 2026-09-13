@@ -394,8 +394,8 @@ export class ReviewNavigationSignalService
   ): Promise<void> {
     const contextKey =
       mode === "pending"
-        ? "gitea.pendingReviewNavigationAvailable"
-        : "gitea.reviewNavigationAvailable";
+        ? "gitea.pendingReviewNavigationMultipleAvailable"
+        : "gitea.unresolvedReviewNavigationMultipleAvailable";
     await Promise.resolve(this.executeCommand("setContext", contextKey, available));
   }
 
