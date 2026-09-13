@@ -93,6 +93,23 @@ suite("Review navigation submission continuity", () => {
       undefined,
     );
   });
+
+  test("does not invent a successor when persistence produced no conversation", () => {
+    const pending: ReviewNavigationCandidate = {
+      id: "pending:inline-failed",
+      kind: "inline-comment",
+      pendingId: "inline-failed",
+      placeable: true,
+      path: "src/a.ts",
+      side: "head",
+      line: 12,
+    };
+
+    assert.strictEqual(
+      findReviewSubmissionSuccessor(continuity(pending), model([])),
+      undefined,
+    );
+  });
 });
 
 function continuity(item: ReviewNavigationCandidate): ReviewSubmissionContinuity {
