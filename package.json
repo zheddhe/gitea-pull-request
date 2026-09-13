@@ -465,12 +465,18 @@
       {
         "command": "gitea.previousPendingReviewOperation",
         "title": "Previous Pending Review Operation",
-        "icon": "$(chevron-up)"
+        "icon": {
+          "light": "resources/icons/review-comment-up-light.svg",
+          "dark": "resources/icons/review-comment-up-dark.svg"
+        }
       },
       {
         "command": "gitea.nextPendingReviewOperation",
         "title": "Next Pending Review Operation",
-        "icon": "$(chevron-down)"
+        "icon": {
+          "light": "resources/icons/review-comment-down-light.svg",
+          "dark": "resources/icons/review-comment-down-dark.svg"
+        }
       }
     ],
     "menus": {
@@ -667,17 +673,17 @@
         {
           "command": "gitea.nextUnresolvedReviewConversation",
           "when": "resourceScheme == gitea-pr && gitea.prSession.active && gitea.reviewNavigationAvailable",
-          "group": "navigation@20"
+          "group": "navigation@21"
         },
         {
           "command": "gitea.previousPendingReviewOperation",
           "when": "resourceScheme == gitea-pr && gitea.prSession.active && gitea.pendingReviewNavigationAvailable",
-          "group": "navigation@20"
+          "group": "navigation@22"
         },
         {
           "command": "gitea.nextPendingReviewOperation",
           "when": "resourceScheme == gitea-pr && gitea.prSession.active && gitea.pendingReviewNavigationAvailable",
-          "group": "navigation@20"
+          "group": "navigation@23"
         }
       ],
       "comments/commentThread/context": [
