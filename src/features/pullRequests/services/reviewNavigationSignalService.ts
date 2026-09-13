@@ -4,6 +4,7 @@ import { debug } from "../../../debug/outputChannel";
 import {
   buildReviewNavigationModel,
   type PlacedReviewNavigationCandidate,
+  type ReviewNavigationCandidate,
   type ReviewNavigationMode,
 } from "../domain/reviewNavigationModel";
 import { nextReviewNavigationItem } from "../domain/reviewNavigationSelection";
@@ -58,6 +59,8 @@ export class ReviewNavigationSignalService
   private readonly prDetailSync = new PRDetailReviewSyncBridge();
   private snapshot: PullRequestConversationSnapshot | undefined;
   private unresolvedByPath = new Map<string, number>();
+  private unresolvedItems: ReviewNavigationCandidate[] = [];
+  private pendingItems: ReviewNavigationCandidate[] = [];
   private unresolvedTargets: NavigationTarget[] = [];
   private pendingTargets: NavigationTarget[] = [];
   private rebuildEpoch = 0;
@@ -79,19 +82,24 @@ export class ReviewNavigationSignalService
       vscode.window.registerFileDecorationProvider(this),
       vscode.commands.registerCommand(
         "gitea.previousUnresolvedReviewConversation",
-        () => this.navigate("unresolved", -1),
+        () => this.navigateNative("unresolved", -1),
       ),
       vscode.commands.registerCommand(
         "gitea.nextUnresolvedReviewConversation",
-        () => this.navigate("unresolved", 1),
+        () => this.navigateNative("unresolved", 1),
       ),
       vscode.commands.registerCommand(
         "gitea.previousPendingReviewOperation",
-        () => this.navigate("pending", -1),
+        () => this.navigateNative("pending", -1),
       ),
       vscode.commands.registerCommand(
         "gitea.nextPendingReviewOperation",
-        () => this.navigate("pending", 1),
+        () => this.navigateNative("pending", 1),
+      ),
+      vscode.commands.registerCommand(
+        "gitea.navigateReviewNavigation",
+        (mode: ReviewNavigationMode, direction: -1 | 1) =>
+          this.navigateLogical(mode, direction),
       ),
       vscode.commands.registerCommand("gitea.getReviewNavigationState", () =>
         this.navigationState.current,
@@ -151,6 +159,8 @@ export class ReviewNavigationSignalService
 
   dispose(): void {
     this.rebuildEpoch += 1;
+    this.unresolvedItems = [];
+    this.pendingItems = [];
     this.unresolvedTargets = [];
     this.pendingTargets = [];
     this.unresolvedByPath.clear();
@@ -165,6 +175,8 @@ export class ReviewNavigationSignalService
     state: PullRequestWorkspaceState,
   ): Promise<void> {
     this.snapshot = undefined;
+    this.unresolvedItems = [];
+    this.pendingItems = [];
     this.unresolvedTargets = [];
     this.pendingTargets = [];
     this.unresolvedByPath.clear();
@@ -225,12 +237,11 @@ export class ReviewNavigationSignalService
       this.pending.get(repoInfo, state.pullRequest.number),
     );
     this.unresolvedByPath = new Map(model.unresolvedByPath);
+    this.unresolvedItems = [...model.unresolved];
+    this.pendingItems = [...model.pending];
     this.decorationEmitter.fire(undefined);
 
-    const logicalItems =
-      this.navigationState.current.mode === "pending"
-        ? model.pending
-        : model.unresolved;
+    const logicalItems = this.itemsForMode(this.navigationState.current.mode);
     this.navigationState.reconcile(logicalItems.map((item) => item.id));
 
     const [unresolvedTargets, pendingTargets] = await Promise.all([
@@ -258,6 +269,14 @@ export class ReviewNavigationSignalService
     debug(
       `[review-navigation] repo=${repoInfo.key} pr=#${state.pullRequest.number} unresolvedFiles=${this.unresolvedByPath.size} unresolvedLogical=${model.unresolved.length} unresolvedPlaced=${unresolvedTargets.length} pendingLogical=${model.pending.length} pendingPlaced=${pendingTargets.length}`,
     );
+  }
+
+  private itemsForMode(mode: ReviewNavigationMode): ReviewNavigationCandidate[] {
+    return mode === "pending" ? this.pendingItems : this.unresolvedItems;
+  }
+
+  private targetsForMode(mode: ReviewNavigationMode): NavigationTarget[] {
+    return mode === "pending" ? this.pendingTargets : this.unresolvedTargets;
   }
 
   private async buildTargets(
@@ -309,24 +328,40 @@ export class ReviewNavigationSignalService
     await Promise.resolve(this.executeCommand("setContext", contextKey, available));
   }
 
-  private async navigate(
+  private navigateLogical(
+    mode: ReviewNavigationMode,
+    direction: -1 | 1,
+  ): void {
+    const items = this.itemsForMode(mode);
+    if (items.length === 0) return;
+    this.navigationState.setMode(mode);
+    const target = nextReviewNavigationItem(
+      items,
+      this.navigationState.current.activeItemId,
+      direction,
+    );
+    if (target) this.navigationState.select(target.id);
+  }
+
+  private async navigateNative(
     mode: ReviewNavigationMode,
     direction: -1 | 1,
   ): Promise<void> {
-    const targets = mode === "pending" ? this.pendingTargets : this.unresolvedTargets;
+    const targets = this.targetsForMode(mode);
     if (targets.length === 0) return;
 
     this.navigationState.setMode(mode);
     const activeItemId = this.navigationState.current.activeItemId;
+    const targetCandidates: ReviewNavigationCandidate[] = targets.map((target) => ({
+      id: target.id,
+      kind: "conversation",
+      placeable: true,
+      path: target.path,
+      side: target.side,
+      line: target.line,
+    }));
     const logicalTarget = nextReviewNavigationItem(
-      targets.map((target) => ({
-        id: target.id,
-        kind: "conversation" as const,
-        placeable: true as const,
-        path: target.path,
-        side: target.side,
-        line: target.line,
-      })),
+      targetCandidates,
       activeItemId,
       direction,
     );
