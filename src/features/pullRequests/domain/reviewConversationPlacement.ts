@@ -47,6 +47,8 @@ export function isConversationOutdated(
   conversation: ReviewConversation,
   currentHeadSha?: string,
 ): boolean {
+  if (conversation.outdated) return true;
+
   const current = currentHeadSha?.trim();
   if (!current) return false;
 
