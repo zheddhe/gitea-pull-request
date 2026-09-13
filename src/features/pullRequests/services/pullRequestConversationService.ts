@@ -19,7 +19,8 @@ export interface PullRequestConversationSnapshot {
   conversations: ReviewConversation[];
 }
 
-type ReviewCommentsApi = Pick<GiteaApiClient, "listAllPRReviewComments">;
+type ReviewCommentsApi = Pick<GiteaApiClient, "listAllPRReviewComments"> &
+  Partial<Pick<GiteaApiClient, "getPRRawDiff">>;
 
 export class PullRequestConversationService implements vscode.Disposable {
   private readonly snapshots = new Map<string, PullRequestConversationSnapshot>();
@@ -61,6 +62,11 @@ export class PullRequestConversationService implements vscode.Disposable {
     this.snapshots.set(key, snapshot);
     this.changeEmitter.fire(cloneSnapshot(snapshot));
     return cloneSnapshot(snapshot);
+  }
+
+  async loadRawDiff(repoInfo: RepoInfo, pullRequestNumber: number): Promise<string> {
+    if (!this.api.getPRRawDiff) return "";
+    return this.api.getPRRawDiff(repoInfo, pullRequestNumber);
   }
 
   clearRepository(repositoryKey: string): void {
