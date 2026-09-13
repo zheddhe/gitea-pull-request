@@ -672,12 +672,12 @@
         {
           "command": "gitea.previousPendingReviewOperation",
           "when": "resourceScheme == gitea-pr && gitea.prSession.active && gitea.pendingReviewNavigationAvailable",
-          "group": "navigation@21"
+          "group": "navigation@20"
         },
         {
           "command": "gitea.nextPendingReviewOperation",
           "when": "resourceScheme == gitea-pr && gitea.prSession.active && gitea.pendingReviewNavigationAvailable",
-          "group": "navigation@21"
+          "group": "navigation@20"
         }
       ],
       "comments/commentThread/context": [
