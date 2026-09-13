@@ -23,10 +23,10 @@ export type PRDetailMessageSinkResolver = (
  * destructive HTML reload. This bridge only locates the already-open panel and
  * posts the normalized session snapshot to it.
  *
- * The panel registry is currently owned by PRDetailPanel. Keeping the registry
- * lookup isolated here prevents review services from depending on webview
- * implementation details while the legacy panel is progressively migrated to
- * explicit injected state sources.
+ * PRDetailPanel still owns its legacy static panel registry. Keep that lookup
+ * isolated here so the shared review model and navigation services do not own
+ * a second UI state machine. The registry access can disappear once PR Detail
+ * itself is dependency-injected with review state in a later cleanup.
  */
 export class PRDetailReviewSyncBridge {
   constructor(
