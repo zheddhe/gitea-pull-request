@@ -6,6 +6,7 @@ import {
   nextReviewNavigationIndex,
 } from "../domain/reviewNavigationModel";
 import type { PullRequestWorkspaceState } from "../domain/pullRequestState";
+import { PRDetailReviewSyncBridge } from "./prDetailReviewSyncBridge";
 import type {
   PullRequestConversationService,
   PullRequestConversationSnapshot,
@@ -53,6 +54,7 @@ export class ReviewNavigationSignalService
     new vscode.EventEmitter<vscode.Uri | vscode.Uri[] | undefined>();
   readonly onDidChangeFileDecorations = this.decorationEmitter.event;
 
+  private readonly prDetailSync = new PRDetailReviewSyncBridge();
   private snapshot: PullRequestConversationSnapshot | undefined;
   private unresolvedByPath = new Map<string, number>();
   private targets: NavigationTarget[] = [];
@@ -90,6 +92,12 @@ export class ReviewNavigationSignalService
         void this.rebuild();
       }),
       this.pending.onDidChange((change) => {
+        void this.prDetailSync.publishPendingSession(
+          change.repositoryKey,
+          change.pullRequestNumber,
+          change.session,
+        );
+
         const state = this.session.current;
         if (
           state.kind !== "active" ||
