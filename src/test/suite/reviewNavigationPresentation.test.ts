@@ -29,7 +29,7 @@ suite("Review navigation presentation", () => {
     "utf8",
   );
 
-  test("exposes homogeneous ordered unresolved and pending controls in native PR diffs", () => {
+  test("exposes ordered unresolved and visually distinct pending controls in native PR diffs", () => {
     const commands = new Map(
       manifest.contributes.commands.map((item) => [item.command, item]),
     );
@@ -38,14 +38,22 @@ suite("Review navigation presentation", () => {
     assert.ok(commands.has("gitea.previousPendingReviewOperation"));
     assert.ok(commands.has("gitea.nextPendingReviewOperation"));
 
-    assert.deepStrictEqual(
+    assert.notDeepStrictEqual(
       commands.get("gitea.previousPendingReviewOperation")?.icon,
       commands.get("gitea.previousUnresolvedReviewConversation")?.icon,
     );
-    assert.deepStrictEqual(
+    assert.notDeepStrictEqual(
       commands.get("gitea.nextPendingReviewOperation")?.icon,
       commands.get("gitea.nextUnresolvedReviewConversation")?.icon,
     );
+    assert.deepStrictEqual(commands.get("gitea.previousPendingReviewOperation")?.icon, {
+      light: "resources/icons/review-pending-up-light.svg",
+      dark: "resources/icons/review-pending-up-dark.svg",
+    });
+    assert.deepStrictEqual(commands.get("gitea.nextPendingReviewOperation")?.icon, {
+      light: "resources/icons/review-pending-down-light.svg",
+      dark: "resources/icons/review-pending-down-dark.svg",
+    });
 
     const titleItems = manifest.contributes.menus["editor/title"];
     const navigationItems = titleItems.filter((item) =>
@@ -54,17 +62,22 @@ suite("Review navigation presentation", () => {
     assert.deepStrictEqual(
       navigationItems.map((item) => [item.command, item.group]),
       [
-        ["gitea.previousUnresolvedReviewConversation", "navigation@20"],
-        ["gitea.nextUnresolvedReviewConversation", "navigation@21"],
-        ["gitea.previousPendingReviewOperation", "navigation@22"],
-        ["gitea.nextPendingReviewOperation", "navigation@23"],
+        ["gitea.previousUnresolvedReviewConversation", "navigation@20.1"],
+        ["gitea.nextUnresolvedReviewConversation", "navigation@20.2"],
+        ["gitea.previousPendingReviewOperation", "navigation@20.3"],
+        ["gitea.nextPendingReviewOperation", "navigation@20.4"],
       ],
     );
+    for (const item of navigationItems.filter((item) =>
+      item.command.includes("UnresolvedReviewConversation"),
+    )) {
+      assert.match(item.when, /gitea\.unresolvedReviewNavigationMultipleAvailable/);
+    }
     for (const item of navigationItems.filter((item) =>
       item.command.includes("PendingReviewOperation"),
     )) {
       assert.match(item.when, /resourceScheme == gitea-pr/);
-      assert.match(item.when, /gitea\.pendingReviewNavigationAvailable/);
+      assert.match(item.when, /gitea\.pendingReviewNavigationMultipleAvailable/);
     }
   });
 
@@ -77,5 +90,7 @@ suite("Review navigation presentation", () => {
       signalSource,
       /setNavigationAvailable\("pending", pendingTargets\.length > 1\)/,
     );
+    assert.match(signalSource, /gitea\.unresolvedReviewNavigationMultipleAvailable/);
+    assert.match(signalSource, /gitea\.pendingReviewNavigationMultipleAvailable/);
   });
 });
