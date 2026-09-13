@@ -223,7 +223,6 @@ suite("Native review comment creation", () => {
     await waitFor(() => captured.length === 1, "pending inline native projection");
 
     assert.strictEqual(captured[0].range.start.line, 3);
-    assert.strictEqual(captured[0].comments.length, 0);
     assert.strictEqual(captured[0].contextValue, "giteaPendingInlineReview");
     assert.strictEqual(captured[0].comments.length, 1);
 
