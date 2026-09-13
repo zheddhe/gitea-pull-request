@@ -28,14 +28,23 @@ suite("Review navigation presentation", () => {
     assert.ok(commands.has("gitea.nextPendingReviewOperation"));
 
     const titleItems = manifest.contributes.menus["editor/title"];
+    const unresolved = titleItems.filter((item) =>
+      item.command.includes("UnresolvedReviewConversation"),
+    );
     const pending = titleItems.filter((item) =>
       item.command.includes("PendingReviewOperation"),
     );
+    assert.strictEqual(unresolved.length, 2);
     assert.strictEqual(pending.length, 2);
     for (const item of pending) {
       assert.match(item.when, /resourceScheme == gitea-pr/);
       assert.match(item.when, /gitea\.pendingReviewNavigationAvailable/);
-      assert.strictEqual(item.group, "navigation@21");
     }
+    assert.ok(
+      [...unresolved, ...pending].every(
+        (item) => item.group === "navigation@20",
+      ),
+      "unresolved and pending controls should stay in one primary editor-title group",
+    );
   });
 });
