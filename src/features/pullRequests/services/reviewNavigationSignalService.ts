@@ -12,12 +12,14 @@ import type {
 } from "./pullRequestConversationService";
 import type { PullRequestReviewSessionService } from "./pullRequestReviewSessionService";
 import type { PullRequestSessionService } from "./pullRequestSessionService";
+import type { ReviewNavigationStateService } from "./reviewNavigationStateService";
 import {
   createPullRequestSnapshotDocumentIdentity,
   createPullRequestSnapshotUri,
 } from "./pullRequestSnapshotDocumentProvider";
 
 interface NavigationTarget {
+  id: string;
   repoInfo: RepoInfo;
   pullRequest: Extract<PullRequestWorkspaceState, { kind: "active" }>[
     "pullRequest"
@@ -54,7 +56,6 @@ export class ReviewNavigationSignalService
   private snapshot: PullRequestConversationSnapshot | undefined;
   private unresolvedByPath = new Map<string, number>();
   private targets: NavigationTarget[] = [];
-  private currentRootCommentId: number | undefined;
   private rebuildEpoch = 0;
 
   constructor(
@@ -62,6 +63,7 @@ export class ReviewNavigationSignalService
     private readonly pending: ReviewPendingSource,
     private readonly session: ReviewNavigationSession,
     private readonly repoManager: Pick<RepoManager, "getRepos">,
+    private readonly navigationState: ReviewNavigationStateService,
     private readonly openTextDocument: OpenTextDocument = (uri) =>
       vscode.workspace.openTextDocument(uri),
     private readonly executeCommand: CommandExecutor = (command, ...args) =>
@@ -118,9 +120,9 @@ export class ReviewNavigationSignalService
   dispose(): void {
     this.rebuildEpoch += 1;
     this.targets = [];
-    this.currentRootCommentId = undefined;
     this.unresolvedByPath.clear();
     this.snapshot = undefined;
+    this.navigationState.clear();
     void this.setNavigationAvailable(false);
     for (const disposable of this.disposables) disposable.dispose();
   }
@@ -130,12 +132,18 @@ export class ReviewNavigationSignalService
   ): Promise<void> {
     this.snapshot = undefined;
     this.targets = [];
-    this.currentRootCommentId = undefined;
     this.unresolvedByPath.clear();
     this.decorationEmitter.fire(undefined);
     await this.setNavigationAvailable(false);
 
-    if (state.kind !== "active") return;
+    if (state.kind !== "active") {
+      this.navigationState.clear();
+      return;
+    }
+    this.navigationState.activate(
+      state.repository.key,
+      state.pullRequest.number,
+    );
     const repoInfo = this.repoManager
       .getRepos()
       .find((repo) => repo.key === state.repository.key);
@@ -181,8 +189,14 @@ export class ReviewNavigationSignalService
     this.unresolvedByPath = new Map(model.unresolvedByPath);
     this.decorationEmitter.fire(undefined);
 
+    if (this.navigationState.current.mode === "unresolved") {
+      this.navigationState.reconcile(model.unresolved.map((item) => item.id));
+    }
+
     const targets: NavigationTarget[] = [];
     for (const candidate of model.placedUnresolved) {
+      const rootCommentId = candidate.rootCommentId;
+      if (rootCommentId === undefined) continue;
       const uri = createPullRequestSnapshotUri(
         createPullRequestSnapshotDocumentIdentity(
           repoInfo,
@@ -198,9 +212,13 @@ export class ReviewNavigationSignalService
           continue;
         }
         targets.push({
+          id: candidate.id,
+          rootCommentId,
           repoInfo,
           pullRequest: state.pullRequest,
-          ...candidate,
+          path: candidate.path,
+          side: candidate.side,
+          line: candidate.line,
           uri,
         });
       } catch {
@@ -210,17 +228,9 @@ export class ReviewNavigationSignalService
 
     if (epoch !== this.rebuildEpoch) return;
     this.targets = targets;
-    if (
-      this.currentRootCommentId !== undefined &&
-      !targets.some(
-        (target) => target.rootCommentId === this.currentRootCommentId,
-      )
-    ) {
-      this.currentRootCommentId = undefined;
-    }
     await this.setNavigationAvailable(targets.length > 0);
     debug(
-      `[review-navigation] repo=${repoInfo.key} pr=#${state.pullRequest.number} unresolvedFiles=${this.unresolvedByPath.size} placed=${targets.length}`,
+      `[review-navigation] repo=${repoInfo.key} pr=#${state.pullRequest.number} unresolvedFiles=${this.unresolvedByPath.size} logical=${model.unresolved.length} placed=${targets.length} pending=${model.pending.length}`,
     );
   }
 
@@ -237,12 +247,11 @@ export class ReviewNavigationSignalService
   private async navigate(direction: -1 | 1): Promise<void> {
     if (this.targets.length === 0) return;
 
-    const cursorIndex =
-      this.currentRootCommentId === undefined
-        ? -1
-        : this.targets.findIndex(
-            (target) => target.rootCommentId === this.currentRootCommentId,
-          );
+    this.navigationState.setMode("unresolved");
+    const activeItemId = this.navigationState.current.activeItemId;
+    const cursorIndex = activeItemId
+      ? this.targets.findIndex((target) => target.id === activeItemId)
+      : -1;
     const current =
       cursorIndex >= 0
         ? cursorIndex
@@ -273,7 +282,7 @@ export class ReviewNavigationSignalService
         range,
         vscode.TextEditorRevealType.InCenterIfOutsideViewport,
       );
-      this.currentRootCommentId = target.rootCommentId;
+      this.navigationState.select(target.id);
       return;
     }
 
@@ -281,7 +290,7 @@ export class ReviewNavigationSignalService
       preview: true,
       selection: range,
     });
-    this.currentRootCommentId = target.rootCommentId;
+    this.navigationState.select(target.id);
   }
 }
 
