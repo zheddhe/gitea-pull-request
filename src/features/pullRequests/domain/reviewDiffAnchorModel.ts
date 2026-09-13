@@ -20,6 +20,7 @@ export function buildReviewDiffAnchorIndex(rawDiff: string): ReviewDiffAnchorInd
   let currentPath: string | undefined;
   let oldLine = 0;
   let newLine = 0;
+  let inHunk = false;
 
   for (const rawLine of rawDiff.split(/\r?\n/)) {
     if (rawLine.startsWith("diff --git ")) {
@@ -29,6 +30,7 @@ export function buildReviewDiffAnchorIndex(rawDiff: string): ReviewDiffAnchorInd
       }
       oldLine = 0;
       newLine = 0;
+      inHunk = false;
       continue;
     }
 
@@ -40,14 +42,16 @@ export function buildReviewDiffAnchorIndex(rawDiff: string): ReviewDiffAnchorInd
       if (!match) {
         oldLine = 0;
         newLine = 0;
+        inHunk = false;
         continue;
       }
       oldLine = Number(match[1]) - 1;
       newLine = Number(match[2]) - 1;
+      inHunk = true;
       continue;
     }
 
-    if (oldLine === 0 && newLine === 0) continue;
+    if (!inHunk) continue;
     if (rawLine.startsWith("\\")) continue;
 
     if (rawLine.startsWith("+") && !rawLine.startsWith("+++")) {
