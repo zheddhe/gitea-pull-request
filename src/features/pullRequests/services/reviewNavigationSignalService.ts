@@ -93,6 +93,19 @@ export class ReviewNavigationSignalService
         "gitea.nextPendingReviewOperation",
         () => this.navigate("pending", 1),
       ),
+      vscode.commands.registerCommand("gitea.getReviewNavigationState", () =>
+        this.navigationState.current,
+      ),
+      vscode.commands.registerCommand(
+        "gitea.selectReviewNavigationItem",
+        (mode: ReviewNavigationMode, itemId: string | undefined) => {
+          this.navigationState.setMode(mode);
+          return this.navigationState.select(itemId);
+        },
+      ),
+      this.navigationState.onDidChange((change) => {
+        void this.prDetailSync.publishNavigationState(change.state);
+      }),
       this.session.onDidChangeState((state) => {
         void this.applySessionState(state);
       }),
