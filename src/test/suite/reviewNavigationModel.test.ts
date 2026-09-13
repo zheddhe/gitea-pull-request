@@ -104,7 +104,7 @@ suite("Review navigation model", () => {
     );
   });
 
-  test("keeps unplaceable unresolved conversations in file counts but out of native navigation", () => {
+  test("keeps unplaceable unresolved conversations in logical navigation but out of native navigation", () => {
     const conversations = buildReviewConversations([
       comment(1, "src/a.ts", 0, 0),
       comment(2, "src/a.ts", 6),
@@ -117,12 +117,84 @@ suite("Review navigation model", () => {
 
     assert.strictEqual(model.unresolvedByPath.get("src/a.ts"), 2);
     assert.deepStrictEqual(
+      model.unresolved.map((item) => [item.rootCommentId, item.placeable]),
+      [
+        [2, true],
+        [1, false],
+      ],
+    );
+    assert.deepStrictEqual(
       model.placedUnresolved.map((item) => item.rootCommentId),
       [2],
     );
   });
 
-  test("cycles next and previous through every unresolved target", () => {
+  test("builds one deterministic pending cycle across inline comments replies and lifecycle actions", () => {
+    const conversations = buildReviewConversations([
+      comment(10, "src/b.ts", 8),
+      comment(20, "src/c.ts", 0, 4),
+    ]);
+
+    const model = buildReviewNavigationModel(conversations, {
+      inlineComments: [
+        {
+          id: "inline-z",
+          path: "src/z.ts",
+          new_position: 3,
+          old_position: 0,
+          body: "new comment",
+        },
+        {
+          id: "inline-a",
+          path: "src/a.ts",
+          new_position: 0,
+          old_position: 5,
+          body: "base comment",
+        },
+      ],
+      replies: [{ id: "reply-10", rootCommentId: 10, body: "reply" }],
+      conversationActions: [
+        { id: "resolve-20", rootCommentId: 20, action: "resolve" },
+      ],
+    });
+
+    assert.deepStrictEqual(
+      model.pending.map((item) => [
+        item.pendingId,
+        item.kind,
+        item.path,
+        item.side,
+        item.line,
+      ]),
+      [
+        ["inline-a", "inline-comment", "src/a.ts", "base", 5],
+        ["reply-10", "reply", "src/b.ts", "head", 8],
+        ["resolve-20", "conversation-action", "src/c.ts", "base", 4],
+        ["inline-z", "inline-comment", "src/z.ts", "head", 3],
+      ],
+    );
+    assert.strictEqual(model.placedPending.length, 4);
+  });
+
+  test("keeps pending operations reachable when their conversation cannot be projected", () => {
+    const conversations = buildReviewConversations([
+      comment(10, "src/a.ts", 0, 0),
+    ]);
+
+    const model = buildReviewNavigationModel(conversations, {
+      inlineComments: [],
+      replies: [{ id: "reply-10", rootCommentId: 10, body: "reply" }],
+      conversationActions: [],
+    });
+
+    assert.deepStrictEqual(
+      model.pending.map((item) => [item.pendingId, item.placeable]),
+      [["reply-10", false]],
+    );
+    assert.strictEqual(model.placedPending.length, 0);
+  });
+
+  test("cycles next and previous through every target", () => {
     let index = -1;
     index = nextReviewNavigationIndex(index, 3, 1);
     assert.strictEqual(index, 0);

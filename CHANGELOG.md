@@ -2,6 +2,35 @@
 
 All notable changes to **Gitea Pull Request** are documented here from the standalone product line onward.
 
+## 1.1.0 - Unreleased
+
+`1.1.0` focuses on review continuity, contextual workflow polish and stronger safeguards around merge and source-branch cleanup.
+
+### Added
+
+- Native `Add Review Comment` from authoritative `gitea-pr` diffs, including safely mapped unchanged lines outside raw-diff hunks.
+- Immediate bidirectional review synchronization between native Inline Review and PR Detail through the shared pending-review transaction.
+- Independent Previous/Next navigation cycles for unresolved conversations and pending review operations, with one logical cursor shared across Inline Review and PR Detail.
+- Explicit Outdated conversation presentation in PR Detail so historical review threads remain accessible without being attached to an unsafe current-diff position.
+- Distinct native navigation affordances for unresolved conversations and pending modifications.
+
+### Improved
+
+- Review anchors now preserve canonical old/new coordinates for context, added, removed and safely mapped unchanged lines instead of relying on approximate line placement.
+- Pending review submission/reconcile keeps navigation continuity when a pending item becomes a persisted conversation, without guessing when the successor is ambiguous.
+- Outdated and Resolved are independent states: a branch update does not auto-resolve review feedback, and historical resolved state remains visible.
+- Native and PR Detail navigation hides Previous/Next controls when a cycle contains fewer than two navigable items.
+- PR Detail separates Unresolved, Pending and Outdated review states more clearly while keeping the same shared lifecycle model.
+
+### Planned before release
+
+The `1.1.0` release is not complete until the remaining Phase 10 stories are integrated:
+
+- #59 — Phase 10.2: contextual action cleanup and review-to-CI navigation.
+- #60 — Phase 10.3: source-branch divergence safety before merge and cleanup.
+
+See [`docs/RELEASE_1.1.0.md`](docs/RELEASE_1.1.0.md) for the working release gate and story status.
+
 ## 1.0.0 - 2026-09-08
 
 `1.0.0` is the first full user-experience baseline: native review interaction, adaptive refresh, reliable Actions detail and multi-instance authentication designed for least privilege.

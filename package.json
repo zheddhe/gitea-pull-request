@@ -426,6 +426,12 @@
         "icon": "$(comment-add)"
       },
       {
+        "command": "gitea.nativeReviewCreate",
+        "title": "Add Review Comment",
+        "enablement": "!commentIsEmpty",
+        "icon": "$(comment-add)"
+      },
+      {
         "command": "gitea.nativeReviewReply",
         "title": "Add Pending Reply",
         "icon": "$(reply)"
@@ -454,6 +460,22 @@
         "icon": {
           "light": "resources/icons/review-comment-down-light.svg",
           "dark": "resources/icons/review-comment-down-dark.svg"
+        }
+      },
+      {
+        "command": "gitea.previousPendingReviewOperation",
+        "title": "Previous Pending Review Operation",
+        "icon": {
+          "light": "resources/icons/review-pending-up-light.svg",
+          "dark": "resources/icons/review-pending-up-dark.svg"
+        }
+      },
+      {
+        "command": "gitea.nextPendingReviewOperation",
+        "title": "Next Pending Review Operation",
+        "icon": {
+          "light": "resources/icons/review-pending-down-light.svg",
+          "dark": "resources/icons/review-pending-down-dark.svg"
         }
       }
     ],
@@ -645,16 +667,31 @@
       "editor/title": [
         {
           "command": "gitea.previousUnresolvedReviewConversation",
-          "when": "resourceScheme == gitea-pr && gitea.prSession.active && gitea.reviewNavigationAvailable",
-          "group": "navigation@20"
+          "when": "resourceScheme == gitea-pr && gitea.prSession.active && gitea.unresolvedReviewNavigationMultipleAvailable",
+          "group": "navigation@2.1"
         },
         {
           "command": "gitea.nextUnresolvedReviewConversation",
-          "when": "resourceScheme == gitea-pr && gitea.prSession.active && gitea.reviewNavigationAvailable",
-          "group": "navigation@20"
+          "when": "resourceScheme == gitea-pr && gitea.prSession.active && gitea.unresolvedReviewNavigationMultipleAvailable",
+          "group": "navigation@2.2"
+        },
+        {
+          "command": "gitea.previousPendingReviewOperation",
+          "when": "resourceScheme == gitea-pr && gitea.prSession.active && gitea.pendingReviewNavigationMultipleAvailable",
+          "group": "navigation@2.3"
+        },
+        {
+          "command": "gitea.nextPendingReviewOperation",
+          "when": "resourceScheme == gitea-pr && gitea.prSession.active && gitea.pendingReviewNavigationMultipleAvailable",
+          "group": "navigation@2.4"
         }
       ],
       "comments/commentThread/context": [
+        {
+          "command": "gitea.nativeReviewCreate",
+          "when": "commentController == gitea.pullRequestReview && commentThreadIsEmpty",
+          "group": "inline@1"
+        },
         {
           "command": "gitea.nativeReviewReply",
           "when": "commentThread == giteaReviewConversationUnresolvedActionable || commentThread == giteaReviewConversationResolvedActionable",

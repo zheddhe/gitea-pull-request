@@ -2,6 +2,7 @@ import * as assert from "assert";
 import type { GiteaReviewComment, GiteaUser } from "../../api/types";
 import {
   buildReviewConversations,
+  projectReviewConversationsForHead,
   type ReviewConversation,
 } from "../../features/pullRequests/domain/reviewConversationModel";
 import { resolveReviewConversationPlacement } from "../../features/pullRequests/domain/reviewConversationPlacement";
@@ -74,5 +75,53 @@ suite("Review conversation placement", () => {
       resolveReviewConversationPlacement(conversation({ position: 0, original_position: 0 })),
       { kind: "unplaceable", reason: "missingLine" },
     );
+  });
+
+  test("keeps a resolved historical conversation resolved but unplaceable after head changes", () => {
+    const resolved = buildReviewConversations([
+      comment({
+        commit_id: "old-head",
+        position: 11,
+        original_position: 10,
+        new_position: 11,
+        old_position: 10,
+        resolver: user,
+      }),
+    ]);
+
+    const [projected] = projectReviewConversationsForHead(resolved, "new-head");
+    assert.ok(projected);
+    assert.strictEqual(projected.resolved, true);
+    assert.strictEqual(projected.resolver?.id, user.id);
+    assert.strictEqual(projected.outdated, true);
+    assert.strictEqual(projected.root.position, 11);
+    assert.strictEqual(projected.root.original_position, 10);
+    assert.strictEqual(projected.root.new_position, 0);
+    assert.strictEqual(projected.root.old_position, 0);
+    assert.deepStrictEqual(resolveReviewConversationPlacement(projected), {
+      kind: "unplaceable",
+      reason: "outdated",
+    });
+  });
+
+  test("keeps a current resolved conversation placeable", () => {
+    const resolved = buildReviewConversations([
+      comment({
+        commit_id: "current-head",
+        position: 11,
+        new_position: 11,
+        resolver: user,
+      }),
+    ]);
+
+    const [projected] = projectReviewConversationsForHead(resolved, "current-head");
+    assert.strictEqual(projected.outdated, false);
+    assert.strictEqual(projected.resolved, true);
+    assert.deepStrictEqual(resolveReviewConversationPlacement(projected), {
+      kind: "placed",
+      side: "head",
+      path: "src/example.ts",
+      line: 11,
+    });
   });
 });

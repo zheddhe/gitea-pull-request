@@ -28,6 +28,7 @@ The product follows a few stable principles:
 | 7 | Workflow completion and refresh hardening | `0.8.0` |
 | 8 | Interactive review and first-class Issue authoring | `0.9.0` |
 | 9 | Full state-of-the-art UX baseline | `1.0.0` |
+| 10 | Review continuity, contextual diagnostics and merge safety | `1.1.0` |
 
 Patch versions are reserved for corrections that do not introduce the next product milestone.
 
@@ -68,6 +69,41 @@ OAuth2 Authorization Code + PKCE is intentionally deferred beyond the 1.0 accept
 - artifacts and execution detail are surfaced where the server API supports them;
 - unsupported server behavior degrades locally rather than disabling unrelated extension features.
 
+## Phase 10 — 1.1.0
+
+Phase 10 is an incremental post-1.0 release focused on continuity and workflow safety rather than another structural rewrite. The release is composed of three P1 stories that share the same state-driven and native-first principles established in 1.0.
+
+### 10.1 — Review continuity and native inline ergonomics
+
+Status: implemented and E2E validated in PR #61; tracked by #58.
+
+- native `Add Review Comment` uses the authoritative PR snapshot and canonical old/new anchors;
+- unchanged lines outside raw-diff hunks are commentable only when their base/head mapping is deterministic;
+- Inline Review and PR Detail are live projections of one pending-review/conversation state;
+- unresolved and pending work have independent Previous/Next cycles backed by one shared logical cursor;
+- outdated conversations remain reachable in PR Detail without unsafe projection onto the current diff;
+- `Outdated` and `Resolved` remain independent lifecycle dimensions;
+- submission/reconcile preserves logical navigation continuity when pending work becomes persisted review state.
+
+### 10.2 — Contextual action cleanup and review-to-CI navigation
+
+Status: planned before `1.1.0`; tracked by #59.
+
+- remove the legacy Issue-row Add Comment affordance in favor of Issue Detail;
+- expose contextual PR-check job/log access directly from Review Pull Request;
+- reuse the existing normalized CI / Actions data and adaptive refresh path rather than introducing review-specific polling or CI state.
+
+### 10.3 — Source-branch divergence safety before merge and cleanup
+
+Status: planned before `1.1.0`; tracked by #60.
+
+- classify local/remote PR source state as in-sync, behind, ahead, diverged or unknown where safely resolvable;
+- warn before server-side merge when local-only commits are not part of the remote PR;
+- apply stronger reachability-based safeguards before destructive source-branch cleanup;
+- never automatically push, reset or discard local work as part of merge confirmation.
+
+The working `1.1.0` release gate and documentation status are maintained in [`RELEASE_1.1.0.md`](RELEASE_1.1.0.md).
+
 ## Compatibility baseline
 
 The established baseline remains:
@@ -94,6 +130,6 @@ Validate the exact generated VSIX, merge the release candidate, tag the merged c
 
 See [`RELEASING.md`](RELEASING.md) for the operational release procedure and [`TESTING.md`](TESTING.md) for test architecture.
 
-## After 1.0
+## After 1.1
 
-Post-1.0 work should be incremental rather than another structural rewrite. Candidate areas include OAuth2/PKCE, additional server capability discovery, richer Actions detail where Gitea APIs permit it, and further native VS Code review integration.
+Post-1.1 work should remain incremental. Candidate areas include OAuth2/PKCE, additional server capability discovery, richer Actions detail where Gitea APIs permit it, and further native VS Code review integration.

@@ -7,6 +7,7 @@ import type {
 import type { RepoInfo } from "../../../context/repoManager";
 import {
   buildReviewConversations,
+  projectReviewConversationsForHead,
   type ReviewConversation,
 } from "../domain/reviewConversationModel";
 
@@ -19,7 +20,8 @@ export interface PullRequestConversationSnapshot {
   conversations: ReviewConversation[];
 }
 
-type ReviewCommentsApi = Pick<GiteaApiClient, "listAllPRReviewComments">;
+type ReviewCommentsApi = Pick<GiteaApiClient, "listAllPRReviewComments"> &
+  Partial<Pick<GiteaApiClient, "getPRRawDiff">>;
 
 export class PullRequestConversationService implements vscode.Disposable {
   private readonly snapshots = new Map<string, PullRequestConversationSnapshot>();
@@ -50,17 +52,26 @@ export class PullRequestConversationService implements vscode.Disposable {
       repoInfo,
       pullRequest.number,
     );
+    const conversations = projectReviewConversationsForHead(
+      buildReviewConversations(comments),
+      pullRequest.head.sha,
+    );
     const snapshot: PullRequestConversationSnapshot = {
       repositoryKey: repoInfo.key,
       pullRequestNumber: pullRequest.number,
       baseSha: pullRequest.base.sha,
       headSha: pullRequest.head.sha,
       comments: [...comments],
-      conversations: buildReviewConversations(comments),
+      conversations,
     };
     this.snapshots.set(key, snapshot);
     this.changeEmitter.fire(cloneSnapshot(snapshot));
     return cloneSnapshot(snapshot);
+  }
+
+  async loadRawDiff(repoInfo: RepoInfo, pullRequestNumber: number): Promise<string> {
+    if (!this.api.getPRRawDiff) return "";
+    return this.api.getPRRawDiff(repoInfo, pullRequestNumber);
   }
 
   clearRepository(repositoryKey: string): void {
@@ -118,6 +129,7 @@ function cloneSnapshot(
     comments: [...snapshot.comments],
     conversations: snapshot.conversations.map((conversation) => ({
       ...conversation,
+      root: { ...conversation.root },
       replies: [...conversation.replies],
     })),
   };

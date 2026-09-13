@@ -9,6 +9,7 @@ export interface ReviewConversation {
   resolved: boolean;
   resolver?: GiteaUser;
   orphaned: boolean;
+  outdated?: boolean;
 }
 
 export function buildReviewConversations(
@@ -63,6 +64,7 @@ export function buildReviewConversations(
       resolved: !!orphan.resolver,
       resolver: orphan.resolver,
       orphaned: true,
+      outdated: false,
     });
   }
 
@@ -75,6 +77,38 @@ export function conversationCommentIds(
   return [conversation.root.id, ...conversation.replies.map((reply) => reply.id)];
 }
 
+export function projectReviewConversationsForHead(
+  conversations: ReviewConversation[],
+  currentHeadSha: string,
+): ReviewConversation[] {
+  const current = currentHeadSha.trim();
+  return conversations.map((conversation) => {
+    const commitIds = [conversation.root, ...conversation.replies]
+      .map((comment) => comment.commit_id?.trim())
+      .filter((commitId): commitId is string => !!commitId);
+    const outdated =
+      !!current &&
+      commitIds.length > 0 &&
+      commitIds.every((commitId) => commitId !== current);
+    if (!outdated) return { ...conversation, outdated: false };
+
+    return {
+      ...conversation,
+      outdated: true,
+      // These aliases are extension-owned placement coordinates for the
+      // current diff. Keep the authoritative API position/original_position
+      // values untouched on the comment itself, but do not let legacy renderers
+      // attach a historical conversation to the same-numbered current line.
+      root: {
+        ...conversation.root,
+        new_position: 0,
+        old_position: 0,
+      },
+      replies: [...conversation.replies],
+    };
+  });
+}
+
 function toConversation(group: GiteaReviewComment[]): ReviewConversation {
   const ordered = [...group].sort(byCreatedAt);
   const root = ordered[0];
@@ -85,6 +119,7 @@ function toConversation(group: GiteaReviewComment[]): ReviewConversation {
     resolved: !!resolver,
     resolver,
     orphaned: false,
+    outdated: false,
   };
 }
 

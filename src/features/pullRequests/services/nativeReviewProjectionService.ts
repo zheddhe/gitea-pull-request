@@ -6,8 +6,13 @@ import type {
 import type { RepoInfo, RepoManager } from "../../../context/repoManager";
 import { debug, warn } from "../../../debug/outputChannel";
 import type { GiteaServerCapabilities } from "../domain/giteaServerCapabilities";
+import {
+  buildReviewDiffAnchorIndex,
+  type ReviewDiffAnchorIndex,
+} from "../domain/reviewDiffAnchorModel";
 import type {
   PendingConversationAction,
+  PendingInlineComment,
   PendingReviewReply,
   PendingReviewSession,
 } from "../domain/pendingReviewSession";
@@ -26,6 +31,7 @@ import type { PullRequestSessionService } from "./pullRequestSessionService";
 import {
   createPullRequestSnapshotDocumentIdentity,
   createPullRequestSnapshotUri,
+  parsePullRequestSnapshotUri,
 } from "./pullRequestSnapshotDocumentProvider";
 
 type ReviewProjectionSession = Pick<
@@ -35,6 +41,7 @@ type ReviewProjectionSession = Pick<
 type ReviewPendingSessionSource = Pick<
   PullRequestReviewSessionService,
   | "get"
+  | "queueInlineComment"
   | "queueReply"
   | "queueConversationAction"
   | "remove"
@@ -52,6 +59,16 @@ interface NativeThreadBinding {
   capabilities: GiteaServerCapabilities;
 }
 
+interface ActiveNativeAnchor {
+  repoInfo: RepoInfo;
+  pullRequest: GiteaPullRequest;
+  path: string;
+  side: "base" | "head";
+  line: number;
+  oldPosition: number;
+  newPosition: number;
+}
+
 const NO_CAPABILITIES: GiteaServerCapabilities = {
   version: "",
   inlineReviewResolution: false,
@@ -62,8 +79,12 @@ export class NativeReviewProjectionService implements vscode.Disposable {
   private readonly controller: vscode.CommentController;
   private readonly disposables: vscode.Disposable[] = [];
   private readonly threads = new Map<number, vscode.CommentThread>();
+  private readonly pendingInlineThreads = new Map<string, vscode.CommentThread>();
   private readonly threadBindings = new WeakMap<vscode.CommentThread, NativeThreadBinding>();
   private readonly internalConversationLoads = new Set<string>();
+  private anchorCache:
+    | { key: string; index: ReviewDiffAnchorIndex }
+    | undefined;
   private projectionEpoch = 0;
   private nextPendingId = 1;
 
@@ -85,6 +106,9 @@ export class NativeReviewProjectionService implements vscode.Disposable {
         "gitea.pullRequestReview",
         "Gitea Pull Request Review",
       );
+    this.controller.commentingRangeProvider = {
+      provideCommentingRanges: (document) => this.provideCommentingRanges(document),
+    };
     this.disposables.push(
       this.session.onDidChangeState((state) => {
         void this.applySessionState(state);
@@ -98,7 +122,7 @@ export class NativeReviewProjectionService implements vscode.Disposable {
         ) {
           return;
         }
-        this.applyPendingSession(change.session);
+        void this.applyPendingSession(change.session);
         if (change.reason === "reconcile") {
           void this.reloadPersistedConversations(
             change.repositoryKey,
@@ -113,6 +137,10 @@ export class NativeReviewProjectionService implements vscode.Disposable {
     );
     if (ownsController) {
       this.disposables.push(
+        vscode.commands.registerCommand(
+          "gitea.nativeReviewCreate",
+          (reply: vscode.CommentReply) => this.queueInlineComment(reply),
+        ),
         vscode.commands.registerCommand(
           "gitea.nativeReviewReply",
           (reply: vscode.CommentReply) => this.queueReply(reply),
@@ -133,6 +161,33 @@ export class NativeReviewProjectionService implements vscode.Disposable {
 
   async initialize(): Promise<void> {
     await this.applySessionState(this.session.current);
+  }
+
+  async queueInlineComment(reply: vscode.CommentReply): Promise<void> {
+    const body = reply.text.trim();
+    if (!body) return;
+    const anchor = await this.resolveActiveAnchor(reply.thread);
+    if (!anchor) {
+      vscode.window.showWarningMessage(
+        "This location cannot be represented safely as a Gitea review comment.",
+      );
+      return;
+    }
+
+    const operation: PendingInlineComment = {
+      id: this.pendingId("inline", anchor.line),
+      path: anchor.path,
+      new_position: anchor.newPosition,
+      old_position: anchor.oldPosition,
+      body,
+    };
+    this.pendingInlineThreads.set(operation.id, reply.thread);
+    applyPendingInlineThread(reply.thread, operation);
+    this.pendingSessions.queueInlineComment(
+      anchor.repoInfo,
+      anchor.pullRequest.number,
+      operation,
+    );
   }
 
   async queueReply(reply: vscode.CommentReply): Promise<void> {
@@ -201,8 +256,86 @@ export class NativeReviewProjectionService implements vscode.Disposable {
     this.controller.dispose();
   }
 
+  private async provideCommentingRanges(
+    document: vscode.TextDocument,
+  ): Promise<vscode.Range[]> {
+    const context = this.activeSnapshotContext(document.uri);
+    if (!context) return [];
+    const index = await this.loadAnchorIndex(context.repoInfo, context.pullRequest);
+    return index
+      .lines(context.path, context.side, document.lineCount)
+      .map((line) => new vscode.Range(line - 1, 0, line - 1, 0));
+  }
+
+  private async resolveActiveAnchor(
+    thread: vscode.CommentThread,
+  ): Promise<ActiveNativeAnchor | undefined> {
+    const context = this.activeSnapshotContext(thread.uri);
+    if (!context || !thread.range) return undefined;
+    if (thread.range.start.line !== thread.range.end.line) return undefined;
+    const line = thread.range.start.line + 1;
+    const index = await this.loadAnchorIndex(context.repoInfo, context.pullRequest);
+    const canonical = index.anchor(context.path, context.side, line);
+    if (!canonical) return undefined;
+    return {
+      ...context,
+      line,
+      oldPosition: canonical.oldPosition,
+      newPosition: canonical.newPosition,
+    };
+  }
+
+  private activeSnapshotContext(
+    uri: vscode.Uri,
+  ): Omit<ActiveNativeAnchor, "line" | "oldPosition" | "newPosition"> | undefined {
+    const identity = parsePullRequestSnapshotUri(uri);
+    const state = this.session.current;
+    if (!identity || state.kind !== "active") return undefined;
+    if (
+      identity.repositoryKey !== state.repository.key ||
+      identity.pullRequestNumber !== state.pullRequest.number
+    ) {
+      return undefined;
+    }
+    const expectedRef = identity.side === "base" ? state.pullRequest.base : state.pullRequest.head;
+    if (
+      identity.sha !== expectedRef.sha ||
+      identity.repositoryFullName !== expectedRef.repo.full_name
+    ) {
+      return undefined;
+    }
+    const repoInfo = this.repoManager
+      .getRepos()
+      .find((repo) => repo.key === identity.repositoryKey);
+    if (!repoInfo) return undefined;
+    return {
+      repoInfo,
+      pullRequest: state.pullRequest,
+      path: identity.path,
+      side: identity.side,
+    };
+  }
+
+  private async loadAnchorIndex(
+    repoInfo: RepoInfo,
+    pullRequest: GiteaPullRequest,
+  ): Promise<ReviewDiffAnchorIndex> {
+    const key = snapshotIdentityFor(
+      repoInfo.key,
+      pullRequest.number,
+      pullRequest.base.sha,
+      pullRequest.head.sha,
+    );
+    if (this.anchorCache?.key === key) return this.anchorCache.index;
+    const rawDiff = await this.conversations.loadRawDiff(repoInfo, pullRequest.number);
+    const index = buildReviewDiffAnchorIndex(rawDiff);
+    this.anchorCache = { key, index };
+    return index;
+  }
+
   private async applySessionState(state: PullRequestWorkspaceState): Promise<void> {
     const epoch = ++this.projectionEpoch;
+    this.anchorCache = undefined;
     this.clearThreads();
 
     if (state.kind !== "active") return;
@@ -355,10 +488,11 @@ export class NativeReviewProjectionService implements vscode.Disposable {
       );
       if (!placed) fallbackCount += 1;
     }
+    await this.syncPendingInlineThreads(pending);
 
     if (epoch !== this.projectionEpoch) return;
     debug(
-      `[native-review] projected repo=${repoInfo.key} pr=#${pullRequest.number} head=${pullRequest.head.sha.slice(0, 8)} threads=${this.threads.size} fallback=${fallbackCount}`,
+      `[native-review] projected repo=${repoInfo.key} pr=#${pullRequest.number} head=${pullRequest.head.sha.slice(0, 8)} threads=${this.threads.size} pendingInline=${this.pendingInlineThreads.size} fallback=${fallbackCount}`,
     );
   }
 
@@ -420,10 +554,53 @@ export class NativeReviewProjectionService implements vscode.Disposable {
     return true;
   }
 
-  private applyPendingSession(pending: PendingReviewSession): void {
+  private async applyPendingSession(pending: PendingReviewSession): Promise<void> {
     for (const thread of this.threads.values()) {
       const binding = this.threadBindings.get(thread);
       if (binding) this.applyPendingState(thread, binding, pending);
+    }
+    await this.syncPendingInlineThreads(pending);
+  }
+
+  private async syncPendingInlineThreads(pending: PendingReviewSession): Promise<void> {
+    const pendingIds = new Set(pending.inlineComments.map((item) => item.id));
+    for (const [id, thread] of this.pendingInlineThreads) {
+      if (pendingIds.has(id)) continue;
+      thread.dispose();
+      this.pendingInlineThreads.delete(id);
+    }
+
+    const state = this.session.current;
+    if (state.kind !== "active") return;
+    const repoInfo = this.repoManager
+      .getRepos()
+      .find((repo) => repo.key === state.repository.key);
+    if (!repoInfo) return;
+    const index = await this.loadAnchorIndex(repoInfo, state.pullRequest);
+
+    for (const item of pending.inlineComments) {
+      const existing = this.pendingInlineThreads.get(item.id);
+      if (existing) {
+        applyPendingInlineThread(existing, item);
+        continue;
+      }
+      const side = item.new_position > 0 ? "head" : item.old_position > 0 ? "base" : undefined;
+      const line = side === "head" ? item.new_position : item.old_position;
+      if (!side || line <= 0 || !index.has(item.path, side, line)) continue;
+      const uri = createPullRequestSnapshotUri(
+        createPullRequestSnapshotDocumentIdentity(
+          repoInfo,
+          state.pullRequest,
+          side,
+          item.path,
+        ),
+      );
+      const document = await this.openTextDocument(uri);
+      if (line > document.lineCount) continue;
+      const range = document.lineAt(line - 1).range;
+      const thread = this.controller.createCommentThread(uri, range, []);
+      applyPendingInlineThread(thread, item);
+      this.pendingInlineThreads.set(item.id, thread);
     }
   }
 
@@ -499,7 +676,9 @@ export class NativeReviewProjectionService implements vscode.Disposable {
 
   private clearThreads(): void {
     for (const thread of this.threads.values()) thread.dispose();
+    for (const thread of this.pendingInlineThreads.values()) thread.dispose();
     this.threads.clear();
+    this.pendingInlineThreads.clear();
   }
 }
 
@@ -540,6 +719,27 @@ function toNativePendingReply(reply: PendingReviewReply): vscode.Comment {
     author: { name: "Pending reply · not submitted" },
     contextValue: "giteaPendingReviewReply",
   };
+}
+
+function applyPendingInlineThread(
+  thread: vscode.CommentThread,
+  item: PendingInlineComment,
+): void {
+  const body = new vscode.MarkdownString(item.body);
+  body.isTrusted = false;
+  body.supportHtml = false;
+  thread.comments = [
+    {
+      body,
+      mode: vscode.CommentMode.Preview,
+      author: { name: "Pending review comment · not submitted" },
+      contextValue: "giteaPendingInlineReviewComment",
+    },
+  ];
+  thread.canReply = false;
+  thread.contextValue = "giteaPendingInlineReview";
+  thread.label = "Pending review comment";
+  thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
 }
 
 function snapshotIdentity(snapshot: PullRequestConversationSnapshot): string {
