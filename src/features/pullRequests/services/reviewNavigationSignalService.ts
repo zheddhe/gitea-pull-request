@@ -12,7 +12,7 @@ import type {
 } from "./pullRequestConversationService";
 import type { PullRequestReviewSessionService } from "./pullRequestReviewSessionService";
 import type { PullRequestSessionService } from "./pullRequestSessionService";
-import type { ReviewNavigationStateService } from "./reviewNavigationStateService";
+import { ReviewNavigationStateService } from "./reviewNavigationStateService";
 import {
   createPullRequestSnapshotDocumentIdentity,
   createPullRequestSnapshotUri,
@@ -63,7 +63,7 @@ export class ReviewNavigationSignalService
     private readonly pending: ReviewPendingSource,
     private readonly session: ReviewNavigationSession,
     private readonly repoManager: Pick<RepoManager, "getRepos">,
-    private readonly navigationState: ReviewNavigationStateService,
+    private readonly navigationState = new ReviewNavigationStateService(),
     private readonly openTextDocument: OpenTextDocument = (uri) =>
       vscode.workspace.openTextDocument(uri),
     private readonly executeCommand: CommandExecutor = (command, ...args) =>
@@ -71,6 +71,7 @@ export class ReviewNavigationSignalService
   ) {
     this.disposables.push(
       this.decorationEmitter,
+      this.navigationState,
       vscode.window.registerFileDecorationProvider(this),
       vscode.commands.registerCommand(
         "gitea.previousUnresolvedReviewConversation",
