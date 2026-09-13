@@ -426,6 +426,12 @@
         "icon": "$(comment-add)"
       },
       {
+        "command": "gitea.nativeReviewCreate",
+        "title": "Add Review Comment",
+        "enablement": "!commentIsEmpty",
+        "icon": "$(comment-add)"
+      },
+      {
         "command": "gitea.nativeReviewReply",
         "title": "Add Pending Reply",
         "icon": "$(reply)"
@@ -655,6 +661,11 @@
         }
       ],
       "comments/commentThread/context": [
+        {
+          "command": "gitea.nativeReviewCreate",
+          "when": "commentController == gitea.pullRequestReview && commentThreadIsEmpty",
+          "group": "inline@1"
+        },
         {
           "command": "gitea.nativeReviewReply",
           "when": "commentThread == giteaReviewConversationUnresolvedActionable || commentThread == giteaReviewConversationResolvedActionable",
