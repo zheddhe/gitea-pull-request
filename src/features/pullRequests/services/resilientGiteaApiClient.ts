@@ -1,7 +1,11 @@
+import * as vscode from "vscode";
 import { GiteaApiClient } from "../../../api/giteaApiClient";
 import { isGiteaApiError } from "../../../api/giteaApiError";
 import type { RepoInfo } from "../../../context/repoManager";
 import { debug, trace, warn } from "../../../debug/outputChannel";
+import { BranchCleanupService } from "./branchCleanupService";
+import { BranchSyncAnalyzerService } from "./branchSyncAnalyzerService";
+import { PreMergeBranchSyncService } from "./preMergeBranchSyncService";
 
 const RETRY_DELAYS_MS = [1000, 2000, 4000, 8000, 12000];
 
@@ -20,12 +24,30 @@ const RETRY_DELAYS_MS = [1000, 2000, 4000, 8000, 12000];
  * observable instead of blindly hammering the merge endpoint.
  */
 export class ResilientGiteaApiClient extends GiteaApiClient {
+  private readonly preMergeBranchSync = new PreMergeBranchSyncService(
+    new BranchCleanupService(),
+    new BranchSyncAnalyzerService(),
+  );
+
   override async mergePullRequest(
     repoInfo: RepoInfo,
     number: number,
     method: "merge" | "rebase" | "squash" = "merge",
     message?: string,
   ): Promise<void> {
+    const latestPr = await super.getPullRequest(repoInfo, number);
+    const safety = await this.preMergeBranchSync.evaluate(repoInfo, latestPr);
+    if (safety.warning) {
+      const confirmation = await vscode.window.showWarningMessage(
+        `${safety.warning}\n\nGitea will merge the remote PR head ${latestPr.head.sha.slice(0, 8)}. Local-only commits are not included unless they are pushed to the PR source branch first.`,
+        { modal: true },
+        "Merge anyway",
+      );
+      if (confirmation !== "Merge anyway") {
+        throw new Error("Merge cancelled because local branch safety was not confirmed.");
+      }
+    }
+
     let attempt = 0;
 
     for (;;) {
