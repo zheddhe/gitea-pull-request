@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import type { PendingReviewSession } from "../domain/pendingReviewSession";
+import type { ReviewNavigationState } from "./reviewNavigationStateService";
 import { PRDetailPanel } from "../../../views/prDetailPanel";
 
 type PRDetailPanelInstance = {
@@ -20,8 +21,9 @@ export type PRDetailMessageSinkResolver = (
  * Targeted extension-host -> PR Detail synchronization for review state.
  *
  * PR Detail already knows how to apply pendingReviewSessionChanged without a
- * destructive HTML reload. This bridge only locates the already-open panel and
- * posts the normalized session snapshot to it.
+ * destructive HTML reload. Navigation uses the same bridge so Inline Review
+ * and PR Detail observe one extension-host logical cursor rather than keeping
+ * independent surface-local cursors.
  *
  * PRDetailPanel still owns its legacy static panel registry. Keep that lookup
  * isolated here so the shared review model and navigation services do not own
@@ -39,14 +41,28 @@ export class PRDetailReviewSyncBridge {
     pullRequestNumber: number,
     session: PendingReviewSession,
   ): Promise<boolean> {
+    return this.publish(repositoryKey, pullRequestNumber, {
+      type: "pendingReviewSessionChanged",
+      session,
+    });
+  }
+
+  async publishNavigationState(state: ReviewNavigationState): Promise<boolean> {
+    if (!state.repositoryKey || state.pullRequestNumber === undefined) return false;
+    return this.publish(state.repositoryKey, state.pullRequestNumber, {
+      type: "reviewNavigationStateChanged",
+      state,
+    });
+  }
+
+  private async publish(
+    repositoryKey: string,
+    pullRequestNumber: number,
+    message: unknown,
+  ): Promise<boolean> {
     const sink = this.resolveSink(repositoryKey, pullRequestNumber);
     if (!sink) return false;
-    return Promise.resolve(
-      sink.postMessage({
-        type: "pendingReviewSessionChanged",
-        session,
-      }),
-    );
+    return Promise.resolve(sink.postMessage(message));
   }
 }
 
