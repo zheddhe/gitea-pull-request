@@ -154,7 +154,7 @@ suite("Native review comment creation", () => {
     session.dispose();
   });
 
-  test("queues a validated native comment into the shared pending transaction", async () => {
+  test("queues a validated added-line comment into the shared pending transaction", async () => {
     const conversations = new PullRequestConversationService({
       listAllPRReviewComments: async () => [],
       getPRRawDiff: async () => rawDiff,
@@ -197,6 +197,52 @@ suite("Native review comment creation", () => {
     );
     assert.strictEqual(thread.comments.length, 1);
     assert.strictEqual(thread.contextValue, "giteaPendingInlineReview");
+
+    projection.dispose();
+    pending.dispose();
+    conversations.dispose();
+    session.dispose();
+  });
+
+  test("keeps both old and new coordinates for a native context-line comment", async () => {
+    const conversations = new PullRequestConversationService({
+      listAllPRReviewComments: async () => [],
+      getPRRawDiff: async () => rawDiff,
+    });
+    const session = await activeSession();
+    const pending = new PullRequestReviewSessionService();
+    const captured: FakeThread[] = [];
+    const controller = fakeController(captured);
+    const projection = new NativeReviewProjectionService(
+      conversations,
+      { getRepos: () => [repoInfo] },
+      session,
+      pending,
+      controller,
+      async (uri) => fakeDocument(uri),
+    );
+    await projection.initialize();
+
+    const uri = createPullRequestSnapshotUri(
+      createPullRequestSnapshotDocumentIdentity(repoInfo, pullRequest, "head", "src/example.ts"),
+    );
+    const thread = controller.createCommentThread(uri, new vscode.Range(1, 0, 1, 0), []);
+    await projection.queueInlineComment({ thread, text: "context comment" });
+
+    const item = pending.get(repoInfo, 42).inlineComments[0];
+    assert.ok(item);
+    assert.deepStrictEqual(
+      {
+        path: item.path,
+        newPosition: item.new_position,
+        oldPosition: item.old_position,
+      },
+      {
+        path: "src/example.ts",
+        newPosition: 2,
+        oldPosition: 2,
+      },
+    );
 
     projection.dispose();
     pending.dispose();
