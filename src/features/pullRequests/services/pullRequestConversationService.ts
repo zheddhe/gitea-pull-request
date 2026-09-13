@@ -7,6 +7,7 @@ import type {
 import type { RepoInfo } from "../../../context/repoManager";
 import {
   buildReviewConversations,
+  projectReviewConversationsForHead,
   type ReviewConversation,
 } from "../domain/reviewConversationModel";
 
@@ -51,13 +52,17 @@ export class PullRequestConversationService implements vscode.Disposable {
       repoInfo,
       pullRequest.number,
     );
+    const conversations = projectReviewConversationsForHead(
+      buildReviewConversations(comments),
+      pullRequest.head.sha,
+    );
     const snapshot: PullRequestConversationSnapshot = {
       repositoryKey: repoInfo.key,
       pullRequestNumber: pullRequest.number,
       baseSha: pullRequest.base.sha,
       headSha: pullRequest.head.sha,
       comments: [...comments],
-      conversations: buildReviewConversations(comments),
+      conversations,
     };
     this.snapshots.set(key, snapshot);
     this.changeEmitter.fire(cloneSnapshot(snapshot));
@@ -124,6 +129,7 @@ function cloneSnapshot(
     comments: [...snapshot.comments],
     conversations: snapshot.conversations.map((conversation) => ({
       ...conversation,
+      root: { ...conversation.root },
       replies: [...conversation.replies],
     })),
   };
