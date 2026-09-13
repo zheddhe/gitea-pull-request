@@ -44,15 +44,51 @@ suite("PR Detail review sync bridge", () => {
     ]);
   });
 
+  test("posts shared logical navigation state to the matching PR detail sink", async () => {
+    const messages: unknown[] = [];
+    const bridge = new PRDetailReviewSyncBridge(() => ({
+      postMessage: async (message: unknown) => {
+        messages.push(message);
+        return true;
+      },
+    }));
+
+    const delivered = await bridge.publishNavigationState({
+      repositoryKey: "repo-key",
+      pullRequestNumber: 12,
+      mode: "pending",
+      activeItemId: "pending:inline-1",
+    });
+
+    assert.strictEqual(delivered, true);
+    assert.deepStrictEqual(messages, [
+      {
+        type: "reviewNavigationStateChanged",
+        state: {
+          repositoryKey: "repo-key",
+          pullRequestNumber: 12,
+          mode: "pending",
+          activeItemId: "pending:inline-1",
+        },
+      },
+    ]);
+  });
+
   test("does nothing when the PR detail panel is not open", async () => {
     const bridge = new PRDetailReviewSyncBridge(() => undefined);
 
-    const delivered = await bridge.publishPendingSession("repo-key", 12, {
+    const pendingDelivered = await bridge.publishPendingSession("repo-key", 12, {
       inlineComments: [],
       replies: [],
       conversationActions: [],
     });
+    const navigationDelivered = await bridge.publishNavigationState({
+      repositoryKey: "repo-key",
+      pullRequestNumber: 12,
+      mode: "unresolved",
+    });
 
-    assert.strictEqual(delivered, false);
+    assert.strictEqual(pendingDelivered, false);
+    assert.strictEqual(navigationDelivered, false);
   });
 });
