@@ -7,7 +7,11 @@ suite("Review navigation presentation", () => {
     fs.readFileSync(path.resolve(__dirname, "../../../package.json"), "utf8"),
   ) as {
     contributes: {
-      commands: Array<{ command: string; title: string }>;
+      commands: Array<{
+        command: string;
+        title: string;
+        icon?: string | { light: string; dark: string };
+      }>;
       menus: {
         "editor/title": Array<{
           command: string;
@@ -17,34 +21,61 @@ suite("Review navigation presentation", () => {
       };
     };
   };
+  const signalSource = fs.readFileSync(
+    path.resolve(
+      __dirname,
+      "../../../src/features/pullRequests/services/reviewNavigationSignalService.ts",
+    ),
+    "utf8",
+  );
 
-  test("exposes independent unresolved and pending controls in native PR diffs", () => {
-    const commands = new Set(
-      manifest.contributes.commands.map((item) => item.command),
+  test("exposes homogeneous ordered unresolved and pending controls in native PR diffs", () => {
+    const commands = new Map(
+      manifest.contributes.commands.map((item) => [item.command, item]),
     );
     assert.ok(commands.has("gitea.previousUnresolvedReviewConversation"));
     assert.ok(commands.has("gitea.nextUnresolvedReviewConversation"));
     assert.ok(commands.has("gitea.previousPendingReviewOperation"));
     assert.ok(commands.has("gitea.nextPendingReviewOperation"));
 
+    assert.deepStrictEqual(
+      commands.get("gitea.previousPendingReviewOperation")?.icon,
+      commands.get("gitea.previousUnresolvedReviewConversation")?.icon,
+    );
+    assert.deepStrictEqual(
+      commands.get("gitea.nextPendingReviewOperation")?.icon,
+      commands.get("gitea.nextUnresolvedReviewConversation")?.icon,
+    );
+
     const titleItems = manifest.contributes.menus["editor/title"];
-    const unresolved = titleItems.filter((item) =>
-      item.command.includes("UnresolvedReviewConversation"),
+    const navigationItems = titleItems.filter((item) =>
+      /ReviewConversation|ReviewOperation/.test(item.command),
     );
-    const pending = titleItems.filter((item) =>
+    assert.deepStrictEqual(
+      navigationItems.map((item) => [item.command, item.group]),
+      [
+        ["gitea.previousUnresolvedReviewConversation", "navigation@20"],
+        ["gitea.nextUnresolvedReviewConversation", "navigation@21"],
+        ["gitea.previousPendingReviewOperation", "navigation@22"],
+        ["gitea.nextPendingReviewOperation", "navigation@23"],
+      ],
+    );
+    for (const item of navigationItems.filter((item) =>
       item.command.includes("PendingReviewOperation"),
-    );
-    assert.strictEqual(unresolved.length, 2);
-    assert.strictEqual(pending.length, 2);
-    for (const item of pending) {
+    )) {
       assert.match(item.when, /resourceScheme == gitea-pr/);
       assert.match(item.when, /gitea\.pendingReviewNavigationAvailable/);
     }
-    assert.ok(
-      [...unresolved, ...pending].every(
-        (item) => item.group === "navigation@20",
-      ),
-      "unresolved and pending controls should stay in one primary editor-title group",
+  });
+
+  test("hides native previous and next actions when a cycle has only one placeable target", () => {
+    assert.match(
+      signalSource,
+      /setNavigationAvailable\("unresolved", unresolvedTargets\.length > 1\)/,
+    );
+    assert.match(
+      signalSource,
+      /setNavigationAvailable\("pending", pendingTargets\.length > 1\)/,
     );
   });
 });
