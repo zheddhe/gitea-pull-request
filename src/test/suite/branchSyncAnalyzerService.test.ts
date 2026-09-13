@@ -4,6 +4,8 @@ import {
   BranchSyncAnalyzerService,
   classifyBranchSync,
   parseLeftRightCount,
+  preMergeBranchSyncWarning,
+  type BranchSyncDiagnostic,
   type BranchSyncGit,
 } from "../../features/pullRequests/services/branchSyncAnalyzerService";
 import type { BranchIdentity } from "../../features/pullRequests/services/branchCleanupService";
@@ -39,6 +41,15 @@ function git(
     resolveRef: async () => remoteSha,
     revListLeftRightCount: async () => ({ localOnly, remoteOnly }),
   };
+}
+
+function diagnostic(
+  state: BranchSyncDiagnostic["state"],
+  localOnly = 0,
+  remoteOnly = 0,
+  reason?: string,
+): BranchSyncDiagnostic {
+  return { state, localOnly, remoteOnly, reason };
 }
 
 suite("BranchSyncAnalyzerService", () => {
@@ -124,5 +135,35 @@ suite("BranchSyncAnalyzerService", () => {
     );
     assert.strictEqual(result.state, "unknown");
     assert.match(result.reason ?? "", /cannot inspect graph/);
+  });
+});
+
+suite("preMergeBranchSyncWarning", () => {
+  test("does not add an advisory for synchronized or merely behind local branches", () => {
+    assert.strictEqual(preMergeBranchSyncWarning(diagnostic("in-sync")), undefined);
+    assert.strictEqual(
+      preMergeBranchSyncWarning(diagnostic("local-behind", 0, 2)),
+      undefined,
+    );
+  });
+
+  test("warns when local commits are not part of the remote pull request", () => {
+    const warning = preMergeBranchSyncWarning(diagnostic("local-ahead", 2, 0));
+    assert.match(warning ?? "", /2 local commits/);
+    assert.match(warning ?? "", /not part of this pull request/);
+  });
+
+  test("reports both unique commit counts for divergence", () => {
+    const warning = preMergeBranchSyncWarning(diagnostic("diverged", 2, 1));
+    assert.match(warning ?? "", /2 local-only/);
+    assert.match(warning ?? "", /1 remote-only/);
+  });
+
+  test("never presents an unverifiable state as synchronized", () => {
+    const warning = preMergeBranchSyncWarning(
+      diagnostic("unknown", 0, 0, "source branch cannot be mapped"),
+    );
+    assert.match(warning ?? "", /could not be verified/i);
+    assert.match(warning ?? "", /source branch cannot be mapped/);
   });
 });
