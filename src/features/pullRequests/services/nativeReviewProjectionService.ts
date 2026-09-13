@@ -263,8 +263,7 @@ export class NativeReviewProjectionService implements vscode.Disposable {
     if (!context) return [];
     const index = await this.loadAnchorIndex(context.repoInfo, context.pullRequest);
     return index
-      .lines(context.path, context.side)
-      .filter((line) => line > 0 && line <= document.lineCount)
+      .lines(context.path, context.side, document.lineCount)
       .map((line) => new vscode.Range(line - 1, 0, line - 1, 0));
   }
 
