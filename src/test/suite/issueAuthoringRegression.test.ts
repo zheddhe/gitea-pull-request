@@ -21,14 +21,13 @@ suite("Issue authoring regression contract", () => {
     assert.match(createSource, /defaultBranch/);
   });
 
-  test("keeps existing Issue Detail, filtering and row-action commands registered", () => {
+  test("keeps Issue Detail, filtering and state row-action commands registered", () => {
     for (const command of [
       "gitea.configureIssueFilter",
       "gitea.openIssue",
       "gitea.viewIssueDetail",
       "gitea.closeIssue",
       "gitea.reopenIssue",
-      "gitea.addIssueComment",
     ]) {
       assert.match(
         commandSource,
@@ -37,6 +36,15 @@ suite("Issue authoring regression contract", () => {
         ),
       );
     }
+  });
+
+  test("does not reintroduce the legacy Issue row comment command", () => {
+    assert.doesNotMatch(
+      commandSource,
+      /registerCommand\(\s*"gitea\.addIssueComment"/,
+    );
+    assert.doesNotMatch(commandSource, /Comment on Issue #/);
+    assert.doesNotMatch(commandSource, /async function addComment\(/);
   });
 
   test("does not reintroduce the legacy issue creation prompt", () => {
