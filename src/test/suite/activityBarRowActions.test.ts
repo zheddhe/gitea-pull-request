@@ -40,7 +40,8 @@ suite("Activity Bar row actions", () => {
     assert.strictEqual(commandIcon("gitea.activatePR"), "$(arrow-right)");
     assert.strictEqual(commandIcon("gitea.viewIssueDetail"), "$(eye)");
     assert.strictEqual(commandIcon("gitea.openIssue"), "$(link-external)");
-    assert.strictEqual(commandIcon("gitea.addIssueComment"), "$(comment-add)");
+    assert.strictEqual(commandIcon("gitea.closeIssue"), "$(issue-closed)");
+    assert.strictEqual(commandIcon("gitea.reopenIssue"), "$(history)");
     assert.strictEqual(commandIcon("gitea.openRunInBrowser"), "$(link-external)");
     assert.strictEqual(commandIcon("gitea.viewLogs"), "$(output)");
   });
@@ -62,13 +63,17 @@ suite("Activity Bar row actions", () => {
     );
   });
 
-  test("exposes all useful Issue operations inline", () => {
+  test("exposes only useful Issue row operations inline", () => {
     const both = "viewItem == issue_open || viewItem == issue_closed";
     assert.strictEqual(inlineAction("gitea.viewIssueDetail", both)?.group, "inline@1");
     assert.strictEqual(inlineAction("gitea.openIssue", both)?.group, "inline@2");
-    assert.strictEqual(inlineAction("gitea.addIssueComment", both)?.group, "inline@3");
-    assert.strictEqual(inlineAction("gitea.closeIssue", "viewItem == issue_open")?.group, "inline@4");
-    assert.strictEqual(inlineAction("gitea.reopenIssue", "viewItem == issue_closed")?.group, "inline@4");
+    assert.strictEqual(inlineAction("gitea.closeIssue", "viewItem == issue_open")?.group, "inline@3");
+    assert.strictEqual(inlineAction("gitea.reopenIssue", "viewItem == issue_closed")?.group, "inline@3");
+    assert.strictEqual(
+      rowActions.some((item) => item.command === "gitea.addIssueComment"),
+      false,
+      "legacy Add Issue Comment must not be exposed as a row action",
+    );
   });
 
   test("scopes CI run actions to the compatible state", () => {
