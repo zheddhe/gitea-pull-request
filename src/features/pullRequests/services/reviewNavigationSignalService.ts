@@ -2,10 +2,15 @@ import * as vscode from "vscode";
 import type { RepoInfo, RepoManager } from "../../../context/repoManager";
 import { debug } from "../../../debug/outputChannel";
 import {
+  findReviewSubmissionSuccessor,
+  type ReviewSubmissionContinuity,
+} from "../domain/reviewNavigationContinuity";
+import {
   buildReviewNavigationModel,
   type PlacedReviewNavigationCandidate,
   type ReviewNavigationCandidate,
   type ReviewNavigationMode,
+  type ReviewNavigationModel,
 } from "../domain/reviewNavigationModel";
 import { nextReviewNavigationItem } from "../domain/reviewNavigationSelection";
 import type { PullRequestWorkspaceState } from "../domain/pullRequestState";
@@ -34,6 +39,10 @@ interface NavigationTarget {
   uri: vscode.Uri;
 }
 
+interface PendingSubmissionContinuity extends ReviewSubmissionContinuity {
+  snapshot: PullRequestConversationSnapshot;
+}
+
 type ReviewNavigationSession = Pick<
   PullRequestSessionService,
   "current" | "onDidChangeState"
@@ -58,6 +67,7 @@ export class ReviewNavigationSignalService
 
   private readonly prDetailSync = new PRDetailReviewSyncBridge();
   private snapshot: PullRequestConversationSnapshot | undefined;
+  private submissionContinuity: PendingSubmissionContinuity | undefined;
   private unresolvedByPath = new Map<string, number>();
   private unresolvedItems: ReviewNavigationCandidate[] = [];
   private pendingItems: ReviewNavigationCandidate[] = [];
@@ -137,6 +147,9 @@ export class ReviewNavigationSignalService
         ) {
           return;
         }
+        if (change.reason === "reconcile") {
+          this.captureSubmissionContinuity(change.session);
+        }
         void this.rebuild();
       }),
     );
@@ -159,6 +172,7 @@ export class ReviewNavigationSignalService
 
   dispose(): void {
     this.rebuildEpoch += 1;
+    this.submissionContinuity = undefined;
     this.unresolvedItems = [];
     this.pendingItems = [];
     this.unresolvedTargets = [];
@@ -175,6 +189,7 @@ export class ReviewNavigationSignalService
     state: PullRequestWorkspaceState,
   ): Promise<void> {
     this.snapshot = undefined;
+    this.submissionContinuity = undefined;
     this.unresolvedItems = [];
     this.pendingItems = [];
     this.unresolvedTargets = [];
@@ -216,6 +231,36 @@ export class ReviewNavigationSignalService
     );
   }
 
+  private captureSubmissionContinuity(
+    remaining: ReturnType<ReviewPendingSource["get"]>,
+  ): void {
+    const snapshot = this.snapshot;
+    const navigation = this.navigationState.current;
+    if (!snapshot || navigation.mode !== "pending" || !navigation.activeItemId) {
+      return;
+    }
+
+    const active = this.pendingItems.find(
+      (item) => item.id === navigation.activeItemId,
+    );
+    if (!active) return;
+
+    const remainingIds = new Set([
+      ...remaining.inlineComments.map((item) => `pending:${item.id}`),
+      ...remaining.replies.map((item) => `pending:${item.id}`),
+      ...remaining.conversationActions.map((item) => `pending:${item.id}`),
+    ]);
+    if (remainingIds.has(active.id)) return;
+
+    this.submissionContinuity = {
+      item: { ...active },
+      knownConversationRootIds: new Set(
+        snapshot.conversations.map((conversation) => conversation.root.id),
+      ),
+      snapshot,
+    };
+  }
+
   private async rebuild(): Promise<void> {
     const state = this.session.current;
     const snapshot = this.snapshot;
@@ -241,8 +286,10 @@ export class ReviewNavigationSignalService
     this.pendingItems = [...model.pending];
     this.decorationEmitter.fire(undefined);
 
-    const logicalItems = this.itemsForMode(this.navigationState.current.mode);
-    this.navigationState.reconcile(logicalItems.map((item) => item.id));
+    if (!this.reconcileSubmissionContinuity(model, snapshot)) {
+      const logicalItems = this.itemsForMode(this.navigationState.current.mode);
+      this.navigationState.reconcile(logicalItems.map((item) => item.id));
+    }
 
     const [unresolvedTargets, pendingTargets] = await Promise.all([
       this.buildTargets(
@@ -269,6 +316,30 @@ export class ReviewNavigationSignalService
     debug(
       `[review-navigation] repo=${repoInfo.key} pr=#${state.pullRequest.number} unresolvedFiles=${this.unresolvedByPath.size} unresolvedLogical=${model.unresolved.length} unresolvedPlaced=${unresolvedTargets.length} pendingLogical=${model.pending.length} pendingPlaced=${pendingTargets.length}`,
     );
+  }
+
+  private reconcileSubmissionContinuity(
+    model: ReviewNavigationModel,
+    snapshot: PullRequestConversationSnapshot,
+  ): boolean {
+    const continuity = this.submissionContinuity;
+    if (!continuity) return false;
+
+    if (continuity.snapshot === snapshot) {
+      return true;
+    }
+
+    this.submissionContinuity = undefined;
+    const successor = findReviewSubmissionSuccessor(continuity, model);
+    if (successor) {
+      this.navigationState.setMode("unresolved");
+      this.navigationState.select(successor.id);
+      return true;
+    }
+
+    const logicalItems = this.itemsForMode(this.navigationState.current.mode);
+    this.navigationState.reconcile(logicalItems.map((item) => item.id));
+    return true;
   }
 
   private itemsForMode(mode: ReviewNavigationMode): ReviewNavigationCandidate[] {
