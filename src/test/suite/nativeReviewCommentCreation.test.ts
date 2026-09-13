@@ -112,7 +112,7 @@ async function waitFor(condition: () => boolean, label: string): Promise<void> {
 }
 
 suite("Native review comment creation", () => {
-  test("exposes only exact PR diff lines as native commenting ranges", async () => {
+  test("exposes every safely mapped line of the changed file as a native commenting range", async () => {
     const conversations = new PullRequestConversationService({
       listAllPRReviewComments: async () => [],
       getPRRawDiff: async () => rawDiff,
@@ -145,7 +145,7 @@ suite("Native review comment creation", () => {
       : provided?.ranges ?? [];
     assert.deepStrictEqual(
       ranges.map((range: vscode.Range) => range.start.line + 1),
-      [2, 3, 4, 5],
+      Array.from({ length: 20 }, (_, index) => index + 1),
     );
 
     projection.dispose();
@@ -241,6 +241,52 @@ suite("Native review comment creation", () => {
         path: "src/example.ts",
         newPosition: 2,
         oldPosition: 2,
+      },
+    );
+
+    projection.dispose();
+    pending.dispose();
+    conversations.dispose();
+    session.dispose();
+  });
+
+  test("queues a comment outside the hunk with the exact accumulated base/head mapping", async () => {
+    const conversations = new PullRequestConversationService({
+      listAllPRReviewComments: async () => [],
+      getPRRawDiff: async () => rawDiff,
+    });
+    const session = await activeSession();
+    const pending = new PullRequestReviewSessionService();
+    const captured: FakeThread[] = [];
+    const controller = fakeController(captured);
+    const projection = new NativeReviewProjectionService(
+      conversations,
+      { getRepos: () => [repoInfo] },
+      session,
+      pending,
+      controller,
+      async (uri) => fakeDocument(uri),
+    );
+    await projection.initialize();
+
+    const uri = createPullRequestSnapshotUri(
+      createPullRequestSnapshotDocumentIdentity(repoInfo, pullRequest, "head", "src/example.ts"),
+    );
+    const thread = controller.createCommentThread(uri, new vscode.Range(6, 0, 6, 0), []);
+    await projection.queueInlineComment({ thread, text: "outside hunk" });
+
+    const item = pending.get(repoInfo, 42).inlineComments[0];
+    assert.ok(item);
+    assert.deepStrictEqual(
+      {
+        path: item.path,
+        newPosition: item.new_position,
+        oldPosition: item.old_position,
+      },
+      {
+        path: "src/example.ts",
+        newPosition: 7,
+        oldPosition: 6,
       },
     );
 
