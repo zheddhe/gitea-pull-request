@@ -14,12 +14,17 @@ import {
   jobPresentation,
   runPresentation,
 } from "../features/ci/domain/ciPresentation";
+import { CIContextualAccessService } from "../features/ci/services/ciContextualAccessService";
 import type { CIRunsPollingService } from "../features/polling/services/ciRunsPollingService";
 import type { PollingLifecycleSignalService } from "../features/polling/services/pollingLifecycleSignalService";
 import type { PollingScheduler } from "../features/polling/services/pollingScheduler";
 
 export interface CIJobLogTarget {
   repoInfo: RepoInfo;
+  job: GiteaWorkflowJob;
+}
+
+interface ContextualJobQuickPickItem extends vscode.QuickPickItem {
   job: GiteaWorkflowJob;
 }
 
@@ -31,6 +36,8 @@ export function registerCICommands(
   pollingScheduler: PollingScheduler,
   pollingSignals: PollingLifecycleSignalService,
 ): void {
+  const contextualAccess = new CIContextualAccessService(api, ciProvider);
+
   context.subscriptions.push(
     vscode.commands.registerCommand("gitea.refreshCI", () => ciProvider.refresh()),
 
@@ -81,17 +88,66 @@ export function registerCICommands(
 
     vscode.commands.registerCommand(
       "gitea.viewLogs",
-      async (arg: CIJobItem) => {
-        if (!(arg instanceof CIJobItem)) {
+      async (arg: CIJobItem | CIJobLogTarget) => {
+        const target = jobLogTarget(arg);
+        if (!target) {
           vscode.window.showWarningMessage("Select a job to view its logs.");
           return;
         }
         await openJobLogs(
           api,
-          { repoInfo: arg.repoInfo, job: arg.job },
+          target,
           pollingScheduler,
           pollingSignals,
         );
+      },
+    ),
+
+    vscode.commands.registerCommand(
+      "gitea.inspectCheckJobs",
+      async (repoInfo: RepoInfo, runId: number) => {
+        if (!repoInfo || !Number.isSafeInteger(runId) || runId <= 0) {
+          vscode.window.showWarningMessage("Invalid Gitea Actions run identifier.");
+          return;
+        }
+
+        const jobs = await contextualAccess.loadJobsForRun(repoInfo, runId);
+        if (jobs.length === 0) {
+          vscode.window.showInformationMessage(
+            `No jobs are available for Actions run #${runId}.`,
+          );
+          return;
+        }
+
+        let job: GiteaWorkflowJob | undefined;
+        if (jobs.length === 1) {
+          job = jobs[0];
+        } else {
+          const items: ContextualJobQuickPickItem[] = jobs.map((candidate) => {
+            const presentation = jobPresentation(
+              candidate.status,
+              candidate.conclusion,
+              candidate.html_url,
+            );
+            return {
+              label: `${contextualJobIcon(presentation.state)} ${candidate.name}`,
+              description: presentation.statusLabel,
+              detail: `Actions run #${runId} · Job #${candidate.id}`,
+              job: candidate,
+            };
+          });
+          job = (
+            await vscode.window.showQuickPick(items, {
+              title: `Actions run #${runId} jobs`,
+              placeHolder: "Select a job to inspect its logs",
+              matchOnDescription: true,
+              matchOnDetail: true,
+            })
+          )?.job;
+        }
+
+        if (!job) return;
+        await vscode.commands.executeCommand("gitea.viewLogs", { repoInfo, job });
       },
     ),
 
@@ -117,6 +173,35 @@ export function registerCICommands(
       },
     ),
   );
+}
+
+function jobLogTarget(arg: CIJobItem | CIJobLogTarget | undefined): CIJobLogTarget | undefined {
+  if (arg instanceof CIJobItem) {
+    return { repoInfo: arg.repoInfo, job: arg.job };
+  }
+  if (arg?.repoInfo && arg.job) return arg;
+  return undefined;
+}
+
+function contextualJobIcon(state: ReturnType<typeof jobPresentation>["state"]): string {
+  switch (state) {
+    case "success":
+      return "$(pass-filled)";
+    case "running":
+      return "$(sync~spin)";
+    case "queued":
+      return "$(clock)";
+    case "failure":
+      return "$(error)";
+    case "cancelled":
+      return "$(circle-slash)";
+    case "skipped":
+      return "$(debug-step-over)";
+    case "warning":
+      return "$(warning)";
+    default:
+      return "$(question)";
+  }
 }
 
 export async function openJobLogs(
