@@ -25,6 +25,20 @@ suite("Review diff anchor model", () => {
     assert.strictEqual(index.has("src/example.ts", "base", 6), false);
   });
 
+  test("keeps anchors when a hunk starts on line one", () => {
+    const index = buildReviewDiffAnchorIndex([
+      "diff --git a/src/first.ts b/src/first.ts",
+      "--- a/src/first.ts",
+      "+++ b/src/first.ts",
+      "@@ -1,2 +1,2 @@",
+      " first",
+      "-old",
+      "+new",
+    ].join("\n"));
+    assert.deepStrictEqual(index.lines("src/first.ts", "base"), [1, 2]);
+    assert.deepStrictEqual(index.lines("src/first.ts", "head"), [1, 2]);
+  });
+
   test("does not guess unknown paths or lines", () => {
     const index = buildReviewDiffAnchorIndex(diff);
     assert.strictEqual(index.has("src/missing.ts", "head", 3), false);
