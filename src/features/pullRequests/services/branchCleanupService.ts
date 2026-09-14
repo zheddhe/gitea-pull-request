@@ -49,6 +49,7 @@ export interface BranchCleanupPlan {
 export interface BranchCleanupSelection {
   deleteLocal: boolean;
   deleteRemote: boolean;
+  forceLocal?: boolean;
 }
 
 export interface BranchCleanupResult {
@@ -187,8 +188,11 @@ export function planBranchCleanup(identity: BranchIdentity): BranchCleanupPlan {
   };
 }
 
-export function localBranchDeleteArgs(branch: string): string[] {
-  return ["branch", "-d", "--", branch];
+export function localBranchDeleteArgs(
+  branch: string,
+  force = false,
+): string[] {
+  return ["branch", force ? "-D" : "-d", "--", branch];
 }
 
 export async function executeBranchCleanupPlan(
@@ -305,8 +309,8 @@ export class BranchCleanupService {
     const result = await executeBranchCleanupPlan(plan, selection, {
       checkoutBase: async () => this.checkoutBase(repoInfo, identity),
       deleteLocal: async (branch) => {
-        await this.git(repoInfo, localBranchDeleteArgs(branch));
-        info(`[branch-cleanup] deleted local branch repo=${repoInfo.label} branch=${branch}`);
+        await this.git(repoInfo, localBranchDeleteArgs(branch, selection.forceLocal === true));
+        info(`[branch-cleanup] deleted local branch repo=${repoInfo.label} branch=${branch} forced=${selection.forceLocal === true}`);
       },
       deleteRemote: async (remote, branch) => {
         await this.git(repoInfo, ["push", remote, "--delete", branch]);
