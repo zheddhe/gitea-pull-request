@@ -7,6 +7,11 @@ import {
   planBranchCleanup,
   type BranchIdentity,
 } from "../services/branchCleanupService";
+import {
+  BranchSyncAnalyzerService,
+  localCleanupSafetyMessage,
+  remoteCleanupSafetyMessage,
+} from "../services/branchSyncAnalyzerService";
 import { PullRequestSessionService } from "../services/pullRequestSessionService";
 
 type MergedPullRequestState = Extract<
@@ -33,6 +38,7 @@ export class PostMergePullRequestViewProvider
   private loading = false;
   private busy = false;
   private warning: string | undefined;
+  private readonly branchSync = new BranchSyncAnalyzerService();
   private readonly disposables: vscode.Disposable[] = [];
 
   constructor(
@@ -163,37 +169,84 @@ export class PostMergePullRequestViewProvider
   }
 
   private async deleteBranches(state: MergedPullRequestState): Promise<void> {
-    const context = await this.ensureIdentity(state);
-    if (!context) return;
-    const plan = planBranchCleanup(context.identity);
+    const repoInfo = this.repoInfo(state);
+    if (!repoInfo) {
+      this.warning = `Repository ${state.repository.fullName} is no longer available in this workspace.`;
+      this.render();
+      return;
+    }
+
+    this.loading = true;
+    this.warning = undefined;
+    this.render();
+
+    let identity: BranchIdentity;
+    try {
+      identity = await this.branchCleanup.discover(
+        repoInfo,
+        state.pullRequest.head.ref,
+        state.pullRequest.base.ref,
+      );
+      this.identity = identity;
+    } catch (error) {
+      this.loading = false;
+      this.warning = `Unable to refresh branch state before cleanup: ${(error as Error).message}`;
+      this.render();
+      return;
+    }
+
+    const safety = await this.branchSync.analyzePostMergeCleanup(
+      repoInfo,
+      identity,
+      state.pullRequest.head.sha,
+    );
+    this.loading = false;
+
+    const localSafetyWarning = localCleanupSafetyMessage(safety.local);
+    const remoteSafetyWarning = remoteCleanupSafetyMessage(safety.remote);
+    const safetyWarnings = [localSafetyWarning, remoteSafetyWarning].filter(
+      (value): value is string => !!value,
+    );
+    this.warning = safetyWarnings.length > 0 ? safetyWarnings.join(" ") : undefined;
+    this.render();
+
+    const plan = planBranchCleanup(identity);
     const items: CleanupQuickPickItem[] = [];
-    if (plan.canDeleteLocal && plan.localBranch) {
+    const localSafe = !localSafetyWarning;
+    const remoteSafe = !remoteSafetyWarning;
+
+    if (plan.canDeleteLocal && plan.localBranch && localSafe) {
       items.push({
         cleanupKind: "local",
         label: `$(git-branch) Local: ${plan.localBranch}`,
         description: plan.checkoutBaseRequired
-          ? `Checkout ${plan.checkoutBase} first`
-          : "Delete local branch",
+          ? `Verified safe · checkout ${plan.checkoutBase} first`
+          : "Verified safe to delete",
         picked: true,
       });
     }
-    if (plan.canDeleteRemote && plan.remoteBranch) {
+    if (plan.canDeleteRemote && plan.remoteBranch && remoteSafe) {
       items.push({
         cleanupKind: "remote",
         label: `$(cloud) Remote: ${plan.remoteBranch.remote}/${plan.remoteBranch.branch}`,
-        description: "Delete branch from remote",
+        description: "Verified at merged PR head",
         picked: true,
       });
     }
 
     if (items.length === 0) {
-      vscode.window.showInformationMessage("No merged head branch remains to delete.");
+      const message =
+        this.warning ?? "No merged source branch remains that can be deleted safely.";
+      vscode.window.showWarningMessage(message);
       return;
     }
 
     const selected = await vscode.window.showQuickPick<CleanupQuickPickItem>(items, {
       canPickMany: true,
-      placeHolder: "Select branches to delete. Local and remote cleanup are independent.",
+      placeHolder:
+        safetyWarnings.length > 0
+          ? "Only branches verified safe are offered for deletion. Unsafe branches are kept."
+          : "Select branches to delete. Local and remote cleanup are independent.",
       title: `Clean up PR #${state.pullRequest.number}`,
     });
     if (!selected || selected.length === 0) return;
@@ -218,9 +271,10 @@ export class PostMergePullRequestViewProvider
           title: `Cleaning up branches for PR #${state.pullRequest.number}...`,
         },
         () =>
-          this.branchCleanup.cleanup(context.repoInfo, context.identity, {
+          this.branchCleanup.cleanup(repoInfo, identity, {
             deleteLocal,
             deleteRemote,
+            forceLocal: deleteLocal && localSafe,
           }),
       );
 
@@ -235,6 +289,20 @@ export class PostMergePullRequestViewProvider
       const deleted: string[] = [];
       if (result.localDeleted) deleted.push("local branch");
       if (result.remoteDeleted) deleted.push("remote branch");
+
+      if (safetyWarnings.length > 0) {
+        this.identity = undefined;
+        await this.loadIdentity(state, true);
+        this.warning = safetyWarnings.join(" ");
+        this.render();
+        vscode.window.showInformationMessage(
+          deleted.length > 0
+            ? `Deleted ${deleted.join(" and ")} for PR #${state.pullRequest.number}. Unsafe branch state was kept.`
+            : `Unsafe branch state was kept for PR #${state.pullRequest.number}.`,
+        );
+        return;
+      }
+
       vscode.window.showInformationMessage(
         deleted.length > 0
           ? `Deleted ${deleted.join(" and ")} for PR #${state.pullRequest.number}.`
@@ -321,7 +389,7 @@ export class PostMergePullRequestViewProvider
       <div class="section">
         <div class="section-title">Next action</div>
         <div class="actions">
-          <button id="delete" title="Recommended: return to the base branch and clean up the merged source branch." ${cleanupDisabled}>✓ Checkout Base / Delete Source</button>
+          <button id="delete" title="Return to the base branch and clean up only source branches verified safe." ${cleanupDisabled}>✓ Checkout Base / Delete Source</button>
           <button id="checkout" ${disabled}>Checkout Base / Keep Source</button>
           <button id="create" ${disabled}>Create New Pull Request</button>
         </div>
