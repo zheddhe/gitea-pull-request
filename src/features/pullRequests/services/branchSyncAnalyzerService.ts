@@ -23,6 +23,27 @@ export interface BranchSyncDiagnostic {
   reason?: string;
 }
 
+export type RemoteHeadState =
+  | "in-sync"
+  | "remote-ahead"
+  | "remote-behind"
+  | "diverged"
+  | "absent"
+  | "unknown";
+
+export interface RemoteHeadDiagnostic {
+  state: RemoteHeadState;
+  remoteOnly: number;
+  prHeadOnly: number;
+  remoteRef?: string;
+  reason?: string;
+}
+
+export interface PostMergeBranchSafetyDiagnostic {
+  local?: BranchSyncDiagnostic;
+  remote: RemoteHeadDiagnostic;
+}
+
 export interface BranchSyncGit {
   revListLeftRightCount(
     repoInfo: RepoInfo,
@@ -40,6 +61,17 @@ export function classifyBranchSync(
   if (localOnly === 0 && remoteOnly > 0) return "local-behind";
   if (localOnly > 0 && remoteOnly === 0) return "local-ahead";
   if (localOnly > 0 && remoteOnly > 0) return "diverged";
+  return "unknown";
+}
+
+export function classifyRemoteHead(
+  remoteOnly: number,
+  prHeadOnly: number,
+): RemoteHeadState {
+  if (remoteOnly === 0 && prHeadOnly === 0) return "in-sync";
+  if (remoteOnly > 0 && prHeadOnly === 0) return "remote-ahead";
+  if (remoteOnly === 0 && prHeadOnly > 0) return "remote-behind";
+  if (remoteOnly > 0 && prHeadOnly > 0) return "diverged";
   return "unknown";
 }
 
@@ -61,6 +93,45 @@ export function preMergeBranchSyncWarning(
     case "unknown": {
       const detail = diagnostic.reason ? ` ${diagnostic.reason}` : "";
       return `Local source branch synchronization could not be verified.${detail}`;
+    }
+  }
+}
+
+export function localCleanupSafetyMessage(
+  diagnostic: BranchSyncDiagnostic | undefined,
+): string | undefined {
+  if (!diagnostic) return undefined;
+  switch (diagnostic.state) {
+    case "in-sync":
+    case "local-behind":
+      return undefined;
+    case "local-ahead":
+      return `${commitLabel(diagnostic.localOnly)} ${diagnostic.localOnly === 1 ? "was" : "were"} not part of the merged pull request. The local branch will be kept.`;
+    case "diverged":
+      return `The local source branch diverged from the merged PR head: ${diagnostic.localOnly} local-only / ${diagnostic.remoteOnly} PR-only commit${diagnostic.remoteOnly === 1 ? "" : "s"}. The local branch will be kept.`;
+    case "unknown": {
+      const detail = diagnostic.reason ? ` ${diagnostic.reason}` : "";
+      return `Local branch safety could not be verified, so the local branch will be kept.${detail}`;
+    }
+  }
+}
+
+export function remoteCleanupSafetyMessage(
+  diagnostic: RemoteHeadDiagnostic,
+): string | undefined {
+  switch (diagnostic.state) {
+    case "in-sync":
+    case "absent":
+      return undefined;
+    case "remote-ahead":
+      return `The remote source branch contains ${diagnostic.remoteOnly} commit${diagnostic.remoteOnly === 1 ? "" : "s"} added after the PR head that was merged. The remote branch will be kept.`;
+    case "remote-behind":
+      return "The fetched remote source no longer matches the PR head that was merged. The remote branch will be kept.";
+    case "diverged":
+      return `The remote source branch diverged after the merge: ${diagnostic.remoteOnly} remote-only / ${diagnostic.prHeadOnly} PR-head-only commit${diagnostic.prHeadOnly === 1 ? "" : "s"}. The remote branch will be kept.`;
+    case "unknown": {
+      const detail = diagnostic.reason ? ` ${diagnostic.reason}` : "";
+      return `Remote branch safety could not be verified, so the remote branch will be kept.${detail}`;
     }
   }
 }
@@ -169,5 +240,121 @@ export class BranchSyncAnalyzerService {
         reason: (error as Error).message,
       };
     }
+  }
+
+  async analyzeLocalAgainstPrHead(
+    repoInfo: RepoInfo,
+    identity: BranchIdentity,
+    prHeadSha: string,
+  ): Promise<BranchSyncDiagnostic> {
+    const localRef = identity.localHead;
+    if (!localRef) {
+      return {
+        state: "unknown",
+        localOnly: 0,
+        remoteOnly: 0,
+        remoteRef: prHeadSha,
+        reason: "Local source branch is not safely mapped in this workspace.",
+      };
+    }
+
+    try {
+      const counts = await this.git.revListLeftRightCount(
+        repoInfo,
+        localRef,
+        prHeadSha,
+      );
+      const state = classifyBranchSync(counts.localOnly, counts.remoteOnly);
+      debug(
+        `[branch-sync] post-merge local repo=${repoInfo.label} local=${localRef} prHead=${prHeadSha} state=${state} localOnly=${counts.localOnly} prHeadOnly=${counts.remoteOnly}`,
+      );
+      return {
+        state,
+        ...counts,
+        localRef,
+        remoteRef: prHeadSha,
+        remoteMatchesPrHead: true,
+      };
+    } catch (error) {
+      warn(
+        `[branch-sync] post-merge local analysis failed repo=${repoInfo.label} local=${localRef} prHead=${prHeadSha}: ${(error as Error).message}`,
+      );
+      return {
+        state: "unknown",
+        localOnly: 0,
+        remoteOnly: 0,
+        localRef,
+        remoteRef: prHeadSha,
+        reason: (error as Error).message,
+      };
+    }
+  }
+
+  async analyzeRemoteAgainstPrHead(
+    repoInfo: RepoInfo,
+    identity: BranchIdentity,
+    prHeadSha: string,
+  ): Promise<RemoteHeadDiagnostic> {
+    const remoteRef = identity.remoteHead?.refName;
+    if (!remoteRef) {
+      return {
+        state: "absent",
+        remoteOnly: 0,
+        prHeadOnly: 0,
+      };
+    }
+
+    try {
+      const remoteSha = await this.git.resolveRef(repoInfo, remoteRef);
+      if (remoteSha === prHeadSha) {
+        return {
+          state: "in-sync",
+          remoteOnly: 0,
+          prHeadOnly: 0,
+          remoteRef,
+        };
+      }
+
+      const counts = await this.git.revListLeftRightCount(
+        repoInfo,
+        remoteRef,
+        prHeadSha,
+      );
+      const state = classifyRemoteHead(counts.localOnly, counts.remoteOnly);
+      debug(
+        `[branch-sync] post-merge remote repo=${repoInfo.label} remote=${remoteRef} prHead=${prHeadSha} state=${state} remoteOnly=${counts.localOnly} prHeadOnly=${counts.remoteOnly}`,
+      );
+      return {
+        state,
+        remoteOnly: counts.localOnly,
+        prHeadOnly: counts.remoteOnly,
+        remoteRef,
+      };
+    } catch (error) {
+      warn(
+        `[branch-sync] post-merge remote analysis failed repo=${repoInfo.label} remote=${remoteRef} prHead=${prHeadSha}: ${(error as Error).message}`,
+      );
+      return {
+        state: "unknown",
+        remoteOnly: 0,
+        prHeadOnly: 0,
+        remoteRef,
+        reason: (error as Error).message,
+      };
+    }
+  }
+
+  async analyzePostMergeCleanup(
+    repoInfo: RepoInfo,
+    identity: BranchIdentity,
+    prHeadSha: string,
+  ): Promise<PostMergeBranchSafetyDiagnostic> {
+    const [local, remote] = await Promise.all([
+      identity.localHead
+        ? this.analyzeLocalAgainstPrHead(repoInfo, identity, prHeadSha)
+        : Promise.resolve(undefined),
+      this.analyzeRemoteAgainstPrHead(repoInfo, identity, prHeadSha),
+    ]);
+    return { local, remote };
   }
 }
