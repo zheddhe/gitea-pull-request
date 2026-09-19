@@ -16,7 +16,7 @@ The product follows stable principles:
 
 ## Current baseline
 
-The current stable product line is **1.1.x**.
+The current release line is **1.1.x**.
 
 It provides:
 
