@@ -48,13 +48,9 @@ module.exports = [
         "warn",
         {
           argsIgnorePattern: "^(_|auth$)",
-          // Transitional Phase 0 baseline: these variables are pre-existing
-          // legacy webview/tree locals. They are intentionally isolated here
-          // so --max-warnings=0 catches every new warning introduced by the
-          // Gitea Pull Request migration. Remove entries as the legacy views
-          // are decomposed during the sidebar-first phases.
-          varsIgnorePattern:
-            "^(repoInfo|titleJson|baseJson|headJson|branchOptsJson|filesJson|reviewCommentsJson|isOpenJson)$",
+          // Keep only the remaining generic repository-context exemption.
+          // Historical Phase 0 webview locals have been removed.
+          varsIgnorePattern: "^repoInfo$",
         },
       ],
       "no-console": "off",
