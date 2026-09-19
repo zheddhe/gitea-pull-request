@@ -21,13 +21,6 @@ export type ConflictResolutionGuidanceDecision =
   | "non-git-blocker"
   | "not-conflicting";
 
-export function hasPendingChecks(status: GiteaCombinedStatus): boolean {
-  if (status.statuses.some((check) => check.state === "pending")) {
-    return true;
-  }
-  return status.total_count > 0 && status.state === "pending";
-}
-
 export function conflictResolutionGuidanceDecision(
   pullRequest: GiteaPullRequest,
   status: GiteaCombinedStatus | undefined,
