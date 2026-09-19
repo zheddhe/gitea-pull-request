@@ -464,6 +464,7 @@ export async function activate(
     repoManager,
     prSession,
     conflictResolution,
+    reviewApi,
   );
   registerWorkingFileCommands(
     context,
