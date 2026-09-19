@@ -8,8 +8,6 @@ import {
   conflictResolutionGuidanceDecision,
   hasPendingChecks,
 } from "../../features/pullRequests/services/conflictResolutionCoordinator";
-import type { BranchMergePolicy } from "../../features/pullRequests/domain/reviewPullRequestModel";
-
 suite("ConflictResolutionCoordinator", () => {
   test("suppresses guidance when an explicit check is pending", () => {
     assert.strictEqual(
