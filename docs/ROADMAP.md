@@ -4,147 +4,91 @@
 
 **Gitea Pull Request** is a VS Code extension focused on a complete, sidebar-first workflow for self-hosted Gitea: pull requests, review, issues and Actions, without replacing native Git or VS Code editing workflows.
 
-The product follows a few stable principles:
+The product follows stable principles:
 
 1. **Native first** — prefer TreeView, QuickPick, commands, Comment API, Codicons and native diffs.
 2. **Sidebar first** — common forge operations should not require leaving VS Code.
 3. **State driven** — workflow UI follows explicit repository / PR / review state rather than hidden assumptions.
-4. **Safe local Git** — review state and local editing remain distinct; branch-changing operations are explicit and validated.
+4. **Safe local Git** — review state and local editing remain distinct; branch-changing and destructive operations are explicit and validated.
 5. **Multi-instance by design** — repositories map deterministically to Gitea instances and credentials never cross instance boundaries.
 6. **Capability driven** — features degrade independently according to observed API support and effective permissions.
 7. **Adaptive freshness** — remote state refreshes according to visibility and activity without aggressive per-view timers.
 
-## Release milestones
+## Current baseline
 
-| Phase | Product milestone | Release |
-| --- | --- | ---: |
-| 0 | Product split and foundation | `0.1.0` |
-| 1 | Active pull-request model | `0.2.0` |
-| 2 | Sidebar-first PR creation | `0.3.0` |
-| 3 | Sidebar-first review and merge | `0.4.0` |
-| 4 | Post-merge branch lifecycle | `0.5.0` |
-| 5 | Dedicated Pull Request workspace | `0.6.0` |
-| 6 | Secondary workflows and polish | `0.7.0` |
-| 7 | Workflow completion and refresh hardening | `0.8.0` |
-| 8 | Interactive review and first-class Issue authoring | `0.9.0` |
-| 9 | Full state-of-the-art UX baseline | `1.0.0` |
-| 10 | Review continuity, contextual diagnostics and merge safety | `1.1.0` |
+The current stable product line is **1.1.x**.
 
-Patch versions are reserved for corrections that do not introduce the next product milestone.
+It provides:
 
-## Phase 9 — 1.0.0
+- a dedicated active-PR workspace with authoritative snapshot review;
+- native inline review conversations and pending-review continuity;
+- pull-request creation, review, merge readiness and guarded branch cleanup;
+- Issue browsing, detail, authoring and repository templates;
+- CI / Actions runs, jobs, logs and contextual diagnostics from PR checks;
+- adaptive polling shared across remote-state workflows;
+- deterministic multi-repository / multi-Gitea-instance mapping;
+- least-privilege PAT authentication with capability-aware degradation.
 
-Phase 9 turns the mature 0.9 feature set into the first complete 1.0 user experience.
+Detailed shipped behavior belongs in [`CHANGELOG.md`](../CHANGELOG.md), while release-specific validation is retained in versioned release records such as [`RELEASE_1.1.0.md`](RELEASE_1.1.0.md).
 
-### Native review experience
+## Next directions
 
-- native VS Code review conversations project the existing pending-review transaction rather than creating a second mutation path;
-- Reply, Resolve and Reopen remain capability-gated and participate in the same submit/reconcile workflow as PR Detail;
-- unresolved review navigation and review-state presentation stay bound to the authoritative PR snapshot.
+The roadmap deliberately describes product direction rather than committing every candidate to a specific release.
 
-### Adaptive polling
+### Authentication evolution
 
-- one centralized scheduler replaces independent feature timers;
-- cadence adapts to visibility, VS Code focus, active workflow state, recent user actions and unchanged-result backoff;
-- editing pauses automatic refresh where it could disrupt user input;
-- polling callbacks refresh remote data only and never mutate the Git working tree.
+- evaluate OAuth2 Authorization Code + PKCE without regressing first-class PAT support for arbitrary self-hosted instances;
+- keep account identity, SecretStorage isolation and capability observation independent of authentication method;
+- continue reducing reliance on broad credentials and improve least-privilege diagnostics.
 
-### Authentication and least privilege
+### Review workflow
 
-- PAT remains the first-class authentication method for 1.0, especially for arbitrary self-hosted Gitea instances;
-- credentials are stored only in VS Code SecretStorage and isolated by canonical Gitea instance identity;
-- HTTPS, canonical SSH, SCP-style SSH, custom ports and OpenSSH aliases are resolved before repository-to-instance mapping;
-- explicit `gitea.servers[].transports` mappings cover installations where Git transport and Gitea web/API endpoints intentionally differ;
-- 401 authentication failures are distinguished from 403 authorization failures;
-- observed capabilities are tracked independently for identity, repository, issues and Actions;
-- account diagnostics expose instance, auth method and observed capabilities without exposing credentials;
-- least-privilege PAT guidance is documented in [`AUTHENTICATION.md`](AUTHENTICATION.md).
+- deepen native VS Code review integration where the platform APIs provide stable primitives;
+- improve navigation and lifecycle handling for long-lived or heavily updated pull requests;
+- preserve one logical review/conversation model across native diff and PR Detail surfaces;
+- continue reducing duplicate or context-losing transitions between review surfaces.
 
-OAuth2 Authorization Code + PKCE is intentionally deferred beyond the 1.0 acceptance gate. The account model already leaves room for additional authentication methods later without changing repository-to-instance identity.
+### CI / Actions
 
-### Actions experience
+- expose richer execution detail only where Gitea APIs provide authoritative data;
+- improve contextual transitions between PR checks, runs, jobs, logs and artifacts;
+- extend capability detection for server/version differences without creating parallel CI implementations.
 
-- workflow/job detail is based on reliable Gitea API data rather than invented step structure;
-- run/job actions remain owned by the correct resource;
-- artifacts and execution detail are surfaced where the server API supports them;
-- unsupported server behavior degrades locally rather than disabling unrelated extension features.
+### Repository and forge integration
 
-## Phase 10 — 1.1.0
+- improve discovery and diagnostics for complex self-hosted network / SSH topologies;
+- keep foreign forges and ambiguous remotes isolated rather than probing them with Gitea credentials;
+- expand server capability discovery as newer Gitea APIs stabilize.
 
-Phase 10 is the completed `1.1.0` milestone. It focuses on continuity, contextual diagnostics and workflow safety rather than another structural rewrite, followed by a short corrective pass before release.
+### Workflow safety and ergonomics
 
-### 10.1 — Review continuity and native inline ergonomics
+- continue treating local Git state as safety-critical for destructive operations;
+- favor explicit recovery paths over implicit reset/push/rebase behavior;
+- simplify contextual actions where the target resource is already known;
+- keep automatic refresh editing-safe and non-mutating.
 
-Status: implemented and E2E validated in PR #61; tracked by #58.
+## Release history
 
-- native `Add Review Comment` uses the authoritative PR snapshot and canonical old/new anchors;
-- unchanged lines outside raw-diff hunks are commentable only when their base/head mapping is deterministic;
-- Inline Review and PR Detail are live projections of one pending-review/conversation state;
-- unresolved and pending work have independent Previous/Next cycles backed by one shared logical cursor;
-- outdated conversations remain reachable in PR Detail without unsafe projection onto the current diff;
-- `Outdated` and `Resolved` remain independent lifecycle dimensions;
-- submission/reconcile preserves logical navigation continuity when pending work becomes persisted review state.
+| Milestone | Release | Scope |
+| --- | ---: | --- |
+| Product foundation | `0.1.0`–`0.6.0` | Standalone product, active PR model, creation/review/merge and dedicated workspace |
+| Workflow completion | `0.7.0`–`0.9.0` | Detail surfaces, conflict workflow, interactive review and Issue authoring |
+| Full UX baseline | `1.0.0` | Native review, adaptive polling, Actions detail and multi-instance authentication |
+| Continuity and safety | `1.1.0` | Review continuity, contextual CI diagnostics and merge/cleanup safeguards |
 
-### 10.2 — Contextual action cleanup and review-to-CI navigation
+Patch releases remain reserved for corrections that do not introduce the next product milestone.
 
-Status: completed; tracked by #59.
+## Release discipline
 
-- remove the legacy Issue-row Add Comment affordance in favor of Issue Detail;
-- expose contextual PR-check job/log access directly from Review Pull Request;
-- reuse the existing normalized CI / Actions data and adaptive refresh path rather than introducing review-specific polling or CI state.
+A release is ready only when implementation, tests, user documentation and package metadata describe the same product behavior.
 
-### 10.3 — Source-branch divergence safety before merge and cleanup
-
-Status: completed; tracked by #60.
-
-- classify local/remote PR source state as in-sync, behind, ahead, diverged or unknown where safely resolvable;
-- warn before server-side merge when local-only commits are not part of the remote PR;
-- apply stronger reachability-based safeguards before destructive source-branch cleanup;
-- never automatically push, reset or discard local work as part of merge confirmation.
-
-### 10.4 — Conflict-resolution eligibility correction
-
-Status: completed; tracked by #63.
-
-- distinguish technical Git conflicts from WIP, approval, CI/check, permission and no-content merge-readiness blockers;
-- use the same eligibility rule for automatic guidance and the manual conflict-resolution command.
-
-### 10.5 — Context-aware CI job routing
-
-Status: completed; tracked by #64.
-
-- preserve job identity from job-specific Gitea check URLs;
-- open known jobs directly from Review Pull Request;
-- keep the job picker only for genuinely ambiguous multi-job runs.
-
-The final `1.1.0` release record and validation checklist are maintained in [`RELEASE_1.1.0.md`](RELEASE_1.1.0.md).
-
-## Compatibility baseline
-
-The established baseline remains:
-
-- **VS Code:** 1.133.0 or later
-- **Gitea:** 1.26.4 or later
-- **Gitea 1.27+:** required for inline review Reply support
-- **Build / CI:** Node.js 24.x
-
-Newer-server capabilities remain gated so the rest of the extension stays usable on supported older Gitea versions.
-
-## Release gate
-
-A milestone is ready only when implementation, tests, user documentation and package metadata describe the same product behavior.
-
-Before release:
+Before publication:
 
 ```bash
 make verify
 make reinstall-vsix
 ```
 
-Validate the exact generated VSIX, merge the release candidate, tag the merged commit, publish the GitHub Release, and upload that same verified VSIX to the Visual Studio Marketplace.
+Validate the exact generated VSIX, merge the release candidate, tag the merged commit, let the release workflow rebuild the tag, then publish the verified artifact.
 
-See [`RELEASING.md`](RELEASING.md) for the operational release procedure and [`TESTING.md`](TESTING.md) for test architecture.
-
-## After 1.1
-
-Post-1.1 work should remain incremental. Candidate areas include OAuth2/PKCE, additional server capability discovery, richer Actions detail where Gitea APIs permit it, and further native VS Code review integration.
+See [`RELEASING.md`](RELEASING.md) for the operational procedure and [`TESTING.md`](TESTING.md) for the test architecture.
