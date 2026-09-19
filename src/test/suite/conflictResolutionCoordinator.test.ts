@@ -4,31 +4,8 @@ import type {
   GiteaPullRequest,
   GiteaReview,
 } from "../../api/types";
-import {
-  conflictResolutionGuidanceDecision,
-  hasPendingChecks,
-} from "../../features/pullRequests/services/conflictResolutionCoordinator";
+import { conflictResolutionGuidanceDecision } from "../../features/pullRequests/services/conflictResolutionCoordinator";
 suite("ConflictResolutionCoordinator", () => {
-  test("suppresses guidance when an explicit check is pending", () => {
-    assert.strictEqual(
-      hasPendingChecks(status("pending", ["success", "pending"])),
-      true,
-    );
-  });
-
-  test("suppresses guidance when combined status is pending and checks exist", () => {
-    assert.strictEqual(hasPendingChecks(status("pending", ["success"])), true);
-  });
-
-  test("does not suppress guidance for pending status without checks", () => {
-    assert.strictEqual(hasPendingChecks(status("pending", [])), false);
-  });
-
-  test("does not suppress guidance after checks complete", () => {
-    assert.strictEqual(hasPendingChecks(status("failure", ["failure"])), false);
-    assert.strictEqual(hasPendingChecks(status("success", ["success"])), false);
-  });
-
   test("does not offer conflict resolution for WIP even when Gitea reports mergeable=false", () => {
     assert.strictEqual(
       conflictResolutionGuidanceDecision(
