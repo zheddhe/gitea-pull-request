@@ -2,34 +2,89 @@
 
 All notable changes to **Gitea Pull Request** are documented here from the standalone product line onward.
 
-## 1.1.0 - Unreleased
+## 1.1.0 - 2026-09-19
 
-`1.1.0` focuses on review continuity, contextual workflow polish and stronger safeguards around merge and source-branch cleanup.
+`1.1.0` strengthens review continuity, contextual CI navigation and merge/cleanup safety while polishing the post-1.0 workflow.
+
+### Highlights
+
+- **Native review continuity**
+  - Add review comments directly from authoritative `gitea-pr` diffs.
+  - Keep Inline Review and PR Detail synchronized through the shared pending-review transaction.
+  - Navigate unresolved conversations and pending review operations independently.
+  - Preserve outdated conversations without projecting them onto unsafe current-diff positions.
+
+- **Contextual CI diagnostics**
+  - Open CI jobs and logs directly from PR checks in Review Pull Request.
+  - Open a known job directly instead of asking the user to select it again.
+  - Reuse the existing CI / Actions projection and adaptive polling path.
+
+- **Safer merge and branch cleanup**
+  - Classify source-branch synchronization as in-sync, behind, ahead, diverged or unknown when safely resolvable.
+  - Warn before merge when committed local work is not part of the authoritative remote PR head.
+  - Revalidate branch safety immediately before post-merge cleanup.
+  - Keep local or remote branches when unique work cannot be proven safe to delete.
 
 ### Added
 
-- Native `Add Review Comment` from authoritative `gitea-pr` diffs, including safely mapped unchanged lines outside raw-diff hunks.
-- Immediate bidirectional review synchronization between native Inline Review and PR Detail through the shared pending-review transaction.
-- Independent Previous/Next navigation cycles for unresolved conversations and pending review operations, with one logical cursor shared across Inline Review and PR Detail.
-- Explicit Outdated conversation presentation in PR Detail so historical review threads remain accessible without being attached to an unsafe current-diff position.
-- Distinct native navigation affordances for unresolved conversations and pending modifications.
+- **Inline review authoring**
+  - Native `Add Review Comment` from authoritative PR diffs.
+  - Canonical old/new anchors for context, added, removed and deterministically mapped unchanged lines outside raw-diff hunks.
+
+- **Review navigation**
+  - Independent Previous/Next cycles for unresolved conversations and pending review operations.
+  - One shared logical cursor across Inline Review and PR Detail.
+  - Distinct native navigation affordances for unresolved conversations and pending modifications.
+
+- **Review lifecycle visibility**
+  - Explicit Outdated conversation presentation in PR Detail.
+  - Historical review threads remain accessible without unsafe reattachment to the current diff.
+
+- **Branch synchronization diagnostics**
+  - Shared pre-merge and post-merge source-branch analysis based on Git graph semantics.
+  - Explicit local-ahead/diverged advisories before server-side merge.
+  - Reachability-aware cleanup decisions for local and remote source branches.
 
 ### Improved
 
-- Review anchors now preserve canonical old/new coordinates for context, added, removed and safely mapped unchanged lines instead of relying on approximate line placement.
-- Pending review submission/reconcile keeps navigation continuity when a pending item becomes a persisted conversation, without guessing when the successor is ambiguous.
-- Outdated and Resolved are independent states: a branch update does not auto-resolve review feedback, and historical resolved state remains visible.
-- Native and PR Detail navigation hides Previous/Next controls when a cycle contains fewer than two navigable items.
-- PR Detail separates Unresolved, Pending and Outdated review states more clearly while keeping the same shared lifecycle model.
+- **Review continuity**
+  - Pending review state propagates immediately between Inline Review and PR Detail.
+  - Submission/reconcile preserves navigation continuity when pending items become persisted conversations.
+  - Outdated and Resolved remain independent lifecycle dimensions.
+  - Navigation controls are hidden when a cycle contains fewer than two navigable items.
+  - PR Detail separates Unresolved, Pending and Outdated states more clearly.
 
-### Planned before release
+- **Contextual CI**
+  - Review checks can open the existing CI job/log surface without introducing review-specific CI state.
+  - Job-specific Gitea check URLs preserve both run and job identity.
+  - Multi-job selection is shown only when the originating check does not identify a specific job.
 
-The `1.1.0` release is not complete until the remaining Phase 10 stories are integrated:
+- **Issue ergonomics**
+  - Issue-row actions are simplified; Issue Detail remains the canonical commenting surface.
 
-- #59 — Phase 10.2: contextual action cleanup and review-to-CI navigation.
-- #60 — Phase 10.3: source-branch divergence safety before merge and cleanup.
+- **Merge and cleanup safety**
+  - Server-side PR head remains authoritative for what Gitea will merge.
+  - Local source state is advisory before merge and safety-critical before destructive cleanup.
+  - Cleanup re-discovers branch state at action time rather than relying on stale snapshots.
+  - Squash/rebase cleanup can use verified forced deletion only after safety analysis proves no local-only work remains.
 
-See [`docs/RELEASE_1.1.0.md`](docs/RELEASE_1.1.0.md) for the working release gate and story status.
+### Fixed
+
+- WIP / Draft pull requests no longer trigger a false `Prepare Conflict Resolution` workflow merely because Gitea reports `mergeable=false`.
+- Approval, CI/check, permission and no-content blockers are no longer misclassified as technical Git conflicts.
+- The manual conflict-resolution command now uses the same technical-conflict eligibility rule as automatic guidance.
+- Job-specific PR check actions no longer reopen an unnecessary job picker.
+- Post-merge cleanup no longer risks silently deleting committed but unpushed local work.
+- Unknown or unmappable branch state is never presented as verified safe for destructive cleanup.
+
+### Compatibility
+
+- **VS Code:** 1.133.0 or later
+- **Gitea minimum supported:** 1.26.4, with capability-gated fallbacks for unavailable newer APIs
+- **Gitea recommended:** 1.27.x or later for the complete review experience
+- **Gitea Runner recommended:** 3.x.x or later for the current Actions / CI experience
+- **Node.js:** 24.x build / CI baseline
+- **VSIX tooling:** `@vscode/vsce` 4.0.0 on the release path
 
 ## 1.0.0 - 2026-09-08
 
