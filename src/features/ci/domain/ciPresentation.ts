@@ -147,6 +147,15 @@ export function extractGiteaRunId(targetUrl: string | undefined | null): number 
   return Number.isSafeInteger(id) && id > 0 ? id : undefined;
 }
 
+export function extractGiteaJobId(targetUrl: string | undefined | null): number | undefined {
+  const value = clean(targetUrl);
+  if (!value) return undefined;
+  const match = value.match(/\/actions\/runs\/\d+\/jobs\/(\d+)(?:[/?#]|$)/i);
+  if (!match) return undefined;
+  const id = Number(match[1]);
+  return Number.isSafeInteger(id) && id > 0 ? id : undefined;
+}
+
 export function isCIActiveState(status: string | undefined | null): boolean {
   const state = normalizeCIState(status);
   return state === "running" || state === "queued";
