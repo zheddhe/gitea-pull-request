@@ -1,6 +1,10 @@
 import * as vscode from "vscode";
 import { RepoManager } from "../../../context/repoManager";
+import {
+  conflictResolutionGuidanceDecision,
+} from "../services/conflictResolutionCoordinator";
 import { ConflictResolutionService } from "../services/conflictResolutionService";
+import { PullRequestReviewApi } from "../services/pullRequestReviewApi";
 import { PullRequestSessionService } from "../services/pullRequestSessionService";
 
 const MERGE_IN_PROGRESS_CONTEXT = "gitea.conflictResolution.inProgress";
@@ -10,6 +14,7 @@ export function registerConflictResolutionCommands(
   repoManager: RepoManager,
   session: PullRequestSessionService,
   conflictResolution: ConflictResolutionService,
+  reviewApi: PullRequestReviewApi,
 ): void {
   void vscode.commands.executeCommand("setContext", MERGE_IN_PROGRESS_CONTEXT, false);
 
@@ -26,6 +31,35 @@ export function registerConflictResolutionCommands(
       if (active.pullRequest.mergeable !== false) {
         vscode.window.showWarningMessage(
           `PR #${active.pullRequest.number} is not currently reported by Gitea as non-mergeable. Refresh the pull request before preparing conflict resolution.`,
+        );
+        return;
+      }
+
+      const [statusResult, reviewsResult, policyResult] = await Promise.allSettled([
+        reviewApi.getCombinedStatus(active.repoInfo, active.pullRequest.head.sha),
+        reviewApi.listReviews(active.repoInfo, active.pullRequest.number),
+        reviewApi.getBranchMergePolicy(active.repoInfo, active.pullRequest.base.ref),
+      ]);
+      if (
+        statusResult.status === "rejected" ||
+        reviewsResult.status === "rejected" ||
+        policyResult.status === "rejected"
+      ) {
+        vscode.window.showWarningMessage(
+          `Unable to verify that PR #${active.pullRequest.number} is blocked by a Git conflict. Refresh merge readiness before preparing conflict resolution.`,
+        );
+        return;
+      }
+
+      const decision = conflictResolutionGuidanceDecision(
+        active.pullRequest,
+        statusResult.value,
+        reviewsResult.value,
+        policyResult.value,
+      );
+      if (decision !== "technical-conflict") {
+        vscode.window.showWarningMessage(
+          `PR #${active.pullRequest.number} has merge-readiness blockers, but no technical Git conflict is currently established.`,
         );
         return;
       }
