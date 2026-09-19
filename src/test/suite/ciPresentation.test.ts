@@ -2,6 +2,7 @@ import * as assert from "assert";
 import {
   ciStatusLabel,
   externalCheckPresentation,
+  extractGiteaJobId,
   extractGiteaRunId,
   jobPresentation,
   normalizeCIState,
@@ -77,6 +78,20 @@ suite("CI presentation semantics", () => {
     assert.strictEqual(
       externalCheckPresentation("unknown", "https://gitea.test/o/r/actions/runs/123").actions.rerun,
       false,
+    );
+  });
+
+  test("preserves job identity from job-specific Gitea check URLs", () => {
+    const url = "https://gitea.test/o/r/actions/runs/123/jobs/456?attempt=1";
+    assert.strictEqual(extractGiteaRunId(url), 123);
+    assert.strictEqual(extractGiteaJobId(url), 456);
+    assert.strictEqual(
+      extractGiteaJobId("https://gitea.test/o/r/actions/runs/123"),
+      undefined,
+    );
+    assert.strictEqual(
+      extractGiteaJobId("https://ci.example.test/build/456"),
+      undefined,
     );
   });
 });
