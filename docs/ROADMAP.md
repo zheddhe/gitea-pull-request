@@ -71,7 +71,7 @@ OAuth2 Authorization Code + PKCE is intentionally deferred beyond the 1.0 accept
 
 ## Phase 10 — 1.1.0
 
-Phase 10 is an incremental post-1.0 release focused on continuity and workflow safety rather than another structural rewrite. The release is composed of three P1 stories that share the same state-driven and native-first principles established in 1.0.
+Phase 10 is the completed `1.1.0` milestone. It focuses on continuity, contextual diagnostics and workflow safety rather than another structural rewrite, followed by a short corrective pass before release.
 
 ### 10.1 — Review continuity and native inline ergonomics
 
@@ -87,7 +87,7 @@ Status: implemented and E2E validated in PR #61; tracked by #58.
 
 ### 10.2 — Contextual action cleanup and review-to-CI navigation
 
-Status: planned before `1.1.0`; tracked by #59.
+Status: completed; tracked by #59.
 
 - remove the legacy Issue-row Add Comment affordance in favor of Issue Detail;
 - expose contextual PR-check job/log access directly from Review Pull Request;
@@ -95,14 +95,29 @@ Status: planned before `1.1.0`; tracked by #59.
 
 ### 10.3 — Source-branch divergence safety before merge and cleanup
 
-Status: planned before `1.1.0`; tracked by #60.
+Status: completed; tracked by #60.
 
 - classify local/remote PR source state as in-sync, behind, ahead, diverged or unknown where safely resolvable;
 - warn before server-side merge when local-only commits are not part of the remote PR;
 - apply stronger reachability-based safeguards before destructive source-branch cleanup;
 - never automatically push, reset or discard local work as part of merge confirmation.
 
-The working `1.1.0` release gate and documentation status are maintained in [`RELEASE_1.1.0.md`](RELEASE_1.1.0.md).
+### 10.4 — Conflict-resolution eligibility correction
+
+Status: completed; tracked by #63.
+
+- distinguish technical Git conflicts from WIP, approval, CI/check, permission and no-content merge-readiness blockers;
+- use the same eligibility rule for automatic guidance and the manual conflict-resolution command.
+
+### 10.5 — Context-aware CI job routing
+
+Status: completed; tracked by #64.
+
+- preserve job identity from job-specific Gitea check URLs;
+- open known jobs directly from Review Pull Request;
+- keep the job picker only for genuinely ambiguous multi-job runs.
+
+The final `1.1.0` release record and validation checklist are maintained in [`RELEASE_1.1.0.md`](RELEASE_1.1.0.md).
 
 ## Compatibility baseline
 
