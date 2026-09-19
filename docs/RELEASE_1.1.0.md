@@ -1,81 +1,107 @@
-# Gitea Pull Request 1.1.0 — Release preparation
+# Gitea Pull Request 1.1.0 — Release record
 
-This document is the working release gate for `1.1.0`. It is intentionally initialized before the release is complete so each Phase 10 story can update the same source of truth.
+`1.1.0` is the first incremental release after the 1.0 UX baseline. It focuses on review continuity, contextual diagnostics and stronger safeguards around merge and source-branch cleanup.
 
-## Release intent
+## Release scope
 
-`1.1.0` is an incremental post-1.0 release focused on three areas:
-
-1. review continuity and native inline ergonomics;
-2. contextual access to the right detail surface, especially CI diagnostics from review;
-3. stronger protection against local-only or divergent source-branch work during merge and cleanup.
-
-The package version remains `1.0.0` until all Phase 10 stories are integrated and the release gate is satisfied.
-
-## Story status
+The release completes Phase 10 and includes the final corrective pass required before publication.
 
 | Story | Scope | Status |
 | --- | --- | --- |
-| #58 / 10.1 | Review continuity and native inline ergonomics | Implemented and E2E validated in PR #61 |
-| #59 / 10.2 | Contextual action cleanup and review-to-CI navigation | Planned before release |
-| #60 / 10.3 | Source-branch divergence safety before merge and cleanup | Planned before release |
+| #58 / 10.1 | Review continuity and native inline ergonomics | Completed |
+| #59 / 10.2 | Contextual action cleanup and review-to-CI navigation | Completed |
+| #60 / 10.3 | Source-branch divergence safety before merge and cleanup | Completed |
+| #63 / 10.4 | Conflict-resolution eligibility bugfix | Completed |
+| #64 / 10.5 | Direct contextual CI job routing bugfix | Completed |
 
-## 10.1 validated behavior
+## Delivered behavior
 
-- New review comments can be created directly from the native authoritative PR diff.
+### Review continuity
+
+- New review comments can be created directly from the authoritative native PR diff.
 - Canonical anchors cover context, added, removed and deterministically mapped unchanged lines outside raw-diff hunks.
-- Pending review state propagates immediately in both directions between Inline Review and PR Detail.
-- Unresolved and Pending have independent navigation cycles backed by one shared logical cursor.
+- Pending review state propagates immediately between Inline Review and PR Detail.
+- Unresolved conversations and pending review operations have independent Previous/Next cycles backed by one shared logical cursor.
 - Navigation controls disappear when a cycle contains fewer than two navigable targets.
-- Pending navigation is visually distinct from unresolved-conversation navigation in the native editor title.
-- Historical review conversations are presented as Outdated instead of being reattached to unsafe current-diff positions.
-- Outdated and Resolved remain independent states.
+- Historical conversations are presented as Outdated instead of being attached to an unsafe current-diff position.
+- Outdated and Resolved remain independent lifecycle dimensions.
 - Submitted pending items reconcile back to persisted conversation state only when the successor is deterministic.
-- Unplaceable/outdated logical conversations remain accessible from PR Detail while native navigation skips unsafe projections.
 
-## Remaining release scope
+### Contextual CI access
 
-### 10.2 — #59
+- PR checks in Review Pull Request can open the existing CI job/log surface directly.
+- The contextual workflow reuses the same CI / Actions provider and adaptive refresh path.
+- Job-specific Gitea check URLs preserve both run and job identity.
+- A known job opens directly; a picker is used only for a genuinely ambiguous multi-job run.
 
-- Remove the legacy Issue-row Add Comment action while retaining full Issue Detail commenting.
-- Expose contextual job/log inspection from PR checks in Review Pull Request.
-- Reuse existing CI / Actions state, detail surfaces and adaptive refresh rather than introducing a second CI implementation.
+### Merge and cleanup safety
 
-### 10.3 — #60
+- One normalized source-branch synchronization model is shared by merge and cleanup workflows.
+- Local/remote state can be classified as in-sync, behind, ahead, diverged or unknown where safely resolvable.
+- Local-only commits trigger an explicit advisory before a server-side merge.
+- The server-side PR head remains authoritative for what Gitea will merge.
+- No merge warning path silently pushes, resets or rebases local work.
+- Post-merge cleanup re-discovers branch state before destructive actions.
+- Local or remote branches containing unique or unverifiable work are kept rather than presented as safe to delete.
+- Verified forced local deletion is reserved for cases where analysis proves that no local-only work remains, including squash/rebase cleanup scenarios.
 
-- Introduce one normalized source-branch synchronization diagnostic shared by merge and cleanup.
-- Warn when local-only commits are absent from the server-side PR before merge.
-- Distinguish behind, ahead, diverged and unverifiable states using Git graph/reachability semantics.
-- Protect destructive post-merge cleanup when local-only work remains.
-- Never automatically push, reset, rebase or discard local work as part of these safeguards.
+### Final bugfix pass
 
-## Documentation gate
+- WIP / Draft PRs no longer trigger false conflict-resolution guidance merely because Gitea reports `mergeable=false`.
+- Approval, check, permission and no-content blockers are not treated as technical Git conflicts.
+- Manual and automatic conflict-resolution entry points use the same eligibility rule.
+- Job-specific PR check actions no longer ask the user to select the already-known job again.
 
-Before `1.1.0` is tagged:
+## Documentation status
 
-- [x] Initialize `CHANGELOG.md` with an Unreleased `1.1.0` section.
-- [x] Add Phase 10 / `1.1.0` to `docs/ROADMAP.md`.
-- [x] Document 10.1 review-continuity behavior and E2E validation.
-- [ ] Integrate 10.2 release notes and user-facing behavior.
-- [ ] Integrate 10.3 release notes and safety behavior.
-- [ ] Review README screenshots/text if the final 1.1 UI materially changes documented workflows.
-- [ ] Replace `Unreleased` with the final release date.
-- [ ] Bump `package.json` / lockfile version to `1.1.0` only at the release-candidate stage.
+The 1.1.0 release candidate keeps the following sources aligned:
 
-## Validation gate
+- `README.md` — current user-facing product behavior.
+- `CHANGELOG.md` — public release history and 1.1.0 notes.
+- `ROADMAP.md` — completed Phase 10 milestone and future direction.
+- `RELEASING.md` — version-independent release procedure.
+- `TESTING.md` — current test architecture and release validation guidance.
+- `AUTHENTICATION.md` — current PAT and multi-instance guidance.
+- `CONTRIBUTING.md` — current development baseline.
 
-Before release:
+## Release gate
 
-- [ ] All three Phase 10 stories merged.
-- [ ] CI green on the final release candidate.
-- [ ] `make verify` succeeds.
-- [ ] Install and validate the exact generated VSIX with `make reinstall-vsix`.
-- [ ] E2E review continuity: create/reply/resolve/reopen, Pending/Unresolved navigation, outdated behavior and submit/reconcile continuity.
-- [ ] E2E review-to-CI navigation from PR checks.
-- [ ] E2E merge warning for local-ahead/diverged source branches.
-- [ ] E2E post-merge cleanup protection for local-only commits.
-- [ ] No regression in Reviewed/Viewed state, merge readiness, Issue Detail, Actions or conflict-resolution workflow.
+Immediately before tagging, validate the promoted release candidate under Node.js 24:
 
-## Release procedure
+```bash
+make verify
+make reinstall-vsix
+```
 
-Once the gate is complete, follow [`RELEASING.md`](RELEASING.md): finalize version metadata and changelog date, verify the VSIX, merge the release candidate, tag the merged commit, publish the GitHub Release and upload that same verified VSIX to the Visual Studio Marketplace.
+Confirm that the installed artifact is:
+
+```text
+.artifacts/vsix/gitea-pull-request-1.1.0.vsix
+```
+
+The final smoke pass should cover:
+
+- native review create/reply/resolve/reopen;
+- unresolved and pending navigation;
+- outdated conversation presentation;
+- contextual PR-check → CI job/log navigation;
+- WIP/non-conflict PRs not offering conflict-resolution preparation;
+- genuine technical conflicts still offering the conflict workflow;
+- pre-merge local-ahead warning;
+- post-merge protection for committed-but-unpushed local work;
+- normal safe cleanup for synchronized branches;
+- Issue Detail commenting and current Issue row actions;
+- CI / Actions tree run/job/log behavior.
+
+## Publication sequence
+
+After the release candidate is validated:
+
+1. merge the release PR into `main`;
+2. tag the merged commit as `v1.1.0`;
+3. let `.github/workflows/release.yml` rebuild and verify the exact tagged source;
+4. confirm the versioned VSIX is attached to the draft GitHub Release;
+5. review the release notes and publish the draft;
+6. upload that same verified VSIX to the Visual Studio Marketplace.
+
+The operational procedure remains documented in [`RELEASING.md`](RELEASING.md).

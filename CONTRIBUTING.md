@@ -71,16 +71,19 @@ Use `make help` for the complete development target list. Release-specific promo
 
 ## Project Structure
 
-| Path            | Contents                                              |
-| --------------- | ----------------------------------------------------- |
-| `src/api/`      | Gitea REST API client + TypeScript types              |
-| `src/auth/`     | Token storage via VS Code `SecretStorage`             |
-| `src/commands/` | Command registrations (PR, CI, Issue, Auth)           |
-| `src/context/`  | Multi-repo detection using the `vscode.git` API       |
-| `src/ui/`       | Status bar item                                       |
-| `src/views/`    | Tree data providers + webview panels                  |
-| `resources/`    | Marketplace screenshots and extension icons          |
-| `package.json`  | Extension manifest (commands, views, menus, settings) |
+| Path | Contents |
+| --- | --- |
+| `src/api/` | Gitea REST API client + TypeScript types |
+| `src/auth/` | Token storage and capability-aware authentication |
+| `src/context/` | Multi-repo / multi-instance repository resolution |
+| `src/features/pullRequests/` | PR domain, services, commands and contextual views |
+| `src/features/ci/` | CI / Actions presentation, detail and contextual access |
+| `src/features/issues/` | Issue creation and issue-specific workflows |
+| `src/features/polling/` | Centralized adaptive refresh scheduling |
+| `src/commands/` | Shared command registrations |
+| `src/views/` | Tree providers and shared view surfaces |
+| `resources/` | Marketplace screenshots and extension icons |
+| `package.json` | Extension manifest, scripts, commands, views and settings |
 
 ---
 
@@ -150,7 +153,7 @@ Include useful correlation context (`repo`, PR/issue/run identifier, operation) 
 
 ## Release and compatibility baseline
 
-For the `0.8.0` release line, the validated baseline is:
+The current development and release baseline is:
 
 - VS Code `1.133.0+`;
 - Gitea `1.26.4+`;

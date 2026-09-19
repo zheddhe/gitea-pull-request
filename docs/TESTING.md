@@ -26,6 +26,9 @@ Prefer direct behavioral assertions in this layer. These tests are the best cand
 - `pullRequestSessionService.test.ts`
 - `conflictResolutionService.test.ts`
 - `conflictResolutionCoordinator.test.ts`
+- `branchSyncAnalyzerService.test.ts`
+- `preMergeBranchSyncService.test.ts`
+- `postMergeBranchSafety.test.ts`
 
 These characterize state transitions and workflow decisions. Keep orchestration tests focused on externally meaningful decisions rather than implementation call order unless ordering is itself part of the workflow contract.
 
@@ -35,6 +38,9 @@ These characterize state transitions and workflow decisions. Keep orchestration 
 - `activityBarRowActions.test.ts`
 - `activityBarTopology.test.ts`
 - `ciRunPresentation.test.ts`
+- `ciPresentation.test.ts`
+- `ciContextualRouting.test.ts`
+- `reviewContextualCiRouting.test.ts`
 - `editableWebviewRetention.test.ts`
 - `issueAssignment.test.ts`
 - `issueDetailMarkdown.test.ts`
@@ -78,4 +84,4 @@ The first measured baseline for this scope established a useful reference and im
 - Keep source-contract tests only where they protect declarative VS Code/Webview topology that is impractical to execute directly.
 - Do not duplicate an assertion across suites unless the two assertions protect different contracts (for example, a manifest contribution versus runtime presentation semantics).
 - Use branch/function coverage as a regression and discovery signal, not as a release threshold.
-- `make test` remains the functional Extension Host gate; `make coverage` remains an informational development measurement.
+- `make test` remains the functional Extension Host gate; `make coverage` remains an informational development measurement. Release candidates must additionally pass the version-specific smoke scenarios documented in the corresponding release record.

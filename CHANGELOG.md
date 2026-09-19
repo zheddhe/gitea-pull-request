@@ -2,35 +2,79 @@
 
 All notable changes to **Gitea Pull Request** are documented here from the standalone product line onward.
 
-## 1.1.0 - Unreleased
+## 1.1.0 - 2026-09-19
 
-`1.1.0` focuses on review continuity, contextual workflow polish and stronger safeguards around merge and source-branch cleanup.
+`1.1.0` strengthens review continuity, contextual CI navigation and merge/cleanup safety while polishing the post-1.0 workflow.
+
+### Highlights
+
+#### Native review continuity
+
+Add review comments directly from authoritative `gitea-pr` diffs. Inline Review and PR Detail now stay synchronized through the shared pending-review transaction, with separate navigation for unresolved conversations and pending review operations. Historical conversations remain accessible as Outdated instead of being projected onto unsafe current-diff positions.
+
+#### Contextual CI diagnostics
+
+Open CI jobs and logs directly from PR checks in Review Pull Request. Job-specific checks preserve the known job identity and open it directly; the job picker is reserved for genuinely ambiguous multi-job runs. The workflow reuses the existing CI / Actions projection and adaptive polling path.
+
+#### Safer merge and branch cleanup
+
+Source-branch synchronization is classified as in-sync, behind, ahead, diverged or unknown when safely resolvable. Local-only work triggers an explicit pre-merge advisory, and post-merge cleanup revalidates branch safety before destructive actions. Unique or unverifiable work is kept instead of being presented as safe to delete.
 
 ### Added
 
-- Native `Add Review Comment` from authoritative `gitea-pr` diffs, including safely mapped unchanged lines outside raw-diff hunks.
-- Immediate bidirectional review synchronization between native Inline Review and PR Detail through the shared pending-review transaction.
-- Independent Previous/Next navigation cycles for unresolved conversations and pending review operations, with one logical cursor shared across Inline Review and PR Detail.
-- Explicit Outdated conversation presentation in PR Detail so historical review threads remain accessible without being attached to an unsafe current-diff position.
-- Distinct native navigation affordances for unresolved conversations and pending modifications.
+#### Inline review authoring
+
+Native `Add Review Comment` is available from authoritative PR diffs, with canonical old/new anchors for context, added, removed and deterministically mapped unchanged lines outside raw-diff hunks.
+
+#### Review navigation
+
+Unresolved conversations and pending review operations have independent Previous/Next cycles backed by one shared logical cursor across Inline Review and PR Detail. Native navigation affordances distinguish unresolved feedback from pending modifications.
+
+#### Branch synchronization diagnostics
+
+Merge and cleanup share one Git-graph-based source-branch analysis. Local-ahead and diverged states are surfaced before server-side merge, while post-merge cleanup uses reachability-aware safety decisions for local and remote source branches.
 
 ### Improved
 
-- Review anchors now preserve canonical old/new coordinates for context, added, removed and safely mapped unchanged lines instead of relying on approximate line placement.
-- Pending review submission/reconcile keeps navigation continuity when a pending item becomes a persisted conversation, without guessing when the successor is ambiguous.
-- Outdated and Resolved are independent states: a branch update does not auto-resolve review feedback, and historical resolved state remains visible.
-- Native and PR Detail navigation hides Previous/Next controls when a cycle contains fewer than two navigable items.
-- PR Detail separates Unresolved, Pending and Outdated review states more clearly while keeping the same shared lifecycle model.
+#### Review lifecycle
 
-### Planned before release
+Pending review state propagates immediately between Inline Review and PR Detail. Submission/reconcile preserves navigation continuity when pending items become persisted conversations. Outdated and Resolved remain independent lifecycle dimensions, and navigation controls are hidden when fewer than two targets exist.
 
-The `1.1.0` release is not complete until the remaining Phase 10 stories are integrated:
+#### Contextual CI
 
-- #59 — Phase 10.2: contextual action cleanup and review-to-CI navigation.
-- #60 — Phase 10.3: source-branch divergence safety before merge and cleanup.
+Review checks open the existing CI job/log surface without introducing review-specific CI state. Job-specific Gitea check URLs preserve both run and job identity, eliminating redundant job selection.
 
-See [`docs/RELEASE_1.1.0.md`](docs/RELEASE_1.1.0.md) for the working release gate and story status.
+#### Issue ergonomics
 
+Issue-row actions are simplified; Issue Detail remains the canonical commenting and discussion surface.
+
+#### Merge and cleanup safety
+
+The server-side PR head remains authoritative for what Gitea will merge. Local source state is advisory before merge and safety-critical before destructive cleanup. Cleanup re-discovers state at action time, and squash/rebase cleanup can use verified forced deletion only after safety analysis proves no local-only work remains.
+
+### Fixed
+
+#### Conflict-resolution eligibility
+
+WIP / Draft, approval, CI/check, permission and no-content blockers are no longer misclassified as technical Git conflicts. Automatic guidance and the manual conflict-resolution command now share the same eligibility rule.
+
+#### Direct CI job routing
+
+Job-specific PR check actions no longer reopen an unnecessary job picker when the target job is already known.
+
+#### Local-work preservation
+
+Post-merge cleanup no longer risks silently deleting committed but unpushed local work. Unknown or unmappable branch state is never presented as verified safe for destructive cleanup.
+
+### Compatibility
+
+| Component | Baseline |
+| --- | --- |
+| VS Code | 1.133.0 or later |
+| Gitea | 1.26.4 minimum; 1.27.x or later recommended for the complete review experience |
+| Gitea Runner | 3.x.x or later recommended for the current Actions / CI experience |
+| Node.js | 24.x build / CI baseline |
+| VSIX tooling | `@vscode/vsce` 4.0.0 on the release path |
 ## 1.0.0 - 2026-09-08
 
 `1.0.0` is the first full user-experience baseline: native review interaction, adaptive refresh, reliable Actions detail and multi-instance authentication designed for least privilege.

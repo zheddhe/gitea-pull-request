@@ -28,6 +28,24 @@ interface ContextualJobQuickPickItem extends vscode.QuickPickItem {
   job: GiteaWorkflowJob;
 }
 
+export type ContextualJobResolution =
+  | { kind: "job"; job: GiteaWorkflowJob }
+  | { kind: "ambiguous" }
+  | { kind: "not-found" };
+
+export function resolveContextualJob(
+  jobs: readonly GiteaWorkflowJob[],
+  jobId?: number,
+): ContextualJobResolution {
+  if (jobId !== undefined) {
+    const job = jobs.find((candidate) => candidate.id === jobId);
+    return job ? { kind: "job", job } : { kind: "not-found" };
+  }
+  if (jobs.length === 1) return { kind: "job", job: jobs[0] };
+  if (jobs.length > 1) return { kind: "ambiguous" };
+  return { kind: "not-found" };
+}
+
 export function registerCICommands(
   context: vscode.ExtensionContext,
   api: GiteaApiClient,
@@ -105,23 +123,38 @@ export function registerCICommands(
 
     vscode.commands.registerCommand(
       "gitea.inspectCheckJobs",
-      async (repoInfo: RepoInfo, runId: number) => {
+      async (repoInfo: RepoInfo, runId: number, jobId?: number) => {
         if (!repoInfo || !Number.isSafeInteger(runId) || runId <= 0) {
           vscode.window.showWarningMessage("Invalid Gitea Actions run identifier.");
           return;
         }
+        if (
+          jobId !== undefined &&
+          (!Number.isSafeInteger(jobId) || jobId <= 0)
+        ) {
+          vscode.window.showWarningMessage("Invalid Gitea Actions job identifier.");
+          return;
+        }
 
         const jobs = await contextualAccess.loadJobsForRun(repoInfo, runId);
-        if (jobs.length === 0) {
-          vscode.window.showInformationMessage(
-            `No jobs are available for Actions run #${runId}.`,
-          );
+        const resolution = resolveContextualJob(jobs, jobId);
+
+        if (resolution.kind === "not-found") {
+          if (jobId !== undefined) {
+            vscode.window.showWarningMessage(
+              `Job #${jobId} is no longer available for Actions run #${runId}. Refresh the pull request and try again.`,
+            );
+          } else {
+            vscode.window.showInformationMessage(
+              `No jobs are available for Actions run #${runId}.`,
+            );
+          }
           return;
         }
 
         let job: GiteaWorkflowJob | undefined;
-        if (jobs.length === 1) {
-          job = jobs[0];
+        if (resolution.kind === "job") {
+          job = resolution.job;
         } else {
           const items: ContextualJobQuickPickItem[] = jobs.map((candidate) => {
             const presentation = jobPresentation(

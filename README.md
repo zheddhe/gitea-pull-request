@@ -18,9 +18,13 @@ Browse pull requests by repository, activate one into a dedicated **Gitea Pull R
 - interactive inline review conversations;
 - Reply, Resolve and Reopen where supported by the connected Gitea server;
 - pending review changes submitted as one review transaction;
+- independent Previous/Next navigation for unresolved conversations and pending review operations;
+- explicit Outdated conversation handling when historical anchors are no longer safe to project;
 - PR checks, effective review state and merge readiness;
-- guided merge-conflict preparation using native Git and VS Code Source Control / Merge Editor;
-- explicit post-merge branch cleanup.
+- contextual CI job/log access directly from PR checks;
+- guided merge-conflict preparation only for technical Git-conflict conditions;
+- local/remote source-branch divergence warnings before merge;
+- safety-checked post-merge branch cleanup that preserves unverifiable or local-only work.
 
 The PR workspace deliberately exposes two complementary review surfaces. The **overview** keeps the complete pull-request state visible — files, checks, review state and merge readiness — while **inline review** moves the discussion directly into the native VS Code diff for precise file-level feedback.
 
@@ -60,7 +64,8 @@ Issues stay in the main **Gitea** workspace and support browsing, filtering and 
 
 - Open / Closed filtering;
 - **Assigned to Me** aggregation;
-- View Details, Browser, Add Comment and Close/Re-open row actions;
+- View Details, Browser and Close/Re-open row actions;
+- canonical Issue Detail commenting and discussion;
 - Markdown detail rendering and inline editing;
 - first-class **Create Issue** workflow;
 - `.gitea/ISSUE_TEMPLATE/` discovery from the repository default branch;
@@ -79,7 +84,8 @@ The CI / Actions tree exposes workflow runs and jobs with their real result stat
 - cancel active workflow runs;
 - inspect job logs and execution detail;
 - access artifacts where the server API exposes them reliably;
-- see PR-specific checks directly in the Review workspace.
+- see PR-specific checks directly in the Review workspace;
+- open a known job directly from a job-specific PR check without an unnecessary second selection.
 
 Remote state uses centralized adaptive polling. Refresh cadence follows visibility, VS Code focus, workflow state and recent user activity, backs off when nothing changes, and pauses where automatic refresh could interfere with editing. Polling never mutates the Git working tree.
 
@@ -119,7 +125,7 @@ The general **Gitea** workspace is the forge browser. Activating a pull request 
 
 ## Authentication
 
-Personal Access Tokens are the first-class authentication method for 1.0 and work well with arbitrary self-hosted Gitea instances.
+Personal Access Tokens are the first-class authentication method and work well with arbitrary self-hosted Gitea instances.
 
 Run **`Gitea: Sign In`** or click the Gitea account entry in the status bar. Each Gitea instance has its own account/session and token. Credentials are stored in VS Code SecretStorage and are never shared across instances.
 
@@ -202,7 +208,7 @@ Gitea 1.26.4 remains a supported compatibility floor rather than the preferred d
 ## Documentation
 
 - [Authentication](docs/AUTHENTICATION.md) — PAT scopes, multi-instance isolation, SSH/HTTPS mapping and diagnostics
-- [Roadmap](docs/ROADMAP.md) — product milestones and 1.0 direction
+- [Roadmap](docs/ROADMAP.md) — product milestones and current direction
 - [Testing](docs/TESTING.md) — test layers and coverage rationale
 - [Releasing](docs/RELEASING.md) — release/package workflow
 - [Contributing](CONTRIBUTING.md) — development conventions

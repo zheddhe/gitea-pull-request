@@ -10,6 +10,7 @@ import { log } from "../../../debug/outputChannel";
 import { PullRequestProvider } from "../../../views/pullRequestProvider";
 import {
   externalCheckPresentation,
+  extractGiteaJobId,
   extractGiteaRunId,
 } from "../../ci/domain/ciPresentation";
 import type { PullRequestWorkspaceState } from "../domain/pullRequestState";
@@ -76,7 +77,7 @@ type ReviewViewMessage =
   | { type: "checkoutBase" }
   | { type: "updateBase"; base: string }
   | { type: "openCheck"; url: string }
-  | { type: "inspectCheckJobs"; runId: number }
+  | { type: "inspectCheckJobs"; runId: number; jobId?: number }
   | { type: "rerunCheck"; runId: number }
   | { type: "cancelCheck"; runId: number };
 
@@ -282,6 +283,7 @@ export class ReviewPullRequestViewProvider
         "gitea.inspectCheckJobs",
         active.repoInfo,
         runId,
+        message.jobId,
       );
       return;
     }
@@ -772,6 +774,7 @@ export class ReviewPullRequestViewProvider
       status,
       presentation: externalCheckPresentation(status.state, status.target_url),
       runId: extractGiteaRunId(status.target_url),
+      jobId: extractGiteaJobId(status.target_url),
     }));
     const successfulChecks = presentations.filter(
       (item) => item.presentation.state === "success",
@@ -807,14 +810,14 @@ export class ReviewPullRequestViewProvider
       "M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm0 1a6 6 0 1 1 0 12A6 6 0 0 1 8 2zM5 5h6v6H5V5z",
     );
     const checks = presentations
-      .map(({ status, presentation, runId }) => {
+      .map(({ status, presentation, runId, jobId }) => {
         const label = escapeHtml(status.context || "check");
         const description = status.description
           ? `<div class="check-description">${escapeHtml(status.description)}</div>`
           : "";
         const actions = [
           runId
-            ? `<button class="ci-check-action" data-check-jobs="${runId}" title="Inspect jobs and logs" aria-label="Inspect jobs and logs for ${label}">${logsIcon}</button>`
+            ? `<button class="ci-check-action" data-check-jobs="${runId}"${jobId ? ` data-check-job="${jobId}"` : ""} title="${jobId ? "Open job logs" : "Inspect jobs and logs"}" aria-label="${jobId ? "Open job logs" : "Inspect jobs and logs"} for ${label}">${logsIcon}</button>`
             : "",
           presentation.actions.openInBrowser && status.target_url
             ? `<button class="ci-check-action" data-check-open="${escapeHtml(status.target_url)}" title="Open in browser" aria-label="Open ${label} in browser">${openIcon}</button>`
@@ -934,7 +937,7 @@ export class ReviewPullRequestViewProvider
   document.getElementById('approve')?.addEventListener('click',()=>vscode.postMessage({type:'approve',body:body.value}));
   document.getElementById('requestChanges')?.addEventListener('click',()=>vscode.postMessage({type:'requestChanges',body:body.value}));
   document.getElementById('readyForReview')?.addEventListener('click',()=>vscode.postMessage({type:'readyForReview'}));
-  document.querySelectorAll('[data-check-jobs]').forEach((button)=>button.addEventListener('click',()=>vscode.postMessage({type:'inspectCheckJobs',runId:Number(button.dataset.checkJobs)})));
+  document.querySelectorAll('[data-check-jobs]').forEach((button)=>button.addEventListener('click',()=>vscode.postMessage({type:'inspectCheckJobs',runId:Number(button.dataset.checkJobs),jobId:button.dataset.checkJob ? Number(button.dataset.checkJob) : undefined})));
   document.querySelectorAll('[data-check-open]').forEach((button)=>button.addEventListener('click',()=>vscode.postMessage({type:'openCheck',url:button.dataset.checkOpen})));
   document.querySelectorAll('[data-check-rerun]').forEach((button)=>button.addEventListener('click',()=>vscode.postMessage({type:'rerunCheck',runId:Number(button.dataset.checkRerun)})));
   document.querySelectorAll('[data-check-cancel]').forEach((button)=>button.addEventListener('click',()=>vscode.postMessage({type:'cancelCheck',runId:Number(button.dataset.checkCancel)})));

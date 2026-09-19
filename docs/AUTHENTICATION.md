@@ -1,6 +1,6 @@
 # Authentication and least privilege
 
-Gitea Pull Request 1.0 keeps Personal Access Tokens (PATs) as a first-class authentication method for self-hosted Gitea. OAuth is deliberately not required for 1.0.0.
+Gitea Pull Request uses Personal Access Tokens (PATs) as the first-class authentication method for self-hosted Gitea. OAuth is not required for the current product line.
 
 ## Recommended PAT scopes
 
@@ -53,7 +53,7 @@ Diagnostics display:
 
 - canonical Gitea instance URL;
 - account name;
-- authentication method (`PAT` for 1.0.0);
+- authentication method (`PAT`);
 - observed capability states.
 
 The diagnostic probe performs safe read operations only. It does not create an Issue, submit a review, merge a pull request or re-run a workflow merely to test a write permission. Write capabilities therefore remain `unknown` until a real user-requested write operation exercises them.
@@ -133,4 +133,4 @@ Credentials remain attached to `https://gitea.company.example`, not to `git.inte
 
 ## OAuth roadmap
 
-OAuth2 Authorization Code + PKCE is a future authentication option, targeted after the 1.0.0 baseline. It will fit the same instance/account/capability model without requiring existing PAT users to migrate.
+OAuth2 Authorization Code + PKCE remains a future authentication option. It can fit the same instance/account/capability model without requiring existing PAT users to migrate.

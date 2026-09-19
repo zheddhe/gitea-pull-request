@@ -3,7 +3,7 @@ SHELL := /bin/bash
 NPM ?= npm
 NPX ?= npx
 CODE ?= code
-VSCE_VERSION ?= 3.9.2
+VSCE_VERSION ?= 4.0.0
 C8_VERSION ?= 10.1.3
 VSCODE_TEST_VERSION ?= 1.133.0
 
