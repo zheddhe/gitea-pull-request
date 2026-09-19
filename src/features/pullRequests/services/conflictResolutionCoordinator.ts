@@ -1,18 +1,51 @@
 import * as vscode from "vscode";
-import type { GiteaCombinedStatus } from "../../../api/types";
+import type {
+  GiteaCombinedStatus,
+  GiteaPullRequest,
+  GiteaReview,
+} from "../../../api/types";
 import { RepoManager } from "../../../context/repoManager";
 import { debug, warn } from "../../../debug/outputChannel";
+import {
+  evaluateMergeReadiness,
+  type BranchMergePolicy,
+} from "../domain/reviewPullRequestModel";
 import { ConflictResolutionService } from "./conflictResolutionService";
 import { PullRequestReviewApi } from "./pullRequestReviewApi";
 import { PullRequestSessionService } from "./pullRequestSessionService";
 
 const MERGE_IN_PROGRESS_CONTEXT = "gitea.conflictResolution.inProgress";
 
+export type ConflictResolutionGuidanceDecision =
+  | "technical-conflict"
+  | "non-git-blocker"
+  | "not-conflicting";
+
 export function hasPendingChecks(status: GiteaCombinedStatus): boolean {
   if (status.statuses.some((check) => check.state === "pending")) {
     return true;
   }
   return status.total_count > 0 && status.state === "pending";
+}
+
+export function conflictResolutionGuidanceDecision(
+  pullRequest: GiteaPullRequest,
+  status: GiteaCombinedStatus | undefined,
+  reviews: GiteaReview[] | undefined,
+  policy: BranchMergePolicy | undefined,
+): ConflictResolutionGuidanceDecision {
+  if (pullRequest.mergeable !== false) return "not-conflicting";
+
+  const readinessWithoutTechnicalMergeability = evaluateMergeReadiness(
+    { ...pullRequest, mergeable: true },
+    status,
+    reviews,
+    policy,
+  );
+
+  return readinessWithoutTechnicalMergeability.blockingReasons.length === 0
+    ? "technical-conflict"
+    : "non-git-blocker";
 }
 
 export class ConflictResolutionCoordinator implements vscode.Disposable {
@@ -67,7 +100,9 @@ export class ConflictResolutionCoordinator implements vscode.Disposable {
       .find((repo) => repo.key === repositoryKey);
     if (!repoInfo) return;
 
-    const inspection = await this.conflictResolution.inspect(repoInfo).catch(() => undefined);
+    const inspection = await this.conflictResolution
+      .inspect(repoInfo)
+      .catch(() => undefined);
     await vscode.commands.executeCommand(
       "setContext",
       MERGE_IN_PROGRESS_CONTEXT,
@@ -94,21 +129,41 @@ export class ConflictResolutionCoordinator implements vscode.Disposable {
 
     if (state.pullRequest.mergeable !== false) return;
 
-    try {
-      const status = await this.reviewApi.getCombinedStatus(
-        repoInfo,
-        state.pullRequest.head.sha,
-      );
-      if (hasPendingChecks(status)) {
-        debug(
-          `[conflict-resolution] guidance suppressed repo=${repoInfo.label} pr=#${pullRequestNumber} reason=ci-pending`,
-        );
-        return;
-      }
-    } catch (error) {
+    const [statusResult, reviewsResult, policyResult] = await Promise.allSettled([
+      this.reviewApi.getCombinedStatus(repoInfo, state.pullRequest.head.sha),
+      this.reviewApi.listReviews(repoInfo, pullRequestNumber),
+      this.reviewApi.getBranchMergePolicy(repoInfo, state.pullRequest.base.ref),
+    ]);
+
+    if (
+      statusResult.status === "rejected" ||
+      reviewsResult.status === "rejected" ||
+      policyResult.status === "rejected"
+    ) {
+      const failures = [statusResult, reviewsResult, policyResult]
+        .filter(
+          (result): result is PromiseRejectedResult =>
+            result.status === "rejected",
+        )
+        .map((result) => (result.reason as Error)?.message ?? String(result.reason))
+        .join(" | ");
       warn(
-        `[conflict-resolution] unable to verify CI state before guidance repo=${repoInfo.label} pr=#${pullRequestNumber}: ${(error as Error).message}`,
+        `[conflict-resolution] guidance suppressed repo=${repoInfo.label} pr=#${pullRequestNumber} reason=readiness-unverifiable details=${failures}`,
       );
+      return;
+    }
+
+    const decision = conflictResolutionGuidanceDecision(
+      state.pullRequest,
+      statusResult.value,
+      reviewsResult.value,
+      policyResult.value,
+    );
+    if (decision !== "technical-conflict") {
+      debug(
+        `[conflict-resolution] guidance suppressed repo=${repoInfo.label} pr=#${pullRequestNumber} reason=${decision}`,
+      );
+      return;
     }
 
     this.lastOfferedIdentity = identity;
