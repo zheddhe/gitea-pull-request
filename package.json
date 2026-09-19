@@ -3,6 +3,7 @@
   "displayName": "Gitea Pull Request",
   "description": "Pull requests, reviews, issues and CI context for self-hosted Gitea, directly in Visual Studio Code",
   "readme": "./README.md",
+  "markdown": "github",
   "version": "1.1.0",
   "publisher": "zheddhe",
   "repository": {
