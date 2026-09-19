@@ -21,8 +21,11 @@ suite("Post-merge presentation", () => {
     assert.doesNotMatch(source, /without deleting branch/);
   });
 
-  test("uses primary buttons and emphasizes the recommended cleanup path without danger styling", () => {
-    assert.match(source, /id="delete" title="Recommended:/);
+  test("uses primary buttons and describes the verified-safe cleanup path without danger styling", () => {
+    assert.match(
+      source,
+      /id="delete" title="Return to the base branch and clean up only source branches verified safe\."/,
+    );
     assert.doesNotMatch(source, /class="danger-outline"/);
     assert.doesNotMatch(source, /class="secondary"/);
     assert.match(source, /\.actions \{ display: flex; flex-wrap: wrap;/);
@@ -33,10 +36,25 @@ suite("Post-merge presentation", () => {
     assert.doesNotMatch(source, /keep branches and finish/);
   });
 
-  test("preserves existing branch cleanup and checkout command semantics", () => {
+  test("preserves checkout semantics and revalidates branch safety before cleanup", () => {
     assert.match(source, /case "deleteBranches":[\s\S]*?await this\.deleteBranches\(state\)/);
     assert.match(source, /case "checkoutBase":[\s\S]*?await this\.checkoutBase\(state\)/);
-    assert.match(source, /this\.branchCleanup\.cleanup\(context\.repoInfo, context\.identity/);
-    assert.match(source, /this\.branchCleanup\.checkoutBase\(context\.repoInfo, context\.identity\)/);
+
+    assert.match(
+      source,
+      /identity = await this\.branchCleanup\.discover\([\s\S]*?state\.pullRequest\.head\.ref,[\s\S]*?state\.pullRequest\.base\.ref/,
+    );
+    assert.match(
+      source,
+      /this\.branchSync\.analyzePostMergeCleanup\([\s\S]*?repoInfo,[\s\S]*?identity,[\s\S]*?state\.pullRequest\.head\.sha/,
+    );
+    assert.match(
+      source,
+      /this\.branchCleanup\.cleanup\(repoInfo, identity, \{[\s\S]*?forceLocal: deleteLocal && localSafe/,
+    );
+    assert.match(
+      source,
+      /this\.branchCleanup\.checkoutBase\(context\.repoInfo, context\.identity\)/,
+    );
   });
 });
