@@ -42,6 +42,36 @@ export class GiteaApiClient {
     return response.text();
   }
 
+  private async requestAllPages<T>(
+    serverUrl: string,
+    pathForPage: (page: number, limit: number) => string,
+    limit = 50,
+  ): Promise<T[]> {
+    const items: T[] = [];
+    let page = 1;
+
+    while (true) {
+      const response = await this.authenticatedFetch(
+        serverUrl,
+        pathForPage(page, limit),
+      );
+      const body = await response.text();
+      const pageItems = body.trim() ? (JSON.parse(body) as T[]) : [];
+      items.push(...pageItems);
+
+      const hasMoreHeader = response.headers.get("x-hasmore");
+      if (hasMoreHeader !== null) {
+        if (hasMoreHeader.toLowerCase() !== "true") break;
+      } else if (pageItems.length === 0) {
+        break;
+      }
+
+      page += 1;
+    }
+
+    return items;
+  }
+
   private async authenticatedFetch(
     serverUrl: string,
     path: string,
@@ -233,7 +263,11 @@ export class GiteaApiClient {
 
   async listPRFiles(repoInfo: RepoInfo, number: number): Promise<GiteaFileDiff[]> {
     const { serverUrl, owner, repo } = repoInfo;
-    return this.request<GiteaFileDiff[]>(serverUrl, `/repos/${owner}/${repo}/pulls/${number}/files`);
+    return this.requestAllPages<GiteaFileDiff>(
+      serverUrl,
+      (page, limit) =>
+        `/repos/${owner}/${repo}/pulls/${number}/files?page=${page}&limit=${limit}`,
+    );
   }
 
   async getPRRawDiff(repoInfo: RepoInfo, number: number): Promise<string> {
@@ -246,7 +280,11 @@ export class GiteaApiClient {
 
   async listPRCommits(repoInfo: RepoInfo, number: number): Promise<GiteaCommit[]> {
     const { serverUrl, owner, repo } = repoInfo;
-    return this.request<GiteaCommit[]>(serverUrl, `/repos/${owner}/${repo}/pulls/${number}/commits`);
+    return this.requestAllPages<GiteaCommit>(
+      serverUrl,
+      (page, limit) =>
+        `/repos/${owner}/${repo}/pulls/${number}/commits?page=${page}&limit=${limit}`,
+    );
   }
 
   async getCombinedStatus(repoInfo: RepoInfo, sha: string): Promise<GiteaCombinedStatus> {
