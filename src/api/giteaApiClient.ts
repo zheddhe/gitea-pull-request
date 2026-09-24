@@ -214,7 +214,11 @@ export class GiteaApiClient {
 
   async listReviews(repoInfo: RepoInfo, number: number): Promise<GiteaReview[]> {
     const { serverUrl, owner, repo } = repoInfo;
-    return this.request<GiteaReview[]>(serverUrl, `/repos/${owner}/${repo}/pulls/${number}/reviews`);
+    return this.requestAllPages<GiteaReview>(
+      serverUrl,
+      (page, limit) =>
+        `/repos/${owner}/${repo}/pulls/${number}/reviews?page=${page}&limit=${limit}`,
+    );
   }
 
   async createReview(
