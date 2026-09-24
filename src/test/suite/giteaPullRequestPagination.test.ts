@@ -67,6 +67,36 @@ suite("Gitea pull request pagination", () => {
     );
   });
 
+  test("keeps a small single-page pull request unchanged", async () => {
+    const requestedPages: number[] = [];
+
+    globalThis.fetch = async (input) => {
+      const url = String(input);
+      requestedPages.push(Number(new URL(url).searchParams.get("page")));
+      return new Response(
+        JSON.stringify([
+          { filename: "src/a.ts", status: "modified" },
+          { filename: "src/b.ts", status: "added" },
+        ]),
+        {
+          status: 200,
+          headers: { "X-HasMore": "false" },
+        },
+      );
+    };
+
+    const files = await createClient().listPRFiles(repoInfo, 7);
+
+    assert.deepStrictEqual(
+      files.map((file) => [file.filename, file.status]),
+      [
+        ["src/a.ts", "modified"],
+        ["src/b.ts", "added"],
+      ],
+    );
+    assert.deepStrictEqual(requestedPages, [1]);
+  });
+
   test("loads every commit page using the same pagination path", async () => {
     const requestedPages: number[] = [];
     const pages = [
