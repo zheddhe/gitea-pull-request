@@ -116,12 +116,22 @@ export class PullRequestReviewApi {
   }
 
   async listReviews(repoInfo: RepoInfo, number: number): Promise<GiteaReview[]> {
-    const reviews = await this.request<GiteaReview[]>(
-      repoInfo,
-      `/repos/${repoInfo.owner}/${repoInfo.repo}/pulls/${number}/reviews`,
-    );
-    const normalized = Array.isArray(reviews)
-      ? reviews.filter(Boolean).map((review) => ({
+    const reviews: GiteaReview[] = [];
+    const limit = 50;
+    let page = 1;
+
+    while (true) {
+      const pageReviews = await this.request<GiteaReview[]>(
+        repoInfo,
+        `/repos/${repoInfo.owner}/${repoInfo.repo}/pulls/${number}/reviews?page=${page}&limit=${limit}`,
+      );
+      if (!Array.isArray(pageReviews) || pageReviews.length === 0) break;
+      reviews.push(...pageReviews);
+      page += 1;
+    }
+
+    const normalized = reviews
+      .filter(Boolean).map((review) => ({
           ...review,
           body: typeof review.body === "string" ? review.body : "",
           submitted_at: typeof review.submitted_at === "string" ? review.submitted_at : "",
@@ -132,8 +142,7 @@ export class PullRequestReviewApi {
                 login: typeof review.user.login === "string" ? review.user.login : "",
               }
             : ({ login: "", id: 0, full_name: "", email: "", avatar_url: "" } as GiteaReview["user"]),
-        }))
-      : [];
+        }));
     trace(`[review-api] reviews repo=${repoInfo.label} pr=#${number} count=${normalized.length}`);
     return normalized;
   }
