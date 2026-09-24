@@ -123,6 +123,32 @@ suite("Gitea pull request pagination", () => {
     assert.deepStrictEqual(requestedPages, [1, 2]);
   });
 
+  test("loads every pull request review page", async () => {
+    const requestedPages: number[] = [];
+    const pages = [
+      [{ id: 1, state: "APPROVED" }, { id: 2, state: "COMMENT" }],
+      [{ id: 3, state: "REQUEST_CHANGES" }],
+    ];
+
+    globalThis.fetch = async (input) => {
+      const url = String(input);
+      const page = Number(new URL(url).searchParams.get("page"));
+      requestedPages.push(page);
+      return new Response(JSON.stringify(pages[page - 1] ?? []), {
+        status: 200,
+        headers: { "X-HasMore": page === 1 ? "true" : "false" },
+      });
+    };
+
+    const reviews = await createClient().listReviews(repoInfo, 67);
+
+    assert.deepStrictEqual(
+      reviews.map((review) => review.id),
+      [1, 2, 3],
+    );
+    assert.deepStrictEqual(requestedPages, [1, 2]);
+  });
+
   test("falls back to an empty terminal page when pagination headers are absent", async () => {
     const requestedPages: number[] = [];
 
