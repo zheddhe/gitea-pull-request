@@ -29,7 +29,7 @@ It provides:
 - deterministic multi-repository / multi-Gitea-instance mapping;
 - least-privilege PAT authentication with capability-aware degradation.
 
-Detailed shipped behavior belongs in [`CHANGELOG.md`](../CHANGELOG.md), while release-specific validation is retained in versioned release records such as [`RELEASE_1.1.0.md`](RELEASE_1.1.0.md) and [`RELEASE_1.1.1.md`](RELEASE_1.1.1.md).
+Detailed shipped behavior and patch-level release history belong in [`CHANGELOG.md`](../CHANGELOG.md).
 
 ## Next directions
 
