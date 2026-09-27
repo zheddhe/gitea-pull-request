@@ -1,6 +1,7 @@
 import * as assert from "assert";
 import { GiteaApiClient } from "../../api/giteaApiClient";
 import type { RepoInfo } from "../../context/repoManager";
+import type { AuthManager } from "../../auth/authManager";
 
 suite("Gitea pull request pagination", () => {
   const repoInfo = {
@@ -20,7 +21,7 @@ suite("Gitea pull request pagination", () => {
   function createClient(): GiteaApiClient {
     return new GiteaApiClient({
       getSession: async () => ({ token: "test-token" }),
-    } as any);
+    } as unknown as AuthManager);
   }
 
   test("loads every changed-file page in order", async () => {
