@@ -29,7 +29,7 @@ It provides:
 - deterministic multi-repository / multi-Gitea-instance mapping;
 - least-privilege PAT authentication with capability-aware degradation.
 
-Detailed shipped behavior belongs in [`CHANGELOG.md`](../CHANGELOG.md), while release-specific validation is retained in versioned release records such as [`RELEASE_1.1.0.md`](RELEASE_1.1.0.md).
+Detailed shipped behavior belongs in [`CHANGELOG.md`](../CHANGELOG.md), while release-specific validation is retained in versioned release records such as [`RELEASE_1.1.0.md`](RELEASE_1.1.0.md) and [`RELEASE_1.1.1.md`](RELEASE_1.1.1.md).
 
 ## Next directions
 
@@ -75,6 +75,7 @@ The roadmap deliberately describes product direction rather than committing ever
 | Workflow completion | `0.7.0`–`0.9.0` | Detail surfaces, conflict workflow, interactive review and Issue authoring |
 | Full UX baseline | `1.0.0` | Native review, adaptive polling, Actions detail and multi-instance authentication |
 | Continuity and safety | `1.1.0` | Review continuity, contextual CI diagnostics and merge/cleanup safeguards |
+| PR data integrity | `1.1.1` | Correct pagination for changed files, commits and review history on large PRs |
 
 Patch releases remain reserved for corrections that do not introduce the next product milestone.
 
