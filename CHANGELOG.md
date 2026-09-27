@@ -4,113 +4,38 @@ All notable changes to **Gitea Pull Request** are documented here from the stand
 
 ## 1.1.1 - 2026-09-27
 
-`1.1.1` is a corrective release focused on large pull-request integrity. It fixes incomplete PR data caused by consuming paginated Gitea endpoints as single-page collections.
+`1.1.1` is a corrective release focused on complete and reliable pull-request data for large or long-lived PRs.
 
-### Fixed
+- Fetch all paginated changed files instead of only the first Gitea API page.
+- Restore complete `Changes in Pull Request` trees, file counts and Reviewed/Viewed denominators on large PRs.
+- Keep reviewed-file reconciliation and file-derived additions/deletions aligned with the full changed-file collection.
+- Fetch all paginated PR commits so commit history and aggregate commit information are no longer truncated.
+- Fetch all paginated PR reviews in both the shared API client and the dedicated review workflow path.
+- Ensure effective review state and review history are based on the complete server-side review collection.
+- Preserve Gitea response order without deduplication or reordering.
+- Fail the complete request if a later page fails instead of exposing a known-partial collection as complete.
+- Add regression coverage for multi-page files, commits and reviews, single-page PRs, missing pagination headers and later-page failures.
+- Compatibility baseline unchanged from 1.1.0.
 
-#### Large pull-request file completeness
-
-Changed files are now loaded across all Gitea API pages instead of only the first page. This restores the complete `Changes in Pull Request` tree for large PRs and keeps file counts, Reviewed/Viewed progress, reviewed-file reconciliation and file-derived additions/deletions aligned with the actual pull request.
-
-#### Pull-request commit completeness
-
-PR commits are now loaded across all pages, preventing truncated commit lists and aggregate commit information on large or long-lived pull requests.
-
-#### Review history completeness
-
-Pull-request reviews are now fully paginated in both the shared Gitea API client and the dedicated review workflow client. Effective review state, review history and review-dependent workflows no longer risk being calculated from only the first page of reviews.
-
-### Reliability
-
-- Pagination preserves Gitea response order and does not deduplicate items.
-- Intermediate page failures reject the complete request instead of returning a known-partial collection.
-- The shared API client uses Gitea pagination headers when available and falls back conservatively when they are absent.
-- Regression coverage includes multi-page changed files, commits and reviews, single-page PRs, missing pagination headers and later-page failures.
-
-### Compatibility
-
-The compatibility baseline is unchanged from 1.1.0:
-
-| Component | Baseline |
-| --- | --- |
-| VS Code | 1.133.0 or later |
-| Gitea | 1.26.4 minimum; 1.27.x or later recommended for the complete review experience |
-| Gitea Runner | 3.x.x or later recommended for the current Actions / CI experience |
-| Node.js | 24.x build / CI baseline |
-| VSIX tooling | `@vscode/vsce` 4.0.0 on the release path |
 ## 1.1.0 - 2026-09-19
 
 `1.1.0` strengthens review continuity, contextual CI navigation and merge/cleanup safety while polishing the post-1.0 workflow.
 
-### Highlights
-
-#### Native review continuity
-
-Add review comments directly from authoritative `gitea-pr` diffs. Inline Review and PR Detail now stay synchronized through the shared pending-review transaction, with separate navigation for unresolved conversations and pending review operations. Historical conversations remain accessible as Outdated instead of being projected onto unsafe current-diff positions.
-
-#### Contextual CI diagnostics
-
-Open CI jobs and logs directly from PR checks in Review Pull Request. Job-specific checks preserve the known job identity and open it directly; the job picker is reserved for genuinely ambiguous multi-job runs. The workflow reuses the existing CI / Actions projection and adaptive polling path.
-
-#### Safer merge and branch cleanup
-
-Source-branch synchronization is classified as in-sync, behind, ahead, diverged or unknown when safely resolvable. Local-only work triggers an explicit pre-merge advisory, and post-merge cleanup revalidates branch safety before destructive actions. Unique or unverifiable work is kept instead of being presented as safe to delete.
-
-### Added
-
-#### Inline review authoring
-
-Native `Add Review Comment` is available from authoritative PR diffs, with canonical old/new anchors for context, added, removed and deterministically mapped unchanged lines outside raw-diff hunks.
-
-#### Review navigation
-
-Unresolved conversations and pending review operations have independent Previous/Next cycles backed by one shared logical cursor across Inline Review and PR Detail. Native navigation affordances distinguish unresolved feedback from pending modifications.
-
-#### Branch synchronization diagnostics
-
-Merge and cleanup share one Git-graph-based source-branch analysis. Local-ahead and diverged states are surfaced before server-side merge, while post-merge cleanup uses reachability-aware safety decisions for local and remote source branches.
-
-### Improved
-
-#### Review lifecycle
-
-Pending review state propagates immediately between Inline Review and PR Detail. Submission/reconcile preserves navigation continuity when pending items become persisted conversations. Outdated and Resolved remain independent lifecycle dimensions, and navigation controls are hidden when fewer than two targets exist.
-
-#### Contextual CI
-
-Review checks open the existing CI job/log surface without introducing review-specific CI state. Job-specific Gitea check URLs preserve both run and job identity, eliminating redundant job selection.
-
-#### Issue ergonomics
-
-Issue-row actions are simplified; Issue Detail remains the canonical commenting and discussion surface.
-
-#### Merge and cleanup safety
-
-The server-side PR head remains authoritative for what Gitea will merge. Local source state is advisory before merge and safety-critical before destructive cleanup. Cleanup re-discovers state at action time, and squash/rebase cleanup can use verified forced deletion only after safety analysis proves no local-only work remains.
-
-### Fixed
-
-#### Conflict-resolution eligibility
-
-WIP / Draft, approval, CI/check, permission and no-content blockers are no longer misclassified as technical Git conflicts. Automatic guidance and the manual conflict-resolution command now share the same eligibility rule.
-
-#### Direct CI job routing
-
-Job-specific PR check actions no longer reopen an unnecessary job picker when the target job is already known.
-
-#### Local-work preservation
-
-Post-merge cleanup no longer risks silently deleting committed but unpushed local work. Unknown or unmappable branch state is never presented as verified safe for destructive cleanup.
-
-### Compatibility
-
-| Component | Baseline |
-| --- | --- |
-| VS Code | 1.133.0 or later |
-| Gitea | 1.26.4 minimum; 1.27.x or later recommended for the complete review experience |
-| Gitea Runner | 3.x.x or later recommended for the current Actions / CI experience |
-| Node.js | 24.x build / CI baseline |
-| VSIX tooling | `@vscode/vsce` 4.0.0 on the release path |
+- Add native `Add Review Comment` directly from authoritative PR diffs, with canonical anchors for context, added, removed and deterministically mapped unchanged lines.
+- Keep pending review state synchronized between Inline Review and PR Detail.
+- Add independent Previous/Next navigation for unresolved conversations and pending review operations, backed by one shared logical cursor.
+- Present historical conversations as Outdated when they can no longer be mapped safely to the current diff.
+- Keep Outdated and Resolved as independent conversation lifecycle dimensions.
+- Open CI jobs and logs directly from PR checks while reusing the existing CI / Actions provider and refresh path.
+- Preserve known run/job identity from Gitea check URLs and skip redundant job selection when the target job is already known.
+- Classify source-branch synchronization as in-sync, behind, ahead, diverged or unknown where safely resolvable.
+- Warn before merge when committed local work is not pushed, without silently pushing, resetting or rebasing.
+- Revalidate branch state before post-merge cleanup and preserve local or remote branches when unique work cannot be ruled out.
+- Restrict verified forced local deletion to cases where analysis proves no local-only work remains, including squash/rebase cleanup scenarios.
+- Stop treating WIP / Draft, approval, checks, permissions or no-content states as technical Git conflicts.
+- Share one conflict-resolution eligibility rule between automatic and manual entry points.
+- Simplify Issue row actions while keeping Issue Detail as the canonical commenting and discussion surface.
+- Compatibility baseline: VS Code 1.133.0+, Gitea 1.26.4+ with 1.27.x+ recommended for the complete review experience, Node.js 24.x build / CI baseline.
 ## 1.0.0 - 2026-09-08
 
 `1.0.0` is the first full user-experience baseline: native review interaction, adaptive refresh, reliable Actions detail and multi-instance authentication designed for least privilege.
