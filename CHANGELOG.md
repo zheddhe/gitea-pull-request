@@ -2,6 +2,42 @@
 
 All notable changes to **Gitea Pull Request** are documented here from the standalone product line onward.
 
+## 1.1.1 - 2026-09-27
+
+`1.1.1` is a corrective release focused on large pull-request integrity. It fixes incomplete PR data caused by consuming paginated Gitea endpoints as single-page collections.
+
+### Fixed
+
+#### Large pull-request file completeness
+
+Changed files are now loaded across all Gitea API pages instead of only the first page. This restores the complete `Changes in Pull Request` tree for large PRs and keeps file counts, Reviewed/Viewed progress, reviewed-file reconciliation and file-derived additions/deletions aligned with the actual pull request.
+
+#### Pull-request commit completeness
+
+PR commits are now loaded across all pages, preventing truncated commit lists and aggregate commit information on large or long-lived pull requests.
+
+#### Review history completeness
+
+Pull-request reviews are now fully paginated in both the shared Gitea API client and the dedicated review workflow client. Effective review state, review history and review-dependent workflows no longer risk being calculated from only the first page of reviews.
+
+### Reliability
+
+- Pagination preserves Gitea response order and does not deduplicate items.
+- Intermediate page failures reject the complete request instead of returning a known-partial collection.
+- The shared API client uses Gitea pagination headers when available and falls back conservatively when they are absent.
+- Regression coverage includes multi-page changed files, commits and reviews, single-page PRs, missing pagination headers and later-page failures.
+
+### Compatibility
+
+The compatibility baseline is unchanged from 1.1.0:
+
+| Component | Baseline |
+| --- | --- |
+| VS Code | 1.133.0 or later |
+| Gitea | 1.26.4 minimum; 1.27.x or later recommended for the complete review experience |
+| Gitea Runner | 3.x.x or later recommended for the current Actions / CI experience |
+| Node.js | 24.x build / CI baseline |
+| VSIX tooling | `@vscode/vsce` 4.0.0 on the release path |
 ## 1.1.0 - 2026-09-19
 
 `1.1.0` strengthens review continuity, contextual CI navigation and merge/cleanup safety while polishing the post-1.0 workflow.
