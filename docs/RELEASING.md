@@ -70,7 +70,7 @@ Confirm the expected local artifact exists:
 .artifacts/vsix/gitea-pull-request-<target-version>.vsix
 ```
 
-Perform the final smoke pass before merging the release PR. The exact smoke scope is version-specific and should be recorded in the corresponding release record under `docs/RELEASE_<version>.md` when such a record exists.
+Perform the final smoke pass before merging the release PR. Keep user-facing release notes in `CHANGELOG.md`; version-specific smoke details can remain in the release PR or issue when they do not need permanent standalone documentation.
 
 ## GitHub release sequence
 
