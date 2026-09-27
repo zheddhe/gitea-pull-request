@@ -29,6 +29,8 @@ Prefer direct behavioral assertions in this layer. These tests are the best cand
 - `branchSyncAnalyzerService.test.ts`
 - `preMergeBranchSyncService.test.ts`
 - `postMergeBranchSafety.test.ts`
+- `giteaPullRequestPagination.test.ts` for multi-page PR files, commits and reviews
+- `pullRequestReviewApiPagination.test.ts` for pagination on the review-workflow API path
 
 These characterize state transitions and workflow decisions. Keep orchestration tests focused on externally meaningful decisions rather than implementation call order unless ordering is itself part of the workflow contract.
 
