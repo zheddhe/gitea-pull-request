@@ -1,6 +1,7 @@
 import * as assert from "assert";
 import { PullRequestReviewApi } from "../../features/pullRequests/services/pullRequestReviewApi";
 import type { RepoInfo } from "../../context/repoManager";
+import type { AuthManager } from "../../auth/authManager";
 
 suite("PullRequestReviewApi pagination", () => {
   const repoInfo = {
@@ -63,7 +64,7 @@ suite("PullRequestReviewApi pagination", () => {
 
     const api = new PullRequestReviewApi({
       getSession: async () => ({ token: "test-token" }),
-    } as any);
+    } as unknown as AuthManager);
 
     const reviews = await api.listReviews(repoInfo, 67);
 
