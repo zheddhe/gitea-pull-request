@@ -36,60 +36,27 @@ All notable changes to **Gitea Pull Request** are documented here from the stand
 - Share one conflict-resolution eligibility rule between automatic and manual entry points.
 - Simplify Issue row actions while keeping Issue Detail as the canonical commenting and discussion surface.
 - Compatibility baseline: VS Code 1.133.0+, Gitea 1.26.4+ with 1.27.x+ recommended for the complete review experience, Node.js 24.x build / CI baseline.
+
 ## 1.0.0 - 2026-09-08
 
 `1.0.0` is the first full user-experience baseline: native review interaction, adaptive refresh, reliable Actions detail and multi-instance authentication designed for least privilege.
 
-### Added
-
-- Native VS Code review conversation actions for Reply, Resolve and Reopen, integrated with the existing pending-review transaction instead of bypassing it.
-- Centralized adaptive polling for PR state, CI / Actions and Issues, with visibility/focus-aware cadence, bounded backoff and editing-safe pauses.
-- Reliable Actions execution detail and artifact handling where supported by Gitea APIs.
-- Multi-instance account management from the status bar, including per-instance sign-in, PAT replacement, sign-out and repository re-scan recovery.
-- Deterministic repository-to-Gitea-instance mapping across HTTPS, SSH, SCP-style remotes, custom SSH ports and OpenSSH aliases.
-- Optional `gitea.servers[].transports` mappings for installations where Git transport and web/API endpoints use different hosts or ports.
-- Authentication diagnostics showing the active instance, PAT authentication method and observed runtime capabilities without exposing credentials.
-- Capability observation for identity, repository, Issues and Actions, with independent `verified`, `denied`, `unsupported` and `unknown` states.
-
-### Improved
-
-- Authentication and authorization are now distinct: `401` identifies invalid/revoked authentication while `403` identifies insufficient effective permission.
-- Permission failures degrade only the affected capability; unrelated extension functions remain available.
-- PAT credentials are isolated by canonical Gitea instance identity and stored only in VS Code SecretStorage.
-- Existing credentials are migrated to canonical instance keys without forcing users to re-authenticate.
-- Repository discovery no longer assumes that an unknown Git hostname is a Gitea server and never sends a PAT to probe an unmapped host.
-- The status bar is reduced to the transversal Gitea account state; repository re-scan is available through account management / Command Palette instead of occupying persistent UI space.
-- API error messages are normalized and sanitized consistently across PR review and metadata APIs.
-- PAT onboarding now recommends least-privilege scopes instead of broad `all` / unnecessary `misc` access.
-
-### Least-privilege PAT guidance
-
-For the complete workflow:
-
-- `read:user`
-- `write:repository`
-- `write:issue`
-
-For read-only use:
-
-- `read:user`
-- `read:repository`
-- `read:issue`
-
-Token scopes allow access to API families; they do not elevate the underlying Gitea user's repository permissions.
-
-### Compatibility
-
-- VS Code 1.133.0 or later
-- Gitea 1.26.4 minimum supported compatibility floor, with capability-gated fallbacks where newer APIs are unavailable
-- Gitea 1.27.x or later recommended for the complete review experience, including inline Reply and the newest review capabilities
-- Gitea Runner 3.x.x or later recommended for the current Actions / CI experience
-- Node.js 24.x build / CI baseline
-
-Gitea 1.26.4 remains supported, but 1.27.x+ is the preferred server baseline for the full 1.0 UX. Unsupported operations degrade independently so unrelated PR, Issue and Actions capabilities remain available where the server exposes them.
-
-OAuth2 Authorization Code + PKCE is intentionally deferred beyond the 1.0 acceptance gate; PAT remains first-class for arbitrary self-hosted Gitea deployments.
-
+- Add native VS Code review conversation actions for Reply, Resolve and Reopen, integrated with the persistent pending-review transaction.
+- Centralize adaptive polling for PR state, CI / Actions and Issues with visibility/focus-aware cadence, bounded backoff and editing-safe pauses.
+- Add reliable Actions execution detail and artifact handling where supported by Gitea APIs.
+- Add multi-instance account management from the status bar, including per-instance sign-in, PAT replacement, sign-out and repository re-scan recovery.
+- Resolve repositories deterministically across HTTPS, SSH, SCP-style remotes, custom SSH ports and OpenSSH aliases.
+- Support explicit `gitea.servers[].transports` mappings when Git transport and Gitea web/API endpoints intentionally differ.
+- Add authentication diagnostics for active instance, PAT method and observed runtime capabilities without exposing credentials.
+- Track identity, repository, Issues and Actions capabilities independently as verified, denied, unsupported or unknown.
+- Distinguish authentication failures (`401`) from authorization failures (`403`) and degrade only the affected capability.
+- Isolate PAT credentials by canonical Gitea instance identity in VS Code SecretStorage and migrate existing credentials without forced re-authentication.
+- Avoid probing unknown Git hosts with Gitea credentials and keep foreign or ambiguous forges unmapped.
+- Reduce the status bar to transversal Gitea account state and move repository re-scan to account management / Command Palette.
+- Normalize and sanitize API errors consistently across PR review and metadata APIs.
+- Recommend least-privilege PAT scopes for complete and read-only workflows instead of broad `all` / unnecessary `misc` access.
+- Compatibility baseline: VS Code 1.133.0+, Gitea 1.26.4+ with 1.27.x+ recommended for the complete review experience, Gitea Runner 3.x+ recommended, Node.js 24.x build / CI baseline.
+- OAuth2 Authorization Code + PKCE remains deferred beyond the 1.0 acceptance gate; PAT remains first-class for arbitrary self-hosted Gitea deployments.
 ## 0.9.0 - 2026-08-31
 
 `0.9.0` established persistent interactive review and first-class Issue authoring.
